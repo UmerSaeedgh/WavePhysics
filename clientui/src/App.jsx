@@ -56,6 +56,8 @@ function App() {
   // Fetch site details when a site is selected
   useEffect(() => {
     if (selectedSite) {
+      // Clear old schedules when switching sites to prevent showing old data
+      setSchedules([]);
       fetchSchedules(selectedSite.id);
       fetchSiteContacts(selectedSite.id);
     }
@@ -387,6 +389,8 @@ function App() {
             sites={sites}
             onNavigateToSchedule={async (scheduleId, siteId) => {
               try {
+                // Clear old schedules first to prevent showing old data
+                setSchedules([]);
                 // Fetch the site directly from API
                 const siteData = await apiCall(`/sites/${siteId}`);
                 if (siteData && siteData.client_id) {
@@ -395,9 +399,11 @@ function App() {
                   if (clientData) {
                     setSelectedClient(clientData);
                     setSelectedSite(siteData);
-                    setView("site-details");
-                    // Store schedule ID to scroll to
+                    // Store schedule ID to scroll to BEFORE changing view
                     setScrollToScheduleId(scheduleId);
+                    setView("site-details");
+                    // Fetch schedules for the new site (this will trigger the scroll effect)
+                    await fetchSchedules(siteId);
                   }
                 }
               } catch (err) {
@@ -724,10 +730,19 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
     onRefreshContacts();
   }, []);
 
-  // Scroll to specific schedule when scrollToScheduleId is set
+  // Scroll to specific schedule when scrollToScheduleId is set and schedules are loaded
   useEffect(() => {
     if (scrollToScheduleId && schedules.length > 0) {
+      // Verify the schedule exists in the current site's schedules
+      const scheduleExists = schedules.some(s => s.id === scrollToScheduleId);
+      if (!scheduleExists) {
+        // Schedule not found in current schedules, clear scroll target
+        if (onScrollComplete) onScrollComplete();
+        return;
+      }
+      
       // Wait for DOM to update, then scroll
+      // Use a longer timeout to ensure the list is fully rendered
       setTimeout(() => {
         const scheduleElement = scheduleRefs.current[scrollToScheduleId];
         if (scheduleElement) {
@@ -738,12 +753,25 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
             scheduleElement.style.backgroundColor = '';
             if (onScrollComplete) onScrollComplete();
           }, 2000);
-        } else if (onScrollComplete) {
-          onScrollComplete();
+        } else {
+          // Element not found yet, try again after a short delay
+          setTimeout(() => {
+            const retryElement = scheduleRefs.current[scrollToScheduleId];
+            if (retryElement) {
+              retryElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              retryElement.style.backgroundColor = '#8193A4';
+              setTimeout(() => {
+                retryElement.style.backgroundColor = '';
+                if (onScrollComplete) onScrollComplete();
+              }, 2000);
+            } else if (onScrollComplete) {
+              onScrollComplete();
+            }
+          }, 300);
         }
-      }, 100);
+      }, 200);
     }
-  }, [scrollToScheduleId, schedules, onScrollComplete]);
+  }, [scrollToScheduleId, schedules, onScrollComplete, site.id]);
 
   async function fetchCompletedSchedules() {
     try {
