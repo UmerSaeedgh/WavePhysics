@@ -28,6 +28,7 @@ function App() {
   const [view, setView] = useState("clients"); // "clients", "client-sites", "site-details"
   const [selectedClient, setSelectedClient] = useState(null);
   const [selectedSite, setSelectedSite] = useState(null);
+  const [scrollToScheduleId, setScrollToScheduleId] = useState(null);
   const [clients, setClients] = useState([]);
   const [sites, setSites] = useState([]);
   const [contacts, setContacts] = useState([]);
@@ -363,12 +364,15 @@ function App() {
             clientEquipments={clientEquipments}
             schedules={schedules}
             contactLinks={contactLinks}
+            scrollToScheduleId={scrollToScheduleId}
+            onScrollComplete={() => setScrollToScheduleId(null)}
             onRefreshSchedules={() => fetchSchedules(selectedSite.id)}
             onRefreshEquipments={() => fetchClientEquipments(selectedClient.id)}
             onRefreshContacts={() => fetchSiteContacts(selectedSite.id)}
             onBack={() => {
               setView("client-sites");
               setSelectedSite(null);
+              setScrollToScheduleId(null);
             }}
             apiCall={apiCall}
             setError={setError}
@@ -376,7 +380,31 @@ function App() {
         )}
 
         {view === "quick-views" && (
-          <QuickViewsTab apiCall={apiCall} setError={setError} />
+          <QuickViewsTab 
+            apiCall={apiCall} 
+            setError={setError}
+            clients={clients}
+            sites={sites}
+            onNavigateToSchedule={async (scheduleId, siteId) => {
+              try {
+                // Fetch the site directly from API
+                const siteData = await apiCall(`/sites/${siteId}`);
+                if (siteData && siteData.client_id) {
+                  // Fetch the client directly from API
+                  const clientData = await apiCall(`/clients/${siteData.client_id}`);
+                  if (clientData) {
+                    setSelectedClient(clientData);
+                    setSelectedSite(siteData);
+                    setView("site-details");
+                    // Store schedule ID to scroll to
+                    setScrollToScheduleId(scheduleId);
+                  }
+                }
+              } catch (err) {
+                setError("Failed to navigate to schedule: " + (err.message || "Unknown error"));
+              }
+            }}
+          />
         )}
 
         {view === "reports" && (
@@ -663,7 +691,8 @@ function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRe
 }
 
 // Site Details View - Shows equipments, schedules, and contacts for a site
-function SiteDetailsView({ client, site, clientEquipments, schedules, contactLinks, onRefreshSchedules, onRefreshEquipments, onRefreshContacts, onBack, apiCall, setError }) {
+function SiteDetailsView({ client, site, clientEquipments, schedules, contactLinks, scrollToScheduleId, onScrollComplete, onRefreshSchedules, onRefreshEquipments, onRefreshContacts, onBack, apiCall, setError }) {
+  const scheduleRefs = useRef({});
   const [selectedSchedule, setSelectedSchedule] = useState(null);
   const [scheduleForm, setScheduleForm] = useState({
     equipment_id: "",
@@ -694,6 +723,27 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
     onRefreshEquipments();
     onRefreshContacts();
   }, []);
+
+  // Scroll to specific schedule when scrollToScheduleId is set
+  useEffect(() => {
+    if (scrollToScheduleId && schedules.length > 0) {
+      // Wait for DOM to update, then scroll
+      setTimeout(() => {
+        const scheduleElement = scheduleRefs.current[scrollToScheduleId];
+        if (scheduleElement) {
+          scheduleElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Highlight the schedule briefly
+          scheduleElement.style.backgroundColor = '#8193A4';
+          setTimeout(() => {
+            scheduleElement.style.backgroundColor = '';
+            if (onScrollComplete) onScrollComplete();
+          }, 2000);
+        } else if (onScrollComplete) {
+          onScrollComplete();
+        }
+      }, 100);
+    }
+  }, [scrollToScheduleId, schedules, onScrollComplete]);
 
   async function fetchCompletedSchedules() {
     try {
@@ -1221,10 +1271,16 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
               {schedules.map(schedule => {
                 const equipment = clientEquipments.find(e => e.id === schedule.equipment_id);
                 return (
-                  <li key={schedule.id} className="list-item" style={{ cursor: "pointer" }} onClick={() => {
-                    setSelectedScheduleDetails(schedule);
-                    setShowScheduleDetailsModal(true);
-                  }}>
+                  <li 
+                    key={schedule.id} 
+                    ref={el => scheduleRefs.current[schedule.id] = el}
+                    className="list-item" 
+                    style={{ cursor: "pointer" }} 
+                    onClick={() => {
+                      setSelectedScheduleDetails(schedule);
+                      setShowScheduleDetailsModal(true);
+                    }}
+                  >
                     <div className="list-main">
                       <div className="list-title">
                         {schedule.equipment_identifier || equipment?.name || `Equipment ID: ${schedule.equipment_id}`}
@@ -3525,7 +3581,7 @@ function WorkOrdersTab({
 }
 
 // Quick Views Tab
-function QuickViewsTab({ apiCall, setError }) {
+function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule }) {
   const [dueThisMonth, setDueThisMonth] = useState([]);
   const [overdue, setOverdue] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
@@ -3606,7 +3662,20 @@ function QuickViewsTab({ apiCall, setError }) {
         ) : (
           <ul className="list">
             {overdue.map(wo => (
-              <li key={wo.id} className="list-item due">
+              <li 
+                key={wo.id} 
+                className="list-item due"
+                style={{ cursor: wo.schedule_id || wo.site_id ? "pointer" : "default" }}
+                onClick={() => {
+                  // If it's a work order (has schedule_id), navigate to the schedule
+                  if (wo.schedule_id && wo.site_id && onNavigateToSchedule) {
+                    onNavigateToSchedule(wo.schedule_id, wo.site_id);
+                  } else if (wo.site_id && wo.id && !wo.status && onNavigateToSchedule) {
+                    // If it's a schedule (no status field, has site_id), use id as schedule_id
+                    onNavigateToSchedule(wo.id, wo.site_id);
+                  }
+                }}
+              >
                 <div className="list-main">
                   <div className="list-title">{wo.equipment_name || 'Unknown'} @ {wo.site_name}</div>
                   <div className="list-subtitle">
@@ -3637,7 +3706,20 @@ function QuickViewsTab({ apiCall, setError }) {
         ) : (
           <ul className="list">
             {dueThisMonth.map(item => (
-              <li key={item.id} className="list-item">
+              <li 
+                key={item.id} 
+                className="list-item"
+                style={{ cursor: item.schedule_id || item.site_id ? "pointer" : "default" }}
+                onClick={() => {
+                  // If it's a work order (has schedule_id), navigate to the schedule
+                  if (item.schedule_id && item.site_id && onNavigateToSchedule) {
+                    onNavigateToSchedule(item.schedule_id, item.site_id);
+                  } else if (item.site_id && item.id && !item.status && onNavigateToSchedule) {
+                    // If it's a schedule (no status field, has site_id), use id as schedule_id
+                    onNavigateToSchedule(item.id, item.site_id);
+                  }
+                }}
+              >
                 <div className="list-main">
                   <div className="list-title">{item.equipment_name || 'Unknown'} @ {item.site_name}</div>
                   <div className="list-subtitle">
@@ -3668,7 +3750,20 @@ function QuickViewsTab({ apiCall, setError }) {
         ) : (
           <ul className="list">
             {upcoming.map(item => (
-              <li key={item.id} className="list-item planned">
+              <li 
+                key={item.id} 
+                className="list-item planned"
+                style={{ cursor: item.schedule_id || item.site_id ? "pointer" : "default" }}
+                onClick={() => {
+                  // If it's a work order (has schedule_id), navigate to the schedule
+                  if (item.schedule_id && item.site_id && onNavigateToSchedule) {
+                    onNavigateToSchedule(item.schedule_id, item.site_id);
+                  } else if (item.site_id && item.id && !item.status && onNavigateToSchedule) {
+                    // If it's a schedule (no status field, has site_id), use id as schedule_id
+                    onNavigateToSchedule(item.id, item.site_id);
+                  }
+                }}
+              >
                 <div className="list-main">
                   <div className="list-title">{item.equipment_name || 'Unknown'} @ {item.site_name}</div>
                   <div className="list-subtitle">
