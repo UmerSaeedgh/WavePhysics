@@ -1577,7 +1577,7 @@ function ContactManagementSection({ site, client, contactLinks, onRefreshContact
         contactId = result.id;
         
         // Update the link if it exists
-        if (selectedLink && site) {
+        if (selectedLink) {
           try {
             await apiCall(`/contact-links/${selectedLink.id}`, {
               method: "PUT",
@@ -1588,6 +1588,7 @@ function ContactManagementSection({ site, client, contactLinks, onRefreshContact
             });
           } catch (linkErr) {
             console.warn("Failed to update contact link:", linkErr);
+            setError(linkErr.message || "Failed to update contact link");
           }
         }
       } else {
