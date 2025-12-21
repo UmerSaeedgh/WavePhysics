@@ -1000,7 +1000,17 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
           <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
             <form onSubmit={handleScheduleSubmit} className="form">
               <label>
-                Equipment *
+                Equipment Name
+                <textarea 
+                  name="equipment_identifier" 
+                  value={scheduleForm.equipment_identifier || ""} 
+                  onChange={handleScheduleChange} 
+                  rows={2}
+                  placeholder="e.g. Scanner Model XYZ, Room 101"
+                />
+              </label>
+              <label>
+                Equipment Identifier *
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                   <select name="equipment_id" value={scheduleForm.equipment_id} onChange={handleScheduleChange} required style={{ flex: 1 }}>
                     <option value="">Select equipment</option>
@@ -1188,10 +1198,6 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                 <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
                   Leave empty to use equipment's default RRule
                 </div>
-              </label>
-              <label>
-                Equipment Identifier
-                <input type="text" name="equipment_identifier" value={scheduleForm.equipment_identifier || ""} onChange={handleScheduleChange} placeholder="e.g. Scanner Model XYZ, Room 101" />
               </label>
               <label>
                 Notes
@@ -2850,7 +2856,17 @@ function SchedulesTab({
             </select>
           </label>
           <label>
-            Equipment/Testing *
+            Equipment Name
+            <textarea
+              name="equipment_identifier"
+              value={form.equipment_identifier || ""}
+              onChange={handleChange}
+              rows={2}
+              placeholder="e.g. Scanner Model XYZ, Room 101"
+            />
+          </label>
+          <label>
+            Equipment Identifier *
             <select
               name="equipment_id"
               value={form.equipment_id}
@@ -2891,16 +2907,6 @@ function SchedulesTab({
               value={form.timezone}
               onChange={handleChange}
               placeholder="America/Chicago"
-            />
-          </label>
-          <label>
-            Equipment Identifier
-            <input
-              type="text"
-              name="equipment_identifier"
-              value={form.equipment_identifier}
-              onChange={handleChange}
-              placeholder="e.g. Scanner Model XYZ, Room 101"
             />
           </label>
             <label>

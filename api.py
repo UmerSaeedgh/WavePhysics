@@ -2227,7 +2227,9 @@ async def import_excel(
                 address_col = col
             elif notes_col is None and 'note' in col_lower:
                 notes_col = col
-            # Prioritize 'identifier' or 'equipment_identifier' - these are the most specific
+            # Prioritize 'equipment_name', then 'identifier' or 'equipment_identifier' - these are the most specific
+            elif identifier_col is None and 'equipment_name' in col_lower:
+                identifier_col = col
             elif identifier_col is None and ('identifier' in col_lower or 'equipment_identifier' in col_lower):
                 identifier_col = col
         
@@ -2244,7 +2246,7 @@ async def import_excel(
         print(f"  - Equipment: {equipment_col}")
         print(f"  - Anchor Date: {anchor_date_col}")
         print(f"  - Due Date: {due_date_col}")
-        print(f"  - Identifier: {identifier_col}")
+        print(f"  - Equipment Name/Identifier: {identifier_col}")
         print(f"  - Notes: {notes_col}")
         if identifier_col and len(df) > 0:
             # Show sample values from the identifier column
