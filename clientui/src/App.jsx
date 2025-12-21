@@ -1222,16 +1222,16 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                   <li key={schedule.id} className="list-item">
                     <div className="list-main">
                       <div className="list-title">
-                        {equipment?.name || `Equipment ID: ${schedule.equipment_id}`}
+                        {schedule.equipment_identifier || equipment?.name || `Equipment ID: ${schedule.equipment_id}`}
                       </div>
                       <div className="list-subtitle">
+                        {equipment?.name && `Equipment: ${equipment.name} • `}
                         Anchor: {formatDate(schedule.anchor_date)}
                         {schedule.due_date && ` • Due: ${formatDate(schedule.due_date)}`}
                         {schedule.client_name && ` • Client: ${schedule.client_name}`}
                         {schedule.client_address && ` • ${schedule.client_address}`}
                         {schedule.site_name && ` • Site: ${schedule.site_name}`}
                         {schedule.site_address && ` • ${schedule.site_address}`}
-                        {schedule.equipment_identifier && ` • Equipment ID: ${schedule.equipment_identifier}`}
                       </div>
                     </div>
                     <div className="list-actions">
@@ -1284,16 +1284,16 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                     <li key={schedule.id} className="list-item">
                       <div className="list-main">
                         <div className="list-title">
-                          {equipment?.name || `Equipment ID: ${schedule.equipment_id}`}
+                          {schedule.equipment_identifier || equipment?.name || `Equipment ID: ${schedule.equipment_id}`}
                         </div>
                         <div className="list-subtitle">
+                          {equipment?.name && `Equipment: ${equipment.name} • `}
                           Anchor: {formatDate(schedule.anchor_date)}
                           {schedule.due_date && ` • Due: ${formatDate(schedule.due_date)}`}
                           {schedule.client_name && ` • Client: ${schedule.client_name}`}
                           {schedule.client_address && ` • ${schedule.client_address}`}
                           {schedule.site_name && ` • Site: ${schedule.site_name}`}
                           {schedule.site_address && ` • ${schedule.site_address}`}
-                          {schedule.equipment_identifier && ` • Equipment ID: ${schedule.equipment_identifier}`}
                           {schedule.completed_at && ` • Completed: ${schedule.completed_at}`}
                         </div>
                       </div>
@@ -2951,16 +2951,16 @@ function SchedulesTab({
                 <li key={schedule.id} className="list-item">
                   <div className="list-main">
                     <div className="list-title">
-                      {schedule.equipment_name || `Equipment ID: ${schedule.equipment_id}`} @ {site?.name}
+                      {schedule.equipment_identifier || schedule.equipment_name || `Equipment ID: ${schedule.equipment_id}`} @ {site?.name}
                     </div>
                     <div className="list-subtitle">
+                      {schedule.equipment_name && `Equipment: ${schedule.equipment_name} • `}
                       Anchor: {formatDate(schedule.anchor_date)}
                       {schedule.due_date && ` • Due: ${formatDate(schedule.due_date)}`}
                       {schedule.client_name && ` • Client: ${schedule.client_name}`}
                       {schedule.client_address && ` • ${schedule.client_address}`}
                       {schedule.site_name && ` • Site: ${schedule.site_name}`}
                       {schedule.site_address && ` • ${schedule.site_address}`}
-                      {schedule.equipment_identifier && ` • Equipment ID: ${schedule.equipment_identifier}`}
                     </div>
                   </div>
                   <div className="list-actions">
