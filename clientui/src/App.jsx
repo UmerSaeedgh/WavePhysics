@@ -1221,8 +1221,11 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                       <div className="list-subtitle">
                         Anchor: {formatDate(schedule.anchor_date)}
                         {schedule.due_date && ` • Due: ${formatDate(schedule.due_date)}`}
-                        {schedule.next_due_date && ` • Next due: ${formatDate(schedule.next_due_date)}`}
-                        {schedule.equipment_identifier && ` • Equipment: ${schedule.equipment_identifier}`}
+                        {schedule.client_name && ` • Client: ${schedule.client_name}`}
+                        {schedule.client_address && ` • ${schedule.client_address}`}
+                        {schedule.site_name && ` • Site: ${schedule.site_name}`}
+                        {schedule.site_address && ` • ${schedule.site_address}`}
+                        {schedule.equipment_identifier && ` • Equipment ID: ${schedule.equipment_identifier}`}
                       </div>
                     </div>
                     <div className="list-actions">
@@ -1280,8 +1283,11 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                         <div className="list-subtitle">
                           Anchor: {formatDate(schedule.anchor_date)}
                           {schedule.due_date && ` • Due: ${formatDate(schedule.due_date)}`}
-                          {schedule.next_due_date && ` • Next due: ${formatDate(schedule.next_due_date)}`}
-                          {schedule.equipment_identifier && ` • Equipment: ${schedule.equipment_identifier}`}
+                          {schedule.client_name && ` • Client: ${schedule.client_name}`}
+                          {schedule.client_address && ` • ${schedule.client_address}`}
+                          {schedule.site_name && ` • Site: ${schedule.site_name}`}
+                          {schedule.site_address && ` • ${schedule.site_address}`}
+                          {schedule.equipment_identifier && ` • Equipment ID: ${schedule.equipment_identifier}`}
                           {schedule.completed_at && ` • Completed: ${schedule.completed_at}`}
                         </div>
                       </div>
@@ -2944,8 +2950,11 @@ function SchedulesTab({
                     <div className="list-subtitle">
                       Anchor: {formatDate(schedule.anchor_date)}
                       {schedule.due_date && ` • Due: ${formatDate(schedule.due_date)}`}
-                      {schedule.next_due_date && ` • Next due: ${formatDate(schedule.next_due_date)}`}
-                      {schedule.equipment_identifier && ` • Equipment: ${schedule.equipment_identifier}`}
+                      {schedule.client_name && ` • Client: ${schedule.client_name}`}
+                      {schedule.client_address && ` • ${schedule.client_address}`}
+                      {schedule.site_name && ` • Site: ${schedule.site_name}`}
+                      {schedule.site_address && ` • ${schedule.site_address}`}
+                      {schedule.equipment_identifier && ` • Equipment ID: ${schedule.equipment_identifier}`}
                     </div>
                   </div>
                   <div className="list-actions">
@@ -3125,7 +3134,7 @@ function WorkOrdersTab({
               <option value="">Select schedule</option>
               {schedules.map(s => (
                 <option key={s.id} value={s.id}>
-                  Schedule #{s.id} - {s.next_due_date ? formatDate(s.next_due_date) : "No due date"}
+                  Schedule #{s.id} - {s.equipment_name || `Equipment ${s.equipment_id}`} {s.site_name ? `@ ${s.site_name}` : ""} {s.due_date ? `(${formatDate(s.due_date)})` : ""}
                 </option>
               ))}
             </select>
@@ -3253,7 +3262,7 @@ function WorkOrdersTab({
           {schedules.map(schedule => (
             <div key={schedule.id} style={{ marginBottom: "0.5rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
               <span style={{ flex: 1, fontSize: "0.85rem" }}>
-                Schedule #{schedule.id} - Next due: {schedule.next_due_date || "N/A"}
+                Schedule #{schedule.id} - {schedule.equipment_name || `Equipment ${schedule.equipment_id}`} {schedule.site_name ? `@ ${schedule.site_name}` : ""} {schedule.due_date ? `(Due: ${formatDate(schedule.due_date)})` : ""}
               </span>
                     <button
                 className="secondary"

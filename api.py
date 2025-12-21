@@ -956,7 +956,10 @@ class ScheduleRead(BaseModel):
     equipment_identifier: Optional[str]
     notes: Optional[str]
     last_generated_until: Optional[str]
-    next_due_date: Optional[str]  # Computed
+    client_name: Optional[str] = None
+    client_address: Optional[str] = None
+    site_name: Optional[str] = None
+    site_address: Optional[str] = None
     completed: bool = False
     completed_at: Optional[str] = None  # YYYY-MM-DD HH:MM:SS timestamp when completed
 
@@ -971,10 +974,14 @@ def list_schedules(
             """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id, 
                       COALESCE(ce.name, tt.name) as equipment_name,
                       sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
-                      COALESCE(sch.completed, 0) as completed, sch.completed_at
+                      COALESCE(sch.completed, 0) as completed, sch.completed_at,
+                      c.name as client_name, c.address as client_address,
+                      s.name as site_name, s.address as site_address
                FROM schedules sch
                LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
                LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+               LEFT JOIN sites s ON sch.site_id = s.id
+               LEFT JOIN clients c ON s.client_id = c.id
                WHERE sch.site_id = ? AND COALESCE(sch.completed, 0) = 0 ORDER BY sch.anchor_date""",
             (site_id,)
         )
@@ -983,10 +990,14 @@ def list_schedules(
             """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
                       COALESCE(ce.name, tt.name) as equipment_name,
                       sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
-                      COALESCE(sch.completed, 0) as completed, sch.completed_at
+                      COALESCE(sch.completed, 0) as completed, sch.completed_at,
+                      c.name as client_name, c.address as client_address,
+                      s.name as site_name, s.address as site_address
                FROM schedules sch
                LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
                LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+               LEFT JOIN sites s ON sch.site_id = s.id
+               LEFT JOIN clients c ON s.client_id = c.id
                WHERE COALESCE(sch.completed, 0) = 0 ORDER BY sch.anchor_date"""
         )
     rows = cur.fetchall()
@@ -994,22 +1005,6 @@ def list_schedules(
     result = []
     for row in rows:
         schedule_dict = dict(row)
-        # Compute next_due_date
-        anchor = parse_date(schedule_dict['anchor_date']).date()
-        last_gen = parse_date(schedule_dict['last_generated_until']).date() if schedule_dict['last_generated_until'] else None
-        
-        # Get equipment rrule (try client_equipments first, fallback to test_types for migration)
-        equipment = db.execute("SELECT rrule FROM client_equipments WHERE id = ?", (schedule_dict['equipment_id'],)).fetchone()
-        if not equipment:
-            # Fallback to test_types for backward compatibility
-            equipment = db.execute("SELECT rrule FROM test_types WHERE id = ?", (schedule_dict['equipment_id'],)).fetchone()
-        
-        if equipment:
-            next_due = compute_next_due_date(anchor, equipment['rrule'], last_gen)
-            schedule_dict['next_due_date'] = next_due.isoformat()
-        else:
-            schedule_dict['next_due_date'] = None
-        
         schedule_dict['completed'] = bool(schedule_dict.get('completed', 0))
         result.append(ScheduleRead(**schedule_dict))
     
@@ -1026,10 +1021,14 @@ def list_completed_schedules(
             """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id, 
                       COALESCE(ce.name, tt.name) as equipment_name,
                       sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
-                      COALESCE(sch.completed, 0) as completed, sch.completed_at
+                      COALESCE(sch.completed, 0) as completed, sch.completed_at,
+                      c.name as client_name, c.address as client_address,
+                      s.name as site_name, s.address as site_address
                FROM schedules sch
                LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
                LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+               LEFT JOIN sites s ON sch.site_id = s.id
+               LEFT JOIN clients c ON s.client_id = c.id
                WHERE sch.site_id = ? AND COALESCE(sch.completed, 0) = 1 ORDER BY sch.completed_at DESC, sch.anchor_date DESC""",
             (site_id,)
         )
@@ -1038,10 +1037,14 @@ def list_completed_schedules(
             """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
                       COALESCE(ce.name, tt.name) as equipment_name,
                       sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
-                      COALESCE(sch.completed, 0) as completed, sch.completed_at
+                      COALESCE(sch.completed, 0) as completed, sch.completed_at,
+                      c.name as client_name, c.address as client_address,
+                      s.name as site_name, s.address as site_address
                FROM schedules sch
                LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
                LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+               LEFT JOIN sites s ON sch.site_id = s.id
+               LEFT JOIN clients c ON s.client_id = c.id
                WHERE COALESCE(sch.completed, 0) = 1 ORDER BY sch.completed_at DESC, sch.anchor_date DESC"""
         )
     rows = cur.fetchall()
@@ -1049,19 +1052,6 @@ def list_completed_schedules(
     result = []
     for row in rows:
         schedule_dict = dict(row)
-        anchor = parse_date(schedule_dict['anchor_date']).date()
-        last_gen = parse_date(schedule_dict['last_generated_until']).date() if schedule_dict['last_generated_until'] else None
-        
-        equipment = db.execute("SELECT rrule FROM client_equipments WHERE id = ?", (schedule_dict['equipment_id'],)).fetchone()
-        if not equipment:
-            equipment = db.execute("SELECT rrule FROM test_types WHERE id = ?", (schedule_dict['equipment_id'],)).fetchone()
-        
-        if equipment:
-            next_due = compute_next_due_date(anchor, equipment['rrule'], last_gen)
-            schedule_dict['next_due_date'] = next_due.isoformat()
-        else:
-            schedule_dict['next_due_date'] = None
-        
         schedule_dict['completed'] = bool(schedule_dict.get('completed', 0))
         result.append(ScheduleRead(**schedule_dict))
     
@@ -1228,10 +1218,14 @@ def get_schedule(schedule_id: int, db: sqlite3.Connection = Depends(get_db)):
         """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
                   COALESCE(ce.name, tt.name) as equipment_name,
                   sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
-                  COALESCE(sch.completed, 0) as completed, sch.completed_at
+                  COALESCE(sch.completed, 0) as completed, sch.completed_at,
+                  c.name as client_name, c.address as client_address,
+                  s.name as site_name, s.address as site_address
            FROM schedules sch
            LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
            LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+           LEFT JOIN sites s ON sch.site_id = s.id
+           LEFT JOIN clients c ON s.client_id = c.id
            WHERE sch.id = ?""",
         (schedule_id,),
     ).fetchone()
@@ -1240,22 +1234,7 @@ def get_schedule(schedule_id: int, db: sqlite3.Connection = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Schedule not found")
 
     schedule_dict = dict(row)
-    # Compute next_due_date
-    anchor = parse_date(schedule_dict['anchor_date']).date()
-    last_gen = parse_date(schedule_dict['last_generated_until']).date() if schedule_dict['last_generated_until'] else None
-    
-    # Get equipment rrule (try client_equipments first, fallback to test_types for migration)
-    equipment = db.execute("SELECT rrule FROM client_equipments WHERE id = ?", (schedule_dict['equipment_id'],)).fetchone()
-    if not equipment:
-        # Fallback to test_types for backward compatibility
-        equipment = db.execute("SELECT rrule FROM test_types WHERE id = ?", (schedule_dict['equipment_id'],)).fetchone()
-    
-    if equipment:
-        next_due = compute_next_due_date(anchor, equipment['rrule'], last_gen)
-        schedule_dict['next_due_date'] = next_due.isoformat()
-    else:
-        schedule_dict['next_due_date'] = None
-
+    schedule_dict['completed'] = bool(schedule_dict.get('completed', 0))
     return ScheduleRead(**schedule_dict)
 
 
@@ -1317,22 +1296,19 @@ def create_schedule(payload: ScheduleCreate, db: sqlite3.Connection = Depends(ge
         """SELECT sch.id, sch.site_id, sch.equipment_id,
                   COALESCE(ce.name, 'Unknown') as equipment_name,
                   sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
-                  COALESCE(sch.completed, 0) as completed, sch.completed_at
+                  COALESCE(sch.completed, 0) as completed, sch.completed_at,
+                  c.name as client_name, c.address as client_address,
+                  s.name as site_name, s.address as site_address
            FROM schedules sch
            LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
+           LEFT JOIN sites s ON sch.site_id = s.id
+           LEFT JOIN clients c ON s.client_id = c.id
            WHERE sch.id = ?""",
         (cur.lastrowid,),
     ).fetchone()
     
     schedule_dict = dict(row)
-    anchor = parse_date(schedule_dict['anchor_date']).date()
-    equipment = db.execute("SELECT rrule FROM client_equipments WHERE id = ?", (schedule_dict['equipment_id'],)).fetchone()
-    if equipment:
-        next_due = compute_next_due_date(anchor, equipment['rrule'], None)
-        schedule_dict['next_due_date'] = next_due.isoformat()
-    else:
-        schedule_dict['next_due_date'] = None
-
+    schedule_dict['completed'] = bool(schedule_dict.get('completed', 0))
     return ScheduleRead(**schedule_dict)
 
 
@@ -1391,30 +1367,19 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, db: sqlite3.Conne
         """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
                   COALESCE(ce.name, tt.name) as equipment_name,
                   sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
-                  COALESCE(sch.completed, 0) as completed, sch.completed_at
+                  COALESCE(sch.completed, 0) as completed, sch.completed_at,
+                  c.name as client_name, c.address as client_address,
+                  s.name as site_name, s.address as site_address
            FROM schedules sch
            LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
            LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+           LEFT JOIN sites s ON sch.site_id = s.id
+           LEFT JOIN clients c ON s.client_id = c.id
            WHERE sch.id = ?""",
         (schedule_id,),
     ).fetchone()
     
     schedule_dict = dict(row)
-    anchor = parse_date(schedule_dict['anchor_date']).date()
-    last_gen = parse_date(schedule_dict['last_generated_until']).date() if schedule_dict['last_generated_until'] else None
-    
-    # Get equipment rrule (try client_equipments first, fallback to test_types for migration)
-    equipment = db.execute("SELECT rrule FROM client_equipments WHERE id = ?", (schedule_dict['equipment_id'],)).fetchone()
-    if not equipment:
-        # Fallback to test_types for backward compatibility
-        equipment = db.execute("SELECT rrule FROM test_types WHERE id = ?", (schedule_dict['equipment_id'],)).fetchone()
-    
-    if equipment:
-        next_due = compute_next_due_date(anchor, equipment['rrule'], last_gen)
-        schedule_dict['next_due_date'] = next_due.isoformat()
-    else:
-        schedule_dict['next_due_date'] = None
-
     schedule_dict['completed'] = bool(schedule_dict.get('completed', 0))
     return ScheduleRead(**schedule_dict)
 
