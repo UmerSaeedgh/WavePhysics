@@ -686,6 +686,8 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
   const [uploading, setUploading] = useState(false);
   const [showCompletedModal, setShowCompletedModal] = useState(false);
   const [completedSchedules, setCompletedSchedules] = useState([]);
+  const [showScheduleDetailsModal, setShowScheduleDetailsModal] = useState(false);
+  const [selectedScheduleDetails, setSelectedScheduleDetails] = useState(null);
 
   useEffect(() => {
     onRefreshSchedules();
@@ -1219,7 +1221,10 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
               {schedules.map(schedule => {
                 const equipment = clientEquipments.find(e => e.id === schedule.equipment_id);
                 return (
-                  <li key={schedule.id} className="list-item">
+                  <li key={schedule.id} className="list-item" style={{ cursor: "pointer" }} onClick={() => {
+                    setSelectedScheduleDetails(schedule);
+                    setShowScheduleDetailsModal(true);
+                  }}>
                     <div className="list-main">
                       <div className="list-title">
                         {schedule.equipment_identifier || equipment?.name || `Equipment ID: ${schedule.equipment_id}`}
@@ -1234,7 +1239,7 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                         {schedule.site_address && ` • ${schedule.site_address}`}
                       </div>
                     </div>
-                    <div className="list-actions">
+                    <div className="list-actions" onClick={(e) => e.stopPropagation()}>
                       <button onClick={() => handleCompleteSchedule(schedule.id)}>Done</button>
                       <button onClick={() => { startEditSchedule(schedule); setShowScheduleForm(true); }}>Edit</button>
                       <button className="danger" onClick={() => handleDeleteSchedule(schedule.id)}>Delete</button>
@@ -1281,7 +1286,10 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                 {completedSchedules.map(schedule => {
                   const equipment = clientEquipments.find(e => e.id === schedule.equipment_id);
                   return (
-                    <li key={schedule.id} className="list-item">
+                    <li key={schedule.id} className="list-item" style={{ cursor: "pointer" }} onClick={() => {
+                      setSelectedScheduleDetails(schedule);
+                      setShowScheduleDetailsModal(true);
+                    }}>
                       <div className="list-main">
                         <div className="list-title">
                           {schedule.equipment_identifier || equipment?.name || `Equipment ID: ${schedule.equipment_id}`}
@@ -1297,7 +1305,7 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                           {schedule.completed_at && ` • Completed: ${schedule.completed_at}`}
                         </div>
                       </div>
-                      <div className="list-actions">
+                      <div className="list-actions" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => handleUndoSchedule(schedule.id)}>Undo</button>
                       </div>
                     </li>
@@ -1305,6 +1313,116 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                 })}
               </ul>
             )}
+          </div>
+        </div>
+      )}
+
+      {showScheduleDetailsModal && selectedScheduleDetails && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(45, 50, 52, 0.9)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }} onClick={() => setShowScheduleDetailsModal(false)}>
+          <div style={{
+            backgroundColor: "#D7E5D8",
+            padding: "2rem",
+            borderRadius: "0.5rem",
+            maxWidth: "800px",
+            maxHeight: "80vh",
+            overflow: "auto",
+            width: "90%",
+            color: "#2D3234"
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <h2 style={{ margin: 0, color: "#2D3234" }}>Schedule Details</h2>
+              <button onClick={() => setShowScheduleDetailsModal(false)} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+            </div>
+            
+            {(() => {
+              const schedule = selectedScheduleDetails;
+              const equipment = clientEquipments.find(e => e.id === schedule.equipment_id);
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                  {/* Schedule Information */}
+                  <div>
+                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Schedule Information</h3>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
+                      <div><strong>Equipment Name:</strong> {schedule.equipment_identifier || "N/A"}</div>
+                      <div><strong>Equipment Identifier:</strong> {equipment?.name || `ID: ${schedule.equipment_id}`}</div>
+                      <div><strong>Anchor Date:</strong> {formatDate(schedule.anchor_date)}</div>
+                      {schedule.due_date && <div><strong>Due Date:</strong> {formatDate(schedule.due_date)}</div>}
+                      {schedule.lead_weeks && <div><strong>Lead Weeks:</strong> {schedule.lead_weeks}</div>}
+                      {schedule.timezone && <div><strong>Timezone:</strong> {schedule.timezone}</div>}
+                      {schedule.completed_at && <div><strong>Completed At:</strong> {schedule.completed_at}</div>}
+                      {schedule.notes && (
+                        <div style={{ gridColumn: "1 / -1" }}>
+                          <strong>Notes:</strong>
+                          <div style={{ marginTop: "0.25rem", whiteSpace: "pre-wrap" }}>{schedule.notes}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Client Information */}
+                  <div>
+                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Client Information</h3>
+                    <div style={{ fontSize: "0.9rem" }}>
+                      <div><strong>Name:</strong> {schedule.client_name || "N/A"}</div>
+                      {schedule.client_address && <div><strong>Address:</strong> {schedule.client_address}</div>}
+                    </div>
+                  </div>
+
+                  {/* Site Information */}
+                  <div>
+                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
+                    <div style={{ fontSize: "0.9rem" }}>
+                      <div><strong>Name:</strong> {schedule.site_name || "N/A"}</div>
+                      {schedule.site_address && <div><strong>Address:</strong> {schedule.site_address}</div>}
+                    </div>
+                  </div>
+
+                  {/* Contacts */}
+                  {contactLinks && contactLinks.length > 0 && (
+                    <div>
+                      <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Contacts</h3>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {contactLinks.map((link, idx) => (
+                          <div key={idx} style={{ 
+                            padding: "0.75rem", 
+                            backgroundColor: "#8193A4", 
+                            borderRadius: "0.25rem",
+                            fontSize: "0.9rem"
+                          }}>
+                            <div style={{ fontWeight: "600" }}>
+                              {link.first_name} {link.last_name}
+                              {link.is_primary && " (Primary)"}
+                            </div>
+                            <div style={{ marginTop: "0.25rem" }}>
+                              <strong>Role:</strong> {link.role} {link.scope === 'CLIENT' ? '(Client)' : '(Site)'}
+                            </div>
+                            {link.email && <div><strong>Email:</strong> {link.email}</div>}
+                            {link.phone && <div><strong>Phone:</strong> {link.phone}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(!contactLinks || contactLinks.length === 0) && (
+                    <div>
+                      <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Contacts</h3>
+                      <div style={{ fontSize: "0.9rem", color: "#8193A4" }}>No contacts available</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -2727,6 +2845,9 @@ function SchedulesTab({
 }) {
   const [selectedSchedule, setSelectedSchedule] = useState(null);
   const [selectedSiteId, setSelectedSiteId] = useState(null);
+  const [showScheduleDetailsModal, setShowScheduleDetailsModal] = useState(false);
+  const [selectedScheduleDetails, setSelectedScheduleDetails] = useState(null);
+  const [scheduleContacts, setScheduleContacts] = useState([]);
   const [form, setForm] = useState({
     site_id: "",
     equipment_id: "",
@@ -2948,7 +3069,17 @@ function SchedulesTab({
             {filteredSchedules.map(schedule => {
               const site = sites.find(s => s.id === schedule.site_id);
               return (
-                <li key={schedule.id} className="list-item">
+                <li key={schedule.id} className="list-item" style={{ cursor: "pointer" }} onClick={async () => {
+                  setSelectedScheduleDetails(schedule);
+                  setShowScheduleDetailsModal(true);
+                  // Fetch contacts for this schedule's site
+                  try {
+                    const contacts = await apiCall(`/contacts/rollup/site/${schedule.site_id}`);
+                    setScheduleContacts(contacts || []);
+                  } catch (err) {
+                    setScheduleContacts([]);
+                  }
+                }}>
                   <div className="list-main">
                     <div className="list-title">
                       {schedule.equipment_identifier || schedule.equipment_name || `Equipment ID: ${schedule.equipment_id}`} @ {site?.name}
@@ -2963,7 +3094,7 @@ function SchedulesTab({
                       {schedule.site_address && ` • ${schedule.site_address}`}
                     </div>
                   </div>
-                  <div className="list-actions">
+                  <div className="list-actions" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => startEdit(schedule)}>Edit</button>
                     <button className="danger" onClick={() => handleDelete(schedule.id)}>Delete</button>
                   </div>
@@ -2973,6 +3104,115 @@ function SchedulesTab({
           </ul>
         )}
       </div>
+
+      {showScheduleDetailsModal && selectedScheduleDetails && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(45, 50, 52, 0.9)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }} onClick={() => setShowScheduleDetailsModal(false)}>
+          <div style={{
+            backgroundColor: "#D7E5D8",
+            padding: "2rem",
+            borderRadius: "0.5rem",
+            maxWidth: "800px",
+            maxHeight: "80vh",
+            overflow: "auto",
+            width: "90%",
+            color: "#2D3234"
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <h2 style={{ margin: 0, color: "#2D3234" }}>Schedule Details</h2>
+              <button onClick={() => setShowScheduleDetailsModal(false)} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+            </div>
+            
+            {(() => {
+              const schedule = selectedScheduleDetails;
+              const equipment = clientEquipments.find(e => e.id === schedule.equipment_id);
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                  {/* Schedule Information */}
+                  <div>
+                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Schedule Information</h3>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
+                      <div><strong>Equipment Name:</strong> {schedule.equipment_identifier || "N/A"}</div>
+                      <div><strong>Equipment Identifier:</strong> {schedule.equipment_name || equipment?.name || `ID: ${schedule.equipment_id}`}</div>
+                      <div><strong>Anchor Date:</strong> {formatDate(schedule.anchor_date)}</div>
+                      {schedule.due_date && <div><strong>Due Date:</strong> {formatDate(schedule.due_date)}</div>}
+                      {schedule.lead_weeks && <div><strong>Lead Weeks:</strong> {schedule.lead_weeks}</div>}
+                      {schedule.timezone && <div><strong>Timezone:</strong> {schedule.timezone}</div>}
+                      {schedule.notes && (
+                        <div style={{ gridColumn: "1 / -1" }}>
+                          <strong>Notes:</strong>
+                          <div style={{ marginTop: "0.25rem", whiteSpace: "pre-wrap" }}>{schedule.notes}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Client Information */}
+                  <div>
+                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Client Information</h3>
+                    <div style={{ fontSize: "0.9rem" }}>
+                      <div><strong>Name:</strong> {schedule.client_name || "N/A"}</div>
+                      {schedule.client_address && <div><strong>Address:</strong> {schedule.client_address}</div>}
+                    </div>
+                  </div>
+
+                  {/* Site Information */}
+                  <div>
+                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
+                    <div style={{ fontSize: "0.9rem" }}>
+                      <div><strong>Name:</strong> {schedule.site_name || "N/A"}</div>
+                      {schedule.site_address && <div><strong>Address:</strong> {schedule.site_address}</div>}
+                    </div>
+                  </div>
+
+                  {/* Contacts */}
+                  {scheduleContacts && scheduleContacts.length > 0 && (
+                    <div>
+                      <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Contacts</h3>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {scheduleContacts.map((link, idx) => (
+                          <div key={idx} style={{ 
+                            padding: "0.75rem", 
+                            backgroundColor: "#8193A4", 
+                            borderRadius: "0.25rem",
+                            fontSize: "0.9rem"
+                          }}>
+                            <div style={{ fontWeight: "600" }}>
+                              {link.first_name} {link.last_name}
+                              {link.is_primary && " (Primary)"}
+                            </div>
+                            <div style={{ marginTop: "0.25rem" }}>
+                              <strong>Role:</strong> {link.role} {link.scope === 'CLIENT' ? '(Client)' : '(Site)'}
+                            </div>
+                            {link.email && <div><strong>Email:</strong> {link.email}</div>}
+                            {link.phone && <div><strong>Phone:</strong> {link.phone}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(!scheduleContacts || scheduleContacts.length === 0) && (
+                    <div>
+                      <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Contacts</h3>
+                      <div style={{ fontSize: "0.9rem", color: "#8193A4" }}>No contacts available</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
