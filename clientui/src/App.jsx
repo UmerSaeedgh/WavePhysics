@@ -2,7 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import "./App.css";
 import wavePhysicsLogo from "./assets/image.png";
 
-const API_BASE = "https://wavephysics.onrender.com";
+// const API_BASE = "https://wavephysics.onrender.com";
+const API_BASE = "http://127.0.0.1:8000";
 
 // Helper function to format dates to yyyy-mm-dd
 function formatDate(dateString) {
@@ -25,7 +26,7 @@ function formatDate(dateString) {
 }
 
 function App() {
-  const [view, setView] = useState("clients"); // "clients", "client-sites", "site-details"
+  const [view, setView] = useState("clients"); // "clients", "client-sites", "site-details", "quick-views", "reports", "admin"
   const [selectedClient, setSelectedClient] = useState(null);
   const [selectedSite, setSelectedSite] = useState(null);
   const [scrollToScheduleId, setScrollToScheduleId] = useState(null);
@@ -316,6 +317,12 @@ function App() {
           >
             Reports
           </button>
+          <button
+            className={view === "admin" ? "active" : ""}
+            onClick={() => setView("admin")}
+          >
+            Admin
+          </button>
         </nav>
       </header>
 
@@ -415,6 +422,10 @@ function App() {
 
         {view === "reports" && (
           <ReportsTab apiCall={apiCall} setError={setError} />
+        )}
+
+        {view === "admin" && (
+          <AdminTab apiCall={apiCall} setError={setError} />
         )}
 
       </main>
@@ -1001,7 +1012,11 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
       
       // Show success message with stats
       const stats = result.stats || {};
-      const message = `Import completed! Created: ${stats.equipments_created || 0} equipments, ${stats.schedules_created || 0} schedules.`;
+      let message = `Import completed successfully.\n\n`;
+      message += `Created: ${stats.clients_created || 0} client(s), ${stats.sites_created || 0} site(s), ${stats.equipments_created || 0} equipment type(s), ${stats.schedules_created || 0} schedule(s).\n`;
+      if (stats.duplicates_skipped > 0) {
+        message += `${stats.duplicates_skipped} record(s) already exist and were skipped.\n`;
+      }
       
       // Refresh data after import - refresh equipments first, then schedules
       await onRefreshEquipments();
@@ -3803,6 +3818,144 @@ function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule
             ))}
           </ul>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Admin Tab
+function AdminTab({ apiCall, setError }) {
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  async function handleImportEquipments(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      setError("File must be an Excel file (.xlsx or .xls)");
+      return;
+    }
+
+    setUploading(true);
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${API_BASE}/admin/import/equipments`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      const stats = result.stats || {};
+      
+      let message = `Import completed successfully.\n\n`;
+      message += `Created: ${stats.equipments_created || 0} equipment type(s), ${stats.schedules_created || 0} schedule(s).\n`;
+      if (stats.rows_skipped > 0) {
+        message += `Skipped: ${stats.rows_skipped} row(s) due to missing or invalid data.\n`;
+      }
+      if (stats.duplicates_skipped > 0) {
+        message += `${stats.duplicates_skipped} record(s) already exist and were skipped.\n`;
+      }
+      
+      if (stats.errors && stats.errors.length > 0) {
+        const errorDetails = stats.errors.slice(0, 20).join('\n');
+        const errorMsg = `${message}\n\nErrors (${stats.errors.length}):\n${errorDetails}${stats.errors.length > 20 ? '\n... and more' : ''}`;
+        setError(errorMsg);
+        alert(errorMsg);
+      } else {
+        alert(message);
+      }
+    } catch (err) {
+      setError(err.message || "Failed to import equipment file");
+      alert(err.message || "Failed to import equipment file");
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  }
+
+  async function handleExportEquipments() {
+    try {
+      const response = await fetch(`${API_BASE}/admin/export/equipments`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'equipments_export.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      setError(err.message || "Failed to export equipments");
+    }
+  }
+
+  return (
+    <div className="admin-tab">
+      <div className="card">
+        <div className="card-header">
+          <h2>Admin Options</h2>
+        </div>
+        
+        <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+          {/* Import Equipments */}
+          <div>
+            <h3>Import Equipments</h3>
+            <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
+              Import equipment schedules from Excel file. Required columns: Client, Site, Equipment (identifier), Equipment Name, Anchor Date.
+              <br />
+              <strong>Note:</strong> If client or site doesn't exist, the row will be skipped. If equipment identifier doesn't exist, a new equipment will be created.
+            </p>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleImportEquipments}
+                disabled={uploading}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                className="primary"
+                disabled={uploading}
+                style={{ cursor: uploading ? "not-allowed" : "pointer" }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploading ? "Uploading..." : "📁 Import Equipments"}
+              </button>
+            </div>
+          </div>
+
+          {/* Export Equipments */}
+          <div>
+            <h3>Export Equipments</h3>
+            <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
+              Export all equipment schedules to Excel file.
+            </p>
+            <button
+              type="button"
+              className="primary"
+              onClick={handleExportEquipments}
+            >
+              📥 Export Equipments
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

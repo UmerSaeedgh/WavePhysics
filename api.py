@@ -2213,7 +2213,11 @@ async def import_excel(
                 client_col = col
             elif site_col is None and any(x in col_lower for x in ['site', 'location', 'facility']):
                 site_col = col
-            elif equipment_col is None and any(x in col_lower for x in ['equipment', 'test', 'test_type', 'type', 'modality']):
+            # "identifier" column = Equipment Identifier (dropdown value - used to match/create equipment)
+            elif equipment_col is None and ('identifier' in col_lower or 'equipment_identifier' in col_lower):
+                equipment_col = col
+            # Other equipment type patterns (but NOT "equipment" itself, as that's the name)
+            elif equipment_col is None and any(x in col_lower for x in ['test', 'test_type', 'type', 'modality']):
                 equipment_col = col
             elif anchor_date_col is None and any(x in col_lower for x in ['anchor', 'anchor_date', 'start_date', 'initial_date']):
                 anchor_date_col = col
@@ -2227,10 +2231,10 @@ async def import_excel(
                 address_col = col
             elif notes_col is None and 'note' in col_lower:
                 notes_col = col
-            # Prioritize 'equipment_name', then 'identifier' or 'equipment_identifier' - these are the most specific
+            # "equipment" or "equipment_name" column = Equipment Name (textarea value - stored in schedule.equipment_identifier)
             elif identifier_col is None and 'equipment_name' in col_lower:
                 identifier_col = col
-            elif identifier_col is None and ('identifier' in col_lower or 'equipment_identifier' in col_lower):
+            elif identifier_col is None and col_lower == 'equipment':
                 identifier_col = col
         
         # Second pass: look for less specific patterns if identifier not found yet
@@ -2283,6 +2287,7 @@ async def import_excel(
             "sites_created": 0,
             "equipments_created": 0,
             "schedules_created": 0,
+            "duplicates_skipped": 0,
             "errors": []
         }
         
@@ -2359,6 +2364,7 @@ async def import_excel(
                     
                     site_id = site_map[site_key]
                 
+                # equipment_col now points to "identifier" column (equipment type/dropdown value)
                 equipment_name = str(row[equipment_col]).strip().upper()
                 if not equipment_name or equipment_name in ['NAN', 'NONE', '']:
                     continue
@@ -2443,7 +2449,8 @@ async def import_excel(
                 if notes and notes.lower() in ['nan', 'none', '']:
                     notes = None
                 
-                # Get equipment identifier - make sure we're reading from the correct column
+                # Get equipment name (textarea value) - identifier_col now points to "equipment" column
+                # This will be stored in schedule.equipment_identifier field
                 equipment_identifier = None
                 if identifier_col and pd.notna(row.get(identifier_col)):
                     raw_value = row[identifier_col]
@@ -2486,7 +2493,9 @@ async def import_excel(
                     stats["schedules_created"] += 1
                 except sqlite3.IntegrityError as e:
                     error_str = str(e)
-                    if "UNIQUE constraint" not in error_str:
+                    if "UNIQUE constraint" in error_str:
+                        stats["duplicates_skipped"] += 1
+                    else:
                         stats["errors"].append(f"Row {idx + 2}: {error_str}")
                 except Exception as e:
                     stats["errors"].append(f"Row {idx + 2}: {str(e)}")
@@ -2504,3 +2513,341 @@ async def import_excel(
         raise HTTPException(status_code=400, detail="Excel file is empty")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error processing Excel file: {str(e)}")
+
+
+# ========== EQUIPMENT IMPORT/EXPORT ==========
+
+@app.post("/admin/import/equipments")
+async def import_equipments(
+    file: UploadFile = File(...),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    """
+    Import equipment schedules from Excel file.
+    Required columns: Client, Site, Equipment (identifier), Equipment Name, Anchor Date
+    - If client or site doesn't exist, the row is skipped (voided)
+    - If equipment identifier doesn't exist, a new equipment is created
+    """
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(status_code=400, detail="File must be an Excel file (.xlsx or .xls)")
+    
+    try:
+        # Read Excel file
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+        
+        # Normalize column names (case-insensitive, remove spaces)
+        df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_').str.replace('-', '_')
+        
+        # Identify columns
+        client_col = None
+        site_col = None
+        equipment_col = None  # Equipment Identifier (dropdown value)
+        equipment_name_col = None  # Equipment Name (textarea value)
+        anchor_date_col = None
+        due_date_col = None
+        lead_weeks_col = None
+        timezone_col = None
+        notes_col = None
+        
+        for col in df.columns:
+            col_lower = col.lower().strip()
+            if client_col is None and any(x in col_lower for x in ['client', 'customer']):
+                client_col = col
+            elif site_col is None and any(x in col_lower for x in ['site', 'location', 'facility']):
+                site_col = col
+            elif equipment_col is None and ('identifier' in col_lower or 'equipment_identifier' in col_lower):
+                # "identifier" column = Equipment Identifier (dropdown value - used to match/create equipment)
+                equipment_col = col
+            elif equipment_col is None and any(x in col_lower for x in ['test', 'test_type', 'type', 'modality']):
+                # Other equipment identifier patterns (but NOT "equipment" itself, as that's the name)
+                equipment_col = col
+            elif equipment_name_col is None and 'equipment_name' in col_lower:
+                # "equipment_name" column = Equipment Name (textarea value - stored in schedule.equipment_identifier)
+                equipment_name_col = col
+            elif equipment_name_col is None and col_lower == 'equipment':
+                # "equipment" column = Equipment Name (textarea value - stored in schedule.equipment_identifier)
+                equipment_name_col = col
+            elif anchor_date_col is None and any(x in col_lower for x in ['anchor', 'anchor_date', 'start_date', 'initial_date']):
+                anchor_date_col = col
+            elif due_date_col is None and any(x in col_lower for x in ['due', 'due_date', 'next_due']):
+                due_date_col = col
+            elif lead_weeks_col is None and any(x in col_lower for x in ['lead', 'lead_weeks', 'lead_weeks_override']):
+                lead_weeks_col = col
+            elif timezone_col is None and any(x in col_lower for x in ['timezone', 'tz', 'time_zone']):
+                timezone_col = col
+            elif notes_col is None and 'note' in col_lower:
+                notes_col = col
+        
+        # Check required columns
+        if not client_col or not site_col or not equipment_col or not equipment_name_col or not anchor_date_col:
+            missing = []
+            if not client_col: missing.append("Client")
+            if not site_col: missing.append("Site")
+            if not equipment_col: missing.append("Equipment/Equipment Identifier")
+            if not equipment_name_col: missing.append("Equipment Name")
+            if not anchor_date_col: missing.append("Anchor Date")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing required columns: {', '.join(missing)}. Found columns: {', '.join(df.columns)}"
+            )
+        
+        # Track statistics
+        stats = {
+            "rows_processed": 0,
+            "rows_skipped": 0,
+            "schedules_created": 0,
+            "equipments_created": 0,
+            "duplicates_skipped": 0,
+            "errors": []
+        }
+        
+        # Process each row
+        for idx, row in df.iterrows():
+            stats["rows_processed"] += 1
+            try:
+                # Get client name
+                client_name = str(row[client_col]).strip()
+                if not client_name or client_name.lower() in ['nan', 'none', '']:
+                    stats["rows_skipped"] += 1
+                    stats["errors"].append(f"Row {idx + 2}: Missing client name")
+                    continue
+                
+                # Match client (must exist, don't create)
+                client_row = db.execute("SELECT id FROM clients WHERE name = ?", (client_name,)).fetchone()
+                if not client_row:
+                    stats["rows_skipped"] += 1
+                    stats["errors"].append(f"Row {idx + 2}: Client '{client_name}' not found")
+                    continue
+                client_id = client_row['id']
+                
+                # Get site name
+                site_name = str(row[site_col]).strip()
+                if not site_name or site_name.lower() in ['nan', 'none', '']:
+                    stats["rows_skipped"] += 1
+                    stats["errors"].append(f"Row {idx + 2}: Missing site name")
+                    continue
+                
+                # Match site (must exist under client, don't create)
+                site_row = db.execute(
+                    "SELECT id, timezone FROM sites WHERE client_id = ? AND name = ?",
+                    (client_id, site_name)
+                ).fetchone()
+                if not site_row:
+                    stats["rows_skipped"] += 1
+                    stats["errors"].append(f"Row {idx + 2}: Site '{site_name}' not found for client '{client_name}'")
+                    continue
+                site_id = site_row['id']
+                default_timezone = site_row['timezone'] or "America/Chicago"
+                
+                # Get equipment identifier (dropdown value)
+                equipment_identifier = str(row[equipment_col]).strip().upper()
+                if not equipment_identifier or equipment_identifier in ['NAN', 'NONE', '']:
+                    stats["rows_skipped"] += 1
+                    stats["errors"].append(f"Row {idx + 2}: Missing equipment identifier")
+                    continue
+                
+                # Match or create equipment
+                equipment_row = db.execute(
+                    "SELECT id, default_lead_weeks FROM client_equipments WHERE client_id = ? AND UPPER(name) = ?",
+                    (client_id, equipment_identifier)
+                ).fetchone()
+                
+                if equipment_row:
+                    equipment_id = equipment_row['id']
+                    default_lead_weeks = equipment_row['default_lead_weeks'] or 4
+                else:
+                    # Create new equipment
+                    rrule_str = "FREQ=WEEKLY;INTERVAL=52"
+                    cur = db.execute(
+                        "INSERT INTO client_equipments (client_id, name, interval_weeks, rrule, default_lead_weeks, is_custom) VALUES (?, ?, ?, ?, ?, ?)",
+                        (client_id, equipment_identifier, 52, rrule_str, 4, 1)
+                    )
+                    db.commit()
+                    equipment_id = cur.lastrowid
+                    default_lead_weeks = 4
+                    stats["equipments_created"] += 1
+                    
+                    # Create test_type entry
+                    test_type = db.execute("SELECT id FROM test_types WHERE name = ?", (equipment_identifier,)).fetchone()
+                    if not test_type:
+                        db.execute(
+                            "INSERT INTO test_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
+                            (equipment_identifier, 52, rrule_str, 4)
+                        )
+                        db.commit()
+                
+                # Get or create test_type for schedule FK
+                test_type = db.execute("SELECT id FROM test_types WHERE name = ?", (equipment_identifier,)).fetchone()
+                if test_type:
+                    test_type_id = test_type['id']
+                else:
+                    cur = db.execute(
+                        "INSERT INTO test_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
+                        (equipment_identifier, 52, "FREQ=WEEKLY;INTERVAL=52", 4)
+                    )
+                    db.commit()
+                    test_type_id = cur.lastrowid
+                
+                # Get equipment name (textarea value - equipment_identifier field in schedule)
+                equipment_name = None
+                if equipment_name_col and pd.notna(row.get(equipment_name_col)):
+                    raw_value = row[equipment_name_col]
+                    if not pd.isna(raw_value) and not isinstance(raw_value, (int, float)):
+                        equipment_name = str(raw_value).strip()
+                        if equipment_name.lower() in ['nan', 'none', '']:
+                            equipment_name = None
+                
+                # Parse anchor date (required)
+                if pd.isna(row[anchor_date_col]):
+                    stats["rows_skipped"] += 1
+                    stats["errors"].append(f"Row {idx + 2}: Missing anchor date")
+                    continue
+                
+                try:
+                    if isinstance(row[anchor_date_col], pd.Timestamp):
+                        anchor_date = row[anchor_date_col].date().isoformat()
+                    elif isinstance(row[anchor_date_col], dt.date):
+                        anchor_date = row[anchor_date_col].isoformat()
+                    else:
+                        anchor_date = parse_date(str(row[anchor_date_col])).date().isoformat()
+                except Exception as e:
+                    stats["rows_skipped"] += 1
+                    stats["errors"].append(f"Row {idx + 2}: Invalid anchor date: {str(e)}")
+                    continue
+                
+                # Parse due date (optional)
+                due_date = None
+                if due_date_col and pd.notna(row.get(due_date_col)):
+                    try:
+                        if isinstance(row[due_date_col], pd.Timestamp):
+                            due_date = row[due_date_col].date().isoformat()
+                        elif isinstance(row[due_date_col], dt.date):
+                            due_date = row[due_date_col].isoformat()
+                        else:
+                            due_date = parse_date(str(row[due_date_col])).date().isoformat()
+                    except:
+                        pass
+                
+                # Parse lead weeks (optional)
+                lead_weeks = None
+                if lead_weeks_col and pd.notna(row.get(lead_weeks_col)):
+                    try:
+                        lead_weeks = int(float(row[lead_weeks_col]))
+                    except:
+                        pass
+                if lead_weeks is None:
+                    lead_weeks = default_lead_weeks
+                
+                # Parse timezone (optional)
+                timezone = None
+                if timezone_col and pd.notna(row.get(timezone_col)):
+                    timezone = str(row[timezone_col]).strip()
+                    if timezone.lower() in ['nan', 'none', '']:
+                        timezone = None
+                if not timezone:
+                    timezone = default_timezone
+                
+                # Get notes (optional)
+                notes = None
+                if notes_col and pd.notna(row.get(notes_col)):
+                    notes = str(row[notes_col]).strip()
+                    if notes.lower() in ['nan', 'none', '']:
+                        notes = None
+                
+                # Create schedule
+                try:
+                    db.execute(
+                        "INSERT INTO schedules (site_id, equipment_id, test_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (site_id, equipment_id, test_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_name, notes)
+                    )
+                    db.commit()
+                    stats["schedules_created"] += 1
+                except sqlite3.IntegrityError as e:
+                    error_str = str(e)
+                    if "UNIQUE constraint" in error_str:
+                        stats["duplicates_skipped"] += 1
+                    else:
+                        stats["errors"].append(f"Row {idx + 2}: {error_str}")
+                except Exception as e:
+                    stats["errors"].append(f"Row {idx + 2}: {str(e)}")
+                    
+            except Exception as e:
+                stats["rows_skipped"] += 1
+                stats["errors"].append(f"Row {idx + 2}: {str(e)}")
+        
+        return {
+            "message": "Import completed",
+            "stats": stats,
+            "total_rows_processed": len(df)
+        }
+    
+    except pd.errors.EmptyDataError:
+        raise HTTPException(status_code=400, detail="Excel file is empty")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error processing Excel file: {str(e)}")
+
+
+@app.get("/admin/export/equipments")
+async def export_equipments(
+    db: sqlite3.Connection = Depends(get_db)
+):
+    """
+    Export all equipment schedules to Excel format
+    """
+    try:
+        # Query all schedules with related data
+        # Note: ce.name = equipment type (identifier/dropdown), sch.equipment_identifier = equipment name (equipment/textarea)
+        cur = db.execute("""
+            SELECT 
+                c.name as client_name,
+                s.name as site_name,
+                ce.name as equipment_type,  -- This is the identifier (dropdown value)
+                sch.equipment_identifier as equipment_name,  -- This is the equipment name (textarea value)
+                sch.anchor_date,
+                sch.due_date,
+                sch.lead_weeks,
+                sch.timezone,
+                sch.notes
+            FROM schedules sch
+            JOIN sites s ON sch.site_id = s.id
+            JOIN clients c ON s.client_id = c.id
+            JOIN client_equipments ce ON sch.equipment_id = ce.id
+            WHERE sch.completed = 0
+            ORDER BY c.name, s.name, sch.anchor_date
+        """)
+        
+        rows = cur.fetchall()
+        
+        # Create DataFrame
+        data = []
+        for row in rows:
+            data.append({
+                "Client": row['client_name'],
+                "Site": row['site_name'],
+                "Identifier": row['equipment_type'],  # Equipment type (dropdown value from ce.name)
+                "Equipment": row['equipment_name'] or "",  # Equipment name (textarea value from sch.equipment_identifier)
+                "Anchor Date": row['anchor_date'],
+                "Due Date": row['due_date'] or "",
+                "Lead Weeks": row['lead_weeks'],
+                "Timezone": row['timezone'] or "",
+                "Notes": row['notes'] or ""
+            })
+        
+        df = pd.DataFrame(data)
+        
+        # Create Excel file in memory
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Equipments')
+        
+        output.seek(0)
+        
+        return Response(
+            content=output.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=equipments_export.xlsx"}
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting equipments: {str(e)}")
