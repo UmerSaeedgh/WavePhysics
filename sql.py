@@ -1,8 +1,11 @@
 from pathlib import Path
+import os
 import sqlite3
 import datetime as dt
 
-DB_PATH = Path("WaveClients.db")
+
+DB_PATH = Path(os.getenv("DATABASE_PATH", "data/WaveClients.db"))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 def connect_db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
