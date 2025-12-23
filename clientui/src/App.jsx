@@ -1,9 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import "./App.css";
 import wavePhysicsLogo from "./assets/image.png";
-
-const API_BASE = "https://wavephysics.onrender.com";
-// const API_BASE = "http://127.0.0.1:8000";
+import { API_BASE } from "./config";
 
 // Helper function to format dates to yyyy-mm-dd
 function formatDate(dateString) {
