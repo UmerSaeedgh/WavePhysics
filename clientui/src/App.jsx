@@ -995,7 +995,7 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
             >
               Show Completed Schedules
             </button>
-            <button className="primary" onClick={() => { resetScheduleForm(); setShowScheduleForm(true); }} style={{ marginTop: 0 }}>+ Add New Schedule</button>
+            <button className="primary" onClick={() => { resetScheduleForm(); setShowScheduleForm(true); }} style={{ marginTop: 0 }}>+ Add New Equipment</button>
           </div>
         </div>
 
@@ -1215,7 +1215,7 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
         )}
 
         {schedules.length === 0 ? (
-          <p className="empty">No schedules yet. Click "Add New Schedule" to get started.</p>
+          <p className="empty">No schedules yet. Click "Add New Equipment" to get started.</p>
         ) : (
           <div style={{ maxHeight: "420px", overflowY: "auto", overflowX: "hidden" }}>
             <ul className="list">
