@@ -1013,7 +1013,7 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                 />
               </label>
               <label>
-                Equipment Identifier *
+                Equipment Type *
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                   <select name="equipment_id" value={scheduleForm.equipment_id} onChange={handleScheduleChange} required style={{ flex: 1 }}>
                     <option value="">Select equipment</option>
@@ -1362,7 +1362,7 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                     <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Schedule Information</h3>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
                       <div><strong>Equipment Name:</strong> {schedule.equipment_identifier || "N/A"}</div>
-                      <div><strong>Equipment Identifier:</strong> {equipment?.name || `ID: ${schedule.equipment_id}`}</div>
+                      <div><strong>Equipment Type:</strong> {equipment?.name || `ID: ${schedule.equipment_id}`}</div>
                       <div><strong>Anchor Date:</strong> {formatDate(schedule.anchor_date)}</div>
                       {schedule.due_date && <div><strong>Due Date:</strong> {formatDate(schedule.due_date)}</div>}
                       {schedule.lead_weeks && <div><strong>Lead Weeks:</strong> {schedule.lead_weeks}</div>}
@@ -2995,7 +2995,7 @@ function SchedulesTab({
             />
           </label>
           <label>
-            Equipment Identifier *
+            Equipment Type *
             <select
               name="equipment_id"
               value={form.equipment_id}
@@ -3151,7 +3151,7 @@ function SchedulesTab({
                     <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Schedule Information</h3>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
                       <div><strong>Equipment Name:</strong> {schedule.equipment_identifier || "N/A"}</div>
-                      <div><strong>Equipment Identifier:</strong> {schedule.equipment_name || equipment?.name || `ID: ${schedule.equipment_id}`}</div>
+                      <div><strong>Equipment Type:</strong> {schedule.equipment_name || equipment?.name || `ID: ${schedule.equipment_id}`}</div>
                       <div><strong>Anchor Date:</strong> {formatDate(schedule.anchor_date)}</div>
                       {schedule.due_date && <div><strong>Due Date:</strong> {formatDate(schedule.due_date)}</div>}
                       {schedule.lead_weeks && <div><strong>Lead Weeks:</strong> {schedule.lead_weeks}</div>}
