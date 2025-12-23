@@ -3826,7 +3826,9 @@ function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule
 // Admin Tab
 function AdminTab({ apiCall, setError }) {
   const [uploading, setUploading] = useState(false);
+  const [uploadingTemporary, setUploadingTemporary] = useState(false);
   const fileInputRef = useRef(null);
+  const temporaryFileInputRef = useRef(null);
 
   async function handleImportEquipments(e) {
     const file = e.target.files[0];
@@ -3883,6 +3885,61 @@ function AdminTab({ apiCall, setError }) {
     }
   }
 
+  async function handleTemporaryDataUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      setError("File must be an Excel file (.xlsx or .xls)");
+      return;
+    }
+
+    setUploadingTemporary(true);
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${API_BASE}/admin/import/temporary`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      const stats = result.stats || {};
+      
+      let message = `Import completed successfully.\n\n`;
+      message += `Created: ${stats.clients_created || 0} client(s), ${stats.sites_created || 0} site(s), ${stats.equipments_created || 0} equipment type(s), ${stats.schedules_created || 0} schedule(s).\n`;
+      if (stats.rows_skipped > 0) {
+        message += `Skipped: ${stats.rows_skipped} row(s) due to missing or invalid data.\n`;
+      }
+      if (stats.duplicates_skipped > 0) {
+        message += `${stats.duplicates_skipped} record(s) already exist and were skipped.\n`;
+      }
+      
+      if (stats.errors && stats.errors.length > 0) {
+        const errorDetails = stats.errors.slice(0, 20).join('\n');
+        const errorMsg = `${message}\n\nErrors (${stats.errors.length}):\n${errorDetails}${stats.errors.length > 20 ? '\n... and more' : ''}`;
+        setError(errorMsg);
+        alert(errorMsg);
+      } else {
+        alert(message);
+      }
+    } catch (err) {
+      setError(err.message || "Failed to import temporary data file");
+      alert(err.message || "Failed to import temporary data file");
+    } finally {
+      setUploadingTemporary(false);
+      e.target.value = '';
+    }
+  }
+
   async function handleExportEquipments() {
     try {
       const response = await fetch(`${API_BASE}/admin/export/equipments`);
@@ -3926,17 +3983,46 @@ function AdminTab({ apiCall, setError }) {
                 type="file"
                 accept=".xlsx,.xls"
                 onChange={handleImportEquipments}
-                disabled={uploading}
+                disabled={uploading || uploadingTemporary}
                 style={{ display: "none" }}
               />
               <button
                 type="button"
                 className="primary"
-                disabled={uploading}
-                style={{ cursor: uploading ? "not-allowed" : "pointer" }}
+                disabled={uploading || uploadingTemporary}
+                style={{ cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer" }}
                 onClick={() => fileInputRef.current?.click()}
               >
                 {uploading ? "Uploading..." : "📁 Import Equipments"}
+              </button>
+            </div>
+          </div>
+
+          {/* Temporary Data Upload */}
+          <div>
+            <h3>Temporary Data Upload</h3>
+            <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
+              Import equipment schedules from Excel file. Required columns: Client, Site, Equipment (identifier), Equipment Name, Anchor Date.
+              <br />
+              <strong>Note:</strong> If client or site doesn't exist, they will be created automatically. If equipment identifier doesn't exist, a new equipment will be created.
+            </p>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <input
+                ref={temporaryFileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleTemporaryDataUpload}
+                disabled={uploading || uploadingTemporary}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                className="primary"
+                disabled={uploading || uploadingTemporary}
+                style={{ cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer" }}
+                onClick={() => temporaryFileInputRef.current?.click()}
+              >
+                {uploadingTemporary ? "Uploading..." : "📁 Temporary Data Upload"}
               </button>
             </div>
           </div>
