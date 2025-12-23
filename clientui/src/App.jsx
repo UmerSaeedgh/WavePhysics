@@ -729,7 +729,6 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
     default_lead_weeks: "4",
   });
   const [showEquipmentForm, setShowEquipmentForm] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [showCompletedModal, setShowCompletedModal] = useState(false);
   const [completedSchedules, setCompletedSchedules] = useState([]);
   const [showScheduleDetailsModal, setShowScheduleDetailsModal] = useState(false);
@@ -969,79 +968,6 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
     }
   }
 
-  async function handleFileUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      setError("Please upload an Excel file (.xlsx or .xls)");
-      return;
-    }
-
-    setUploading(true);
-    setError("");
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const url = `${API_BASE}/import/excel?site_id=${site.id}`;
-      console.log('Uploading to:', url);
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        body: formData,
-      });
-
-      console.log('Response status:', response.status, response.statusText);
-
-      if (!response.ok) {
-        let errorMessage = "Failed to import Excel file";
-        try {
-          const error = await response.json();
-          console.error('Error response:', error);
-          errorMessage = error.detail || error.message || errorMessage;
-        } catch (e) {
-          console.error('Failed to parse error response:', e);
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const result = await response.json();
-      
-      // Show success message with stats
-      const stats = result.stats || {};
-      let message = `Import completed successfully.\n\n`;
-      message += `Created: ${stats.clients_created || 0} client(s), ${stats.sites_created || 0} site(s), ${stats.equipments_created || 0} equipment type(s), ${stats.schedules_created || 0} schedule(s).\n`;
-      if (stats.duplicates_skipped > 0) {
-        message += `${stats.duplicates_skipped} record(s) already exist and were skipped.\n`;
-      }
-      
-      // Refresh data after import - refresh equipments first, then schedules
-      await onRefreshEquipments();
-      // Small delay to ensure equipments are loaded before schedules try to match them
-      await new Promise(resolve => setTimeout(resolve, 100));
-      await onRefreshSchedules();
-      
-      if (stats.errors && stats.errors.length > 0) {
-        const errorDetails = stats.errors.slice(0, 10).join('\n'); // Show first 10 errors
-        const errorMsg = `${message}\n\nErrors (${stats.errors.length}):\n${errorDetails}${stats.errors.length > 10 ? '\n... and more' : ''}`;
-        setError(errorMsg);
-        console.error("Import errors:", stats.errors);
-        alert(errorMsg);
-      } else {
-        alert(message);
-      }
-    } catch (err) {
-      setError(err.message || "Failed to import Excel file");
-    } finally {
-      setUploading(false);
-      // Reset file input
-      e.target.value = '';
-    }
-  }
-
   const [showScheduleForm, setShowScheduleForm] = useState(false);
   const [showNewEquipmentForm, setShowNewEquipmentForm] = useState(false);
   const [newEquipmentForm, setNewEquipmentForm] = useState({
@@ -1050,7 +976,6 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
     rrule: "FREQ=WEEKLY;INTERVAL=52",
     default_lead_weeks: "4",
   });
-  const fileInputRef = useRef(null);
 
   return (
     <div>
@@ -1063,23 +988,6 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
         <div className="card-header">
           <h3>Schedules ({schedules.length})</h3>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleFileUpload}
-              disabled={uploading}
-              style={{ display: "none" }}
-            />
-            <button 
-              type="button" 
-              className="secondary" 
-              disabled={uploading} 
-              onClick={() => fileInputRef.current?.click()}
-              style={{ cursor: uploading ? "not-allowed" : "pointer" }}
-            >
-              {uploading ? "Uploading..." : "📁 Import Excel"}
-            </button>
             <button 
               type="button" 
               className="secondary" 
