@@ -24,7 +24,9 @@ function formatDate(dateString) {
 }
 
 function App() {
-  const [view, setView] = useState("clients"); // "clients", "client-sites", "site-details", "quick-views", "reports", "admin"
+  const [view, setView] = useState("clients"); // "clients", "client-sites", "site-details", "quick-views", "reports", "admin", "add-equipment"
+  const [equipmentToEdit, setEquipmentToEdit] = useState(null); // Schedule to edit when navigating to add-equipment page
+  const [previousView, setPreviousView] = useState(null); // Track previous view to return to after add-equipment
   const [selectedClient, setSelectedClient] = useState(null);
   const [selectedSite, setSelectedSite] = useState(null);
   const [scrollToScheduleId, setScrollToScheduleId] = useState(null);
@@ -381,6 +383,11 @@ function App() {
               setSelectedSite(null);
               setScrollToScheduleId(null);
             }}
+            onNavigateToAddEquipment={(schedule) => {
+              setEquipmentToEdit(schedule);
+              setPreviousView("site-details");
+              setView("add-equipment");
+            }}
             apiCall={apiCall}
             setError={setError}
           />
@@ -413,6 +420,38 @@ function App() {
                 }
               } catch (err) {
                 setError("Failed to navigate to schedule: " + (err.message || "Unknown error"));
+              }
+            }}
+            onNavigateToAddEquipment={(schedule) => {
+              setEquipmentToEdit(schedule);
+              setPreviousView("quick-views");
+              setView("add-equipment");
+            }}
+          />
+        )}
+
+        {view === "add-equipment" && (
+          <AddEquipmentPage
+            apiCall={apiCall}
+            setError={setError}
+            clients={clients}
+            sites={sites}
+            equipmentToEdit={equipmentToEdit}
+            previousView={previousView}
+            onBack={() => {
+              const returnView = previousView || "quick-views";
+              setEquipmentToEdit(null);
+              setPreviousView(null);
+              setView(returnView);
+            }}
+            onSuccess={async () => {
+              const returnView = previousView || "quick-views";
+              setEquipmentToEdit(null);
+              setPreviousView(null);
+              setView(returnView);
+              // Refresh data if coming from site-details
+              if (returnView === "site-details" && selectedSite) {
+                await fetchSchedules(selectedSite.id);
               }
             }}
           />
@@ -706,7 +745,7 @@ function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRe
 }
 
 // Site Details View - Shows equipments, schedules, and contacts for a site
-function SiteDetailsView({ client, site, clientEquipments, schedules, contactLinks, scrollToScheduleId, onScrollComplete, onRefreshSchedules, onRefreshEquipments, onRefreshContacts, onBack, apiCall, setError }) {
+function SiteDetailsView({ client, site, clientEquipments, schedules, contactLinks, scrollToScheduleId, onScrollComplete, onRefreshSchedules, onRefreshEquipments, onRefreshContacts, onBack, onNavigateToAddEquipment, apiCall, setError }) {
   const scheduleRefs = useRef({});
   const [selectedSchedule, setSelectedSchedule] = useState(null);
   const [scheduleForm, setScheduleForm] = useState({
@@ -993,7 +1032,20 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
             >
               Show Completed Schedules
             </button>
-            <button className="primary" onClick={() => { resetScheduleForm(); setShowScheduleForm(true); }} style={{ marginTop: 0 }}>+ Add New Equipment</button>
+            <button className="primary" onClick={() => {
+              if (onNavigateToAddEquipment && client && site) {
+                // Create a schedule-like object with client and site info for pre-selection
+                onNavigateToAddEquipment({ 
+                  client_id: client.id, 
+                  site_id: site.id,
+                  client: client,
+                  site: site
+                });
+              } else {
+                resetScheduleForm();
+                setShowScheduleForm(true);
+              }
+            }} style={{ marginTop: 0 }}>+ Add New Equipment</button>
           </div>
         </div>
 
@@ -1246,7 +1298,14 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
                     </div>
                     <div className="list-actions" onClick={(e) => e.stopPropagation()}>
                       <button onClick={() => handleCompleteSchedule(schedule.id)}>Done</button>
-                      <button onClick={() => { startEditSchedule(schedule); setShowScheduleForm(true); }}>Edit</button>
+                      <button onClick={() => {
+                        if (onNavigateToAddEquipment) {
+                          onNavigateToAddEquipment(schedule);
+                        } else {
+                          startEditSchedule(schedule);
+                          setShowScheduleForm(true);
+                        }
+                      }}>Edit</button>
                       <button className="danger" onClick={() => handleDeleteSchedule(schedule.id)}>Delete</button>
                     </div>
                   </li>
@@ -3531,42 +3590,187 @@ function WorkOrdersTab({
 }
 
 // Quick Views Tab
-function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule }) {
+function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule, onNavigateToAddEquipment }) {
+  const [quickViewTab, setQuickViewTab] = useState("all-equipments"); // "all-equipments", "upcoming", "overdue", "future"
   const [dueThisMonth, setDueThisMonth] = useState([]);
   const [overdue, setOverdue] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
+  const [future, setFuture] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [upcomingStartDate, setUpcomingStartDate] = useState("");
+  const [upcomingEndDate, setUpcomingEndDate] = useState("");
+
+  // All Equipments tab state
+  const [allEquipments, setAllEquipments] = useState([]);
+
+  async function fetchUpcoming() {
+    setLoading(true);
+    setErrorMsg("");
+    try {
+      let url = "/work-orders/upcoming";
+      let schedUrl = "/schedules/upcoming";
+      
+      if (upcomingStartDate) {
+        let endDate = upcomingEndDate;
+        // If start date is set but no end date, use start date + 14 days
+        if (!endDate) {
+          const startDate = new Date(upcomingStartDate);
+          startDate.setDate(startDate.getDate() + 14); // Add 14 days
+          endDate = startDate.toISOString().split('T')[0];
+        }
+        url += `?start_date=${upcomingStartDate}&end_date=${endDate}`;
+        schedUrl += `?start_date=${upcomingStartDate}&end_date=${endDate}`;
+      } else {
+        // Default to 2 weeks from today
+        url += "?weeks=2";
+        schedUrl += "?weeks=2";
+      }
+      
+      const upWO = await apiCall(url).catch(() => []);
+      
+      if (!upWO || upWO.length === 0) {
+        // Fallback to schedules
+        const upSched = await apiCall(schedUrl).catch(() => []);
+        setUpcoming(Array.isArray(upSched) ? upSched : []);
+      } else {
+        setUpcoming(Array.isArray(upWO) ? upWO : []);
+      }
+    } catch (err) {
+      const errorMessage = err.message || "Failed to load upcoming data";
+      setErrorMsg(errorMessage);
+      setError(errorMessage);
+      console.error("Error fetching upcoming data:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    fetchAll();
-  }, []);
+    if (quickViewTab !== "all-equipments") {
+      if (quickViewTab === "upcoming") {
+        fetchUpcoming();
+      } else {
+        fetchAll();
+      }
+    } else {
+      fetchAllEquipments();
+    }
+  }, [quickViewTab, upcomingStartDate, upcomingEndDate]);
+
+  // Fetch all equipments when tab is selected
+  async function fetchAllEquipments() {
+    setLoading(true);
+    try {
+      const data = await apiCall("/schedules");
+      setAllEquipments(data || []);
+    } catch (err) {
+      setError(err.message || "Failed to fetch equipments");
+      setAllEquipments([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
 
   async function fetchAll() {
     setLoading(true);
     setErrorMsg("");
     try {
       // Try to fetch work orders first, fallback to schedules if no work orders exist
-      const [dueWO, overWO, upWO] = await Promise.all([
+      const [dueWO, overWO] = await Promise.all([
         apiCall("/work-orders/due-this-month").catch(() => []),
         apiCall("/work-orders/overdue").catch(() => []),
-        apiCall("/work-orders/upcoming?weeks=5").catch(() => []),
       ]);
       
+      let dueSched, overSched;
+      
       // If no work orders, use schedules instead
-      if ((!dueWO || dueWO.length === 0) && (!overWO || overWO.length === 0) && (!upWO || upWO.length === 0)) {
-        const [dueSched, overSched, upSched] = await Promise.all([
+      if ((!dueWO || dueWO.length === 0) && (!overWO || overWO.length === 0)) {
+        [dueSched, overSched] = await Promise.all([
           apiCall("/schedules/due-this-month").catch(() => []),
           apiCall("/schedules/overdue").catch(() => []),
-          apiCall("/schedules/upcoming?weeks=5").catch(() => []),
         ]);
         setDueThisMonth(Array.isArray(dueSched) ? dueSched : []);
         setOverdue(Array.isArray(overSched) ? overSched : []);
-        setUpcoming(Array.isArray(upSched) ? upSched : []);
       } else {
         setDueThisMonth(Array.isArray(dueWO) ? dueWO : []);
         setOverdue(Array.isArray(overWO) ? overWO : []);
-        setUpcoming(Array.isArray(upWO) ? upWO : []);
+      }
+      
+      // Fetch upcoming separately if on upcoming tab
+      if (quickViewTab === "upcoming") {
+        await fetchUpcoming();
+      }
+      
+      // Fetch future - if upcomingStartDate is set and on future tab, use it to calculate future range
+      if (quickViewTab === "future") {
+        let futureStartDate, futureEndDate;
+        if (upcomingStartDate) {
+          // Future should be from (start_date + 14 days) to (start_date + 14 days + 2 weeks)
+          const startDate = new Date(upcomingStartDate);
+          startDate.setDate(startDate.getDate() + 14); // Add 14 days
+          futureStartDate = startDate.toISOString().split('T')[0];
+          
+          const endDate = new Date(startDate);
+          endDate.setDate(endDate.getDate() + 14); // Add another 2 weeks (14 days)
+          futureEndDate = endDate.toISOString().split('T')[0];
+        }
+        
+        // Try work orders first
+        let futureWOUrl = "/work-orders/upcoming";
+        if (futureStartDate && futureEndDate) {
+          futureWOUrl += `?start_date=${futureStartDate}&end_date=${futureEndDate}`;
+        } else {
+          futureWOUrl += "?weeks=52";
+        }
+        
+        const futureWO = await apiCall(futureWOUrl).catch(() => []);
+        
+        if (!futureWO || futureWO.length === 0) {
+          // Fallback to schedules
+          let futureSchedUrl = "/schedules/upcoming";
+          if (futureStartDate && futureEndDate) {
+            futureSchedUrl += `?start_date=${futureStartDate}&end_date=${futureEndDate}`;
+          } else {
+            futureSchedUrl += "?weeks=52";
+          }
+          
+          const futureSched = await apiCall(futureSchedUrl).catch(() => []);
+          const futureArray = Array.isArray(futureSched) ? futureSched : [];
+          
+          // If not using date range, filter out items that are in upcoming
+          if (!futureStartDate || !futureEndDate) {
+            // First fetch upcoming to know what to filter out
+            await fetchUpcoming();
+            const currentUpcoming = upcoming.length > 0 ? upcoming : [];
+            const upcomingIds = new Set(currentUpcoming.map(item => item.id));
+            setFuture(futureArray.filter(item => !upcomingIds.has(item.id)));
+          } else {
+            setFuture(futureArray);
+          }
+        } else {
+          // Use work orders
+          const futureArray = Array.isArray(futureWO) ? futureWO : [];
+          
+          // If not using date range, filter out items that are in upcoming
+          if (!futureStartDate || !futureEndDate) {
+            // First fetch upcoming to know what to filter out
+            await fetchUpcoming();
+            const currentUpcoming = upcoming.length > 0 ? upcoming : [];
+            const upcomingIds = new Set(currentUpcoming.map(item => item.id));
+            setFuture(futureArray.filter(item => !upcomingIds.has(item.id)));
+          } else {
+            setFuture(futureArray);
+          }
+        }
+      } else {
+        // For other tabs, fetch future normally
+        const futureData = await apiCall("/schedules/upcoming?weeks=52").catch(() => []);
+        const futureArray = Array.isArray(futureData) ? futureData : [];
+        const currentUpcoming = upcoming.length > 0 ? upcoming : [];
+        const upcomingIds = new Set(currentUpcoming.map(item => item.id));
+        setFuture(futureArray.filter(item => !upcomingIds.has(item.id)));
       }
     } catch (err) {
       const errorMessage = err.message || "Failed to load data";
@@ -3577,153 +3781,549 @@ function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule
       setDueThisMonth([]);
       setOverdue([]);
       setUpcoming([]);
+      setFuture([]);
     } finally {
       setLoading(false);
     }
   }
 
-  if (loading) return <div className="card"><p>Loading...</p></div>;
+  async function handleDeleteSchedule(scheduleId) {
+    if (!window.confirm("Delete this schedule?")) return;
+    try {
+      await apiCall(`/schedules/${scheduleId}`, { method: "DELETE" });
+      await fetchAllEquipments();
+    } catch (err) {
+      // error already set
+    }
+  }
+
+  function resetScheduleForm() {
+    setSelectedSchedule(null);
+    setShowScheduleForm(false);
+    setSelectedClientId("");
+    setSelectedSiteId("");
+    setScheduleForm({
+      equipment_id: "",
+      anchor_date: "",
+      due_date: "",
+      lead_weeks: "",
+      timezone: "",
+      equipment_identifier: "",
+      notes: "",
+      rrule: "",
+    });
+  }
+
+  if (loading && quickViewTab !== "all-equipments") return <div className="card"><p>Loading...</p></div>;
+
+  function renderWorkOrderList(items, className = "") {
+    return (
+      <ul className="list">
+        {items.map(item => (
+          <li 
+            key={item.id} 
+            className={`list-item ${className}`}
+            style={{ cursor: item.schedule_id || item.site_id ? "pointer" : "default" }}
+            onClick={() => {
+              if (item.schedule_id && item.site_id && onNavigateToSchedule) {
+                onNavigateToSchedule(item.schedule_id, item.site_id);
+              } else if (item.site_id && item.id && !item.status && onNavigateToSchedule) {
+                onNavigateToSchedule(item.id, item.site_id);
+              }
+            }}
+          >
+            <div className="list-main">
+              <div className="list-title">{item.equipment_name || 'Unknown'} @ {item.site_name}</div>
+              <div className="list-subtitle">
+                Client: {item.client_name} • Due: {formatDate(item.due_date)} {item.status ? `• Status: ${item.status}` : ''}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+  }
 
   return (
-    <div className="quick-views">
+    <div>
       {errorMsg && (
         <div className="card" style={{ marginBottom: "1rem", backgroundColor: "#D7E5D8", border: "1px solid #c94a4a" }}>
           <p style={{ color: "#b03a3a" }}>Error: {errorMsg}</p>
         </div>
       )}
-      <div className="card">
-        <div className="card-header">
-          <h2>Overdue ({overdue.length})</h2>
-          <div>
-            {overdue.length > 0 && (
-              <a
-                href={`${API_BASE}/work-orders/export/ics?work_order_ids=${overdue.map(wo => wo.id).join(',')}`}
-                className="secondary"
-                style={{ textDecoration: 'none', marginRight: '0.5rem' }}
-              >
-                Export ICS
-              </a>
+
+      <nav className="tabs" style={{ marginBottom: "1rem" }}>
+        <button
+          className={quickViewTab === "all-equipments" ? "active" : ""}
+          onClick={() => setQuickViewTab("all-equipments")}
+        >
+          All Equipments
+        </button>
+        <button
+          className={quickViewTab === "upcoming" ? "active" : ""}
+          onClick={() => setQuickViewTab("upcoming")}
+        >
+          Upcoming
+        </button>
+        <button
+          className={quickViewTab === "overdue" ? "active" : ""}
+          onClick={() => setQuickViewTab("overdue")}
+        >
+          Overdue
+        </button>
+        <button
+          className={quickViewTab === "future" ? "active" : ""}
+          onClick={() => setQuickViewTab("future")}
+        >
+          Future
+        </button>
+      </nav>
+
+      {quickViewTab === "all-equipments" && (
+        <div className="card">
+          <div className="card-header">
+            <h2>All Equipments</h2>
+            <button className="primary" onClick={() => {
+              if (onNavigateToAddEquipment) {
+                onNavigateToAddEquipment(null);
+              }
+            }}>
+              + Add New Equipment
+            </button>
+          </div>
+
+          <div style={{ padding: "1rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <h3 style={{ margin: 0 }}>All Equipments ({allEquipments.length})</h3>
+              <button className="secondary" onClick={fetchAllEquipments}>Refresh</button>
+            </div>
+            {loading ? (
+              <p>Loading...</p>
+            ) : allEquipments.length === 0 ? (
+              <p className="empty">No equipments found</p>
+            ) : (
+              <ul className="list">
+                {allEquipments.map(schedule => {
+                  // The API returns equipment_name, client_name, site_name, etc. in the schedule object
+                  return (
+                    <li key={schedule.id} className="list-item">
+                      <div className="list-main">
+                        <div className="list-title">
+                          {schedule.equipment_identifier || schedule.equipment_name || `Equipment ID: ${schedule.equipment_id}`}
+                        </div>
+                        <div className="list-subtitle">
+                          {schedule.equipment_name && `Equipment: ${schedule.equipment_name} • `}
+                          Anchor: {formatDate(schedule.anchor_date)}
+                          {schedule.due_date && ` • Due: ${formatDate(schedule.due_date)}`}
+                          {schedule.client_name && ` • Client: ${schedule.client_name}`}
+                          {schedule.client_address && ` • ${schedule.client_address}`}
+                          {schedule.site_name && ` • Site: ${schedule.site_name}`}
+                          {schedule.site_address && ` • ${schedule.site_address}`}
+                        </div>
+                      </div>
+                      <div className="list-actions">
+                        <button onClick={() => {
+                          if (onNavigateToAddEquipment) {
+                            onNavigateToAddEquipment(schedule);
+                          }
+                        }}>Edit</button>
+                        <button className="danger" onClick={() => handleDeleteSchedule(schedule.id)}>Delete</button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
-            <button className="secondary" onClick={fetchAll}>Refresh</button>
           </div>
         </div>
-        {overdue.length === 0 ? (
-          <p className="empty">No overdue work orders</p>
-        ) : (
-          <ul className="list">
-            {overdue.map(wo => (
-              <li 
-                key={wo.id} 
-                className="list-item due"
-                style={{ cursor: wo.schedule_id || wo.site_id ? "pointer" : "default" }}
-                onClick={() => {
-                  // If it's a work order (has schedule_id), navigate to the schedule
-                  if (wo.schedule_id && wo.site_id && onNavigateToSchedule) {
-                    onNavigateToSchedule(wo.schedule_id, wo.site_id);
-                  } else if (wo.site_id && wo.id && !wo.status && onNavigateToSchedule) {
-                    // If it's a schedule (no status field, has site_id), use id as schedule_id
-                    onNavigateToSchedule(wo.id, wo.site_id);
-                  }
-                }}
-              >
-                <div className="list-main">
-                  <div className="list-title">{wo.equipment_name || 'Unknown'} @ {wo.site_name}</div>
-                  <div className="list-subtitle">
-                    Client: {wo.client_name} • Due: {formatDate(wo.due_date)} • Status: {wo.status}
-                  </div>
-                  </div>
-                </li>
+      )}
+
+      {quickViewTab === "upcoming" && (
+        <div className="card">
+          <div className="card-header">
+            <h2>Upcoming</h2>
+            <div>
+              <button className="secondary" onClick={fetchUpcoming}>Refresh</button>
+            </div>
+          </div>
+          <div style={{ padding: "1rem", borderBottom: "1px solid #ddd" }}>
+            <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                Start Date
+                <input
+                  type="date"
+                  value={upcomingStartDate}
+                  onChange={(e) => {
+                    const selectedDate = e.target.value;
+                    const today = new Date().toISOString().split('T')[0];
+                    if (selectedDate >= today) {
+                      setUpcomingStartDate(selectedDate);
+                      // If end date is set and is before the new start date, clear it
+                      if (upcomingEndDate && selectedDate > upcomingEndDate) {
+                        setUpcomingEndDate("");
+                      }
+                    } else if (selectedDate === "") {
+                      // Allow clearing the date
+                      setUpcomingStartDate("");
+                    }
+                  }}
+                  min={new Date().toISOString().split('T')[0]}
+                  style={{ padding: "0.5rem" }}
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                End Date (Optional)
+                <input
+                  type="date"
+                  value={upcomingEndDate}
+                  onChange={(e) => {
+                    const selectedDate = e.target.value;
+                    const today = new Date().toISOString().split('T')[0];
+                    const minDate = upcomingStartDate || today;
+                    if (selectedDate >= minDate) {
+                      setUpcomingEndDate(selectedDate);
+                    } else if (selectedDate === "") {
+                      // Allow clearing the date
+                      setUpcomingEndDate("");
+                    }
+                  }}
+                  min={upcomingStartDate || new Date().toISOString().split('T')[0]}
+                  style={{ padding: "0.5rem" }}
+                />
+              </label>
+              {(upcomingStartDate || upcomingEndDate) && (
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setUpcomingStartDate("");
+                    setUpcomingEndDate("");
+                  }}
+                  style={{ marginTop: "1.5rem" }}
+                >
+                  Clear Dates
+                </button>
+              )}
+            </div>
+          </div>
+          {upcoming.length === 0 ? (
+            <p className="empty">No upcoming work orders</p>
+          ) : (
+            renderWorkOrderList(upcoming, "planned")
+          )}
+        </div>
+      )}
+
+      {quickViewTab === "overdue" && (
+        <div className="card">
+          <div className="card-header">
+            <h2>Overdue</h2>
+            <div>
+              <button className="secondary" onClick={fetchAll}>Refresh</button>
+            </div>
+          </div>
+          {overdue.length === 0 ? (
+            <p className="empty">No overdue work orders</p>
+          ) : (
+            renderWorkOrderList(overdue, "due")
+          )}
+        </div>
+      )}
+
+      {quickViewTab === "future" && (
+        <div className="card">
+          <div className="card-header">
+            <h2>Future</h2>
+            <div>
+              <button className="secondary" onClick={fetchAll}>Refresh</button>
+            </div>
+          </div>
+          {future.length === 0 ? (
+            <p className="empty">No future work orders</p>
+          ) : (
+            renderWorkOrderList(future, "planned")
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Add Equipment Page
+function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, previousView, onBack, onSuccess }) {
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [selectedSiteId, setSelectedSiteId] = useState("");
+  const [clientEquipments, setClientEquipments] = useState([]);
+  const [availableSites, setAvailableSites] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState({
+    equipment_id: "",
+    anchor_date: "",
+    due_date: "",
+    lead_weeks: "",
+    timezone: "",
+    equipment_identifier: "",
+    notes: "",
+    rrule: "",
+  });
+
+  useEffect(() => {
+    async function loadEquipmentData() {
+      if (equipmentToEdit) {
+        // Check if this is a new equipment with pre-selected client/site (from site-details)
+        if (equipmentToEdit.client && equipmentToEdit.site) {
+          setSelectedClientId(equipmentToEdit.client.id.toString());
+          setSelectedSiteId(equipmentToEdit.site.id.toString());
+          await fetchSitesForClient(equipmentToEdit.client.id);
+          await fetchClientEquipments(equipmentToEdit.client.id);
+        } else if (equipmentToEdit.id) {
+          // This is editing an existing schedule
+          // Try to find site in props first, otherwise fetch from API
+          let site = sites.find(s => s.id === equipmentToEdit.site_id);
+          if (!site && equipmentToEdit.site_id) {
+            // Fetch site from API if not in props
+            try {
+              site = await apiCall(`/sites/${equipmentToEdit.site_id}`);
+            } catch (err) {
+              console.error("Failed to fetch site:", err);
+            }
+          }
+          
+          if (site) {
+            const clientId = site.client_id.toString();
+            setSelectedClientId(clientId);
+            setSelectedSiteId(site.id.toString());
+            // Fetch sites and equipments for this client
+            await fetchSitesForClient(site.client_id);
+            await fetchClientEquipments(site.client_id);
+          }
+          
+          let equipmentIdentifier = "";
+          if (equipmentToEdit.equipment_identifier !== undefined && equipmentToEdit.equipment_identifier !== null) {
+            if (typeof equipmentToEdit.equipment_identifier !== 'number') {
+              equipmentIdentifier = String(equipmentToEdit.equipment_identifier);
+            }
+          }
+          setScheduleForm({
+            equipment_id: equipmentToEdit.equipment_id?.toString() || "",
+            anchor_date: equipmentToEdit.anchor_date || "",
+            due_date: equipmentToEdit.due_date || "",
+            lead_weeks: equipmentToEdit.lead_weeks?.toString() || "",
+            timezone: equipmentToEdit.timezone || "",
+            equipment_identifier: equipmentIdentifier,
+            notes: equipmentToEdit.notes || "",
+            rrule: equipmentToEdit.rrule || "",
+          });
+        }
+      }
+    }
+    loadEquipmentData();
+  }, [equipmentToEdit, sites, apiCall]);
+
+  // Fetch sites and client equipments when client changes
+  useEffect(() => {
+    if (selectedClientId) {
+      fetchSitesForClient(selectedClientId);
+      fetchClientEquipments(selectedClientId);
+    } else {
+      setAvailableSites([]);
+      setClientEquipments([]);
+    }
+  }, [selectedClientId]);
+
+  async function fetchSitesForClient(clientId) {
+    try {
+      const data = await apiCall(`/sites?client_id=${clientId}`);
+      setAvailableSites(data || []);
+    } catch (err) {
+      setAvailableSites([]);
+    }
+  }
+
+  async function fetchClientEquipments(clientId) {
+    try {
+      const data = await apiCall(`/clients/${clientId}/equipments`);
+      setClientEquipments(data || []);
+    } catch (err) {
+      setClientEquipments([]);
+    }
+  }
+
+  function handleScheduleChange(e) {
+    const { name, value } = e.target;
+    setScheduleForm(prev => ({ ...prev, [name]: value }));
+  }
+
+  async function handleScheduleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    if (!scheduleForm.equipment_id || !scheduleForm.anchor_date || !selectedSiteId) {
+      setError("Equipment Type, Anchor Date, Client, and Site are required");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const payload = {
+        ...scheduleForm,
+        site_id: parseInt(selectedSiteId),
+        equipment_id: parseInt(scheduleForm.equipment_id),
+        lead_weeks: scheduleForm.lead_weeks ? parseInt(scheduleForm.lead_weeks) : null,
+        timezone: scheduleForm.timezone || null,
+        equipment_identifier: scheduleForm.equipment_identifier || null,
+      };
+
+      if (equipmentToEdit?.id) {
+        // Editing an existing schedule
+        await apiCall(`/schedules/${equipmentToEdit.id}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        // Creating a new schedule
+        await apiCall("/schedules", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+
+      if (onSuccess) {
+        onSuccess();
+      }
+    } catch (err) {
+      // error already set
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+        <button className="secondary" onClick={onBack}>
+          ← Back {previousView === "site-details" ? "to Site Details" : "to Quick Views"}
+        </button>
+        <h2 style={{ margin: 0 }}>{equipmentToEdit?.id ? "Edit Equipment" : "Add New Equipment"}</h2>
+      </div>
+
+      <div className="card">
+        <form onSubmit={handleScheduleSubmit} className="form">
+          <label>
+            Client *
+            <select
+              value={selectedClientId}
+              onChange={(e) => {
+                setSelectedClientId(e.target.value);
+                setSelectedSiteId(""); // Reset site when client changes
+              }}
+              disabled={!!equipmentToEdit?.id}
+              required
+              style={{ width: "100%" }}
+            >
+              <option value="">Select a client</option>
+              {clients.map(client => (
+                <option key={client.id} value={client.id}>{client.name}</option>
               ))}
-            </ul>
-          )}
-      </div>
-
-      <div className="card">
-        <div className="card-header">
-          <h2>Due This Month ({dueThisMonth.length})</h2>
-          {dueThisMonth.length > 0 && (
-            <a
-              href={`${API_BASE}/work-orders/export/ics?work_order_ids=${dueThisMonth.map(wo => wo.id).join(',')}`}
-              className="secondary"
-              style={{ textDecoration: 'none' }}
+            </select>
+          </label>
+          <label>
+            Site *
+            <select
+              value={selectedSiteId}
+              onChange={(e) => setSelectedSiteId(e.target.value)}
+              disabled={!selectedClientId || !!equipmentToEdit?.id}
+              required
+              style={{ width: "100%" }}
             >
-              Export ICS
-            </a>
-          )}
-        </div>
-        {dueThisMonth.length === 0 ? (
-          <p className="empty">No work orders due this month</p>
-        ) : (
-          <ul className="list">
-            {dueThisMonth.map(item => (
-              <li 
-                key={item.id} 
-                className="list-item"
-                style={{ cursor: item.schedule_id || item.site_id ? "pointer" : "default" }}
-                onClick={() => {
-                  // If it's a work order (has schedule_id), navigate to the schedule
-                  if (item.schedule_id && item.site_id && onNavigateToSchedule) {
-                    onNavigateToSchedule(item.schedule_id, item.site_id);
-                  } else if (item.site_id && item.id && !item.status && onNavigateToSchedule) {
-                    // If it's a schedule (no status field, has site_id), use id as schedule_id
-                    onNavigateToSchedule(item.id, item.site_id);
-                  }
-                }}
-              >
-                <div className="list-main">
-                  <div className="list-title">{item.equipment_name || 'Unknown'} @ {item.site_name}</div>
-                  <div className="list-subtitle">
-                    Client: {item.client_name} • Due: {formatDate(item.due_date)} {item.status ? `• Status: ${item.status}` : ''}
-                  </div>
+              <option value="">Select a site</option>
+              {availableSites.map(site => (
+                <option key={site.id} value={site.id}>{site.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Equipment Name
+            <textarea 
+              name="equipment_identifier" 
+              value={scheduleForm.equipment_identifier || ""} 
+              onChange={handleScheduleChange} 
+              rows={2}
+              placeholder="e.g. Scanner Model XYZ, Room 101"
+            />
+          </label>
+          <label>
+            Equipment Type *
+            <select name="equipment_id" value={scheduleForm.equipment_id} onChange={handleScheduleChange} required style={{ width: "100%" }} disabled={!selectedClientId}>
+              <option value="">Select equipment</option>
+              {clientEquipments.map(e => (
+                <option key={e.id} value={e.id}>{e.name}</option>
+              ))}
+            </select>
+            {scheduleForm.equipment_id && (() => {
+              const selectedEq = clientEquipments.find(e => e.id === parseInt(scheduleForm.equipment_id));
+              return selectedEq && selectedEq.rrule ? (
+                <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#8193A4" }}>
+                  Equipment RRule: {selectedEq.rrule}
                 </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="card-header">
-          <h2>Upcoming (Next 5 Weeks) ({upcoming.length})</h2>
-          {upcoming.length > 0 && (
-            <a
-              href={`${API_BASE}/work-orders/export/ics?work_order_ids=${upcoming.map(wo => wo.id).join(',')}`}
-              className="secondary"
-              style={{ textDecoration: 'none' }}
-            >
-              Export ICS
-            </a>
-          )}
-        </div>
-        {upcoming.length === 0 ? (
-          <p className="empty">No upcoming work orders</p>
-        ) : (
-          <ul className="list">
-            {upcoming.map(item => (
-              <li 
-                key={item.id} 
-                className="list-item planned"
-                style={{ cursor: item.schedule_id || item.site_id ? "pointer" : "default" }}
-                onClick={() => {
-                  // If it's a work order (has schedule_id), navigate to the schedule
-                  if (item.schedule_id && item.site_id && onNavigateToSchedule) {
-                    onNavigateToSchedule(item.schedule_id, item.site_id);
-                  } else if (item.site_id && item.id && !item.status && onNavigateToSchedule) {
-                    // If it's a schedule (no status field, has site_id), use id as schedule_id
-                    onNavigateToSchedule(item.id, item.site_id);
-                  }
-                }}
-              >
-                <div className="list-main">
-                  <div className="list-title">{item.equipment_name || 'Unknown'} @ {item.site_name}</div>
-                  <div className="list-subtitle">
-                    Client: {item.client_name} • Due: {formatDate(item.due_date)} {item.status ? `• Status: ${item.status}` : ''}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+              ) : null;
+            })()}
+          </label>
+          <label>
+            Anchor Date *
+            <input
+              type="date"
+              name="anchor_date"
+              value={scheduleForm.anchor_date}
+              onChange={handleScheduleChange}
+              required
+            />
+          </label>
+          <label>
+            Due Date
+            <input
+              type="date"
+              name="due_date"
+              value={scheduleForm.due_date}
+              onChange={handleScheduleChange}
+            />
+          </label>
+          <label>
+            Lead Weeks
+            <input
+              type="number"
+              name="lead_weeks"
+              value={scheduleForm.lead_weeks}
+              onChange={handleScheduleChange}
+              min="0"
+            />
+          </label>
+          <label>
+            Timezone
+            <input
+              type="text"
+              name="timezone"
+              value={scheduleForm.timezone}
+              onChange={handleScheduleChange}
+              placeholder="America/Chicago"
+            />
+          </label>
+          <label>
+            Notes
+            <textarea
+              name="notes"
+              value={scheduleForm.notes}
+              onChange={handleScheduleChange}
+              rows={3}
+            />
+          </label>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button type="submit" className="primary" disabled={loading}>
+              {loading ? "Saving..." : (equipmentToEdit ? "Save" : "Create")}
+            </button>
+            <button type="button" className="secondary" onClick={onBack} disabled={loading}>
+              Cancel
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

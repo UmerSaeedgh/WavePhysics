@@ -1146,12 +1146,39 @@ def get_due_this_month_schedules(db: sqlite3.Connection = Depends(get_db)):
 
 @app.get("/schedules/upcoming", response_model=List[ScheduleWithDetails])
 def get_upcoming_schedules(
-    weeks: int = Query(5, description="Look ahead weeks"),
+    weeks: int = Query(None, description="Look ahead weeks"),
+    start_date: str = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(None, description="End date (YYYY-MM-DD)"),
     db: sqlite3.Connection = Depends(get_db)
 ):
-    """Get upcoming schedules within the specified weeks"""
+    """Get upcoming schedules within the specified weeks or date range"""
     today = dt.date.today()
-    end_date = today + dt.timedelta(weeks=weeks)
+    
+    # Use date range if provided, otherwise use weeks
+    if start_date or end_date:
+        try:
+            if start_date:
+                start = dt.datetime.strptime(start_date, "%Y-%m-%d").date()
+                # Ensure start_date is not in the past
+                if start < today:
+                    start = today
+            else:
+                start = today
+            
+            if end_date:
+                end = dt.datetime.strptime(end_date, "%Y-%m-%d").date()
+            else:
+                # If only start_date is provided, default to 1 year ahead
+                end = start + dt.timedelta(days=365)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    elif weeks:
+        start = today
+        end = today + dt.timedelta(weeks=weeks)
+    else:
+        # Default to 2 weeks if nothing specified
+        start = today
+        end = today + dt.timedelta(weeks=2)
     
     cur = db.execute(
         """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
@@ -1168,7 +1195,7 @@ def get_upcoming_schedules(
              AND sch.due_date IS NOT NULL 
              AND sch.due_date >= ? AND sch.due_date <= ?
            ORDER BY sch.due_date""",
-        (today.isoformat(), end_date.isoformat())
+        (start.isoformat(), end.isoformat())
     )
     rows = cur.fetchall()
     result = []
@@ -1525,12 +1552,39 @@ def get_overdue(db: sqlite3.Connection = Depends(get_db)):
 
 @app.get("/work-orders/upcoming", response_model=List[WorkOrderWithDetails])
 def get_upcoming(
-    weeks: int = Query(5, description="Look ahead weeks"),
+    weeks: int = Query(None, description="Look ahead weeks"),
+    start_date: str = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(None, description="End date (YYYY-MM-DD)"),
     db: sqlite3.Connection = Depends(get_db)
 ):
-    """Get upcoming work orders within lead time"""
+    """Get upcoming work orders within lead time or date range"""
     today = dt.date.today()
-    end_date = today + dt.timedelta(weeks=weeks)
+    
+    # Use date range if provided, otherwise use weeks
+    if start_date or end_date:
+        try:
+            if start_date:
+                start = dt.datetime.strptime(start_date, "%Y-%m-%d").date()
+                # Ensure start_date is not in the past
+                if start < today:
+                    start = today
+            else:
+                start = today
+            
+            if end_date:
+                end = dt.datetime.strptime(end_date, "%Y-%m-%d").date()
+            else:
+                # If only start_date is provided, default to 1 year ahead
+                end = start + dt.timedelta(days=365)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    elif weeks:
+        start = today
+        end = today + dt.timedelta(weeks=weeks)
+    else:
+        # Default to 2 weeks if nothing specified
+        start = today
+        end = today + dt.timedelta(weeks=2)
     
     cur = db.execute(
         """SELECT wo.id, wo.schedule_id, wo.due_date, wo.planned_date, wo.done_date, wo.status, wo.invoice_ref, wo.notes,
@@ -1545,7 +1599,7 @@ def get_upcoming(
            LEFT JOIN test_types tt ON sch.test_type_id = tt.id
            WHERE wo.due_date >= ? AND wo.due_date <= ? AND wo.status != 'DONE'
            ORDER BY wo.due_date""",
-        (today.isoformat(), end_date.isoformat())
+        (start.isoformat(), end.isoformat())
     )
     rows = cur.fetchall()
     result = []
