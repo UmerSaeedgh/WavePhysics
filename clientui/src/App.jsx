@@ -3733,6 +3733,7 @@ function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule
 
 // Admin Tab
 function AdminTab({ apiCall, setError }) {
+  const [adminTab, setAdminTab] = useState("utilities"); // "utilities" or "equipments"
   const [uploading, setUploading] = useState(false);
   const [uploadingTemporary, setUploadingTemporary] = useState(false);
   const fileInputRef = useRef(null);
@@ -3871,86 +3872,114 @@ function AdminTab({ apiCall, setError }) {
 
   return (
     <div className="admin-tab">
-      <div className="card">
-        <div className="card-header">
-          <h2>Admin Options</h2>
-        </div>
-        
-        <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-          {/* Import Equipments */}
-          <div>
-            <h3>Import Equipments</h3>
-            <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
-              Import equipment schedules from Excel file. Required columns: Client, Site, Equipment (identifier), Equipment Name, Anchor Date.
-              <br />
-              <strong>Note:</strong> If client or site doesn't exist, the row will be skipped. If equipment identifier doesn't exist, a new equipment will be created.
-            </p>
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleImportEquipments}
-                disabled={uploading || uploadingTemporary}
-                style={{ display: "none" }}
-              />
+      <nav className="tabs" style={{ marginBottom: "1rem" }}>
+        <button
+          className={adminTab === "utilities" ? "active" : ""}
+          onClick={() => setAdminTab("utilities")}
+        >
+          Utilities
+        </button>
+        <button
+          className={adminTab === "equipments" ? "active" : ""}
+          onClick={() => setAdminTab("equipments")}
+        >
+          Equipments
+        </button>
+      </nav>
+
+      {adminTab === "utilities" && (
+        <div className="card">
+          <div className="card-header">
+            <h2>Utilities</h2>
+          </div>
+          
+          <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+            {/* Import Equipments */}
+            <div>
+              <h3>Import Equipments</h3>
+              <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
+                Import equipment schedules from Excel file. Required columns: Client, Site, Equipment (identifier), Equipment Name, Anchor Date.
+                <br />
+                <strong>Note:</strong> If client or site doesn't exist, the row will be skipped. If equipment identifier doesn't exist, a new equipment will be created.
+              </p>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleImportEquipments}
+                  disabled={uploading || uploadingTemporary}
+                  style={{ display: "none" }}
+                />
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={uploading || uploadingTemporary}
+                  style={{ cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer" }}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {uploading ? "Uploading..." : "📁 Import Equipments"}
+                </button>
+              </div>
+            </div>
+
+            {/* Temporary Data Upload */}
+            <div>
+              <h3>Temporary Data Upload</h3>
+              <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
+                Import equipment schedules from Excel file. Required columns: Client, Site, Equipment (identifier), Equipment Name, Anchor Date.
+                <br />
+                <strong>Note:</strong> If client or site doesn't exist, they will be created automatically. If equipment identifier doesn't exist, a new equipment will be created.
+              </p>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <input
+                  ref={temporaryFileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleTemporaryDataUpload}
+                  disabled={uploading || uploadingTemporary}
+                  style={{ display: "none" }}
+                />
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={uploading || uploadingTemporary}
+                  style={{ cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer" }}
+                  onClick={() => temporaryFileInputRef.current?.click()}
+                >
+                  {uploadingTemporary ? "Uploading..." : "📁 Temporary Data Upload"}
+                </button>
+              </div>
+            </div>
+
+            {/* Export Equipments */}
+            <div>
+              <h3>Export Equipments</h3>
+              <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
+                Export all equipment schedules to Excel file.
+              </p>
               <button
                 type="button"
                 className="primary"
-                disabled={uploading || uploadingTemporary}
-                style={{ cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer" }}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={handleExportEquipments}
               >
-                {uploading ? "Uploading..." : "📁 Import Equipments"}
+                📥 Export Equipments
               </button>
             </div>
-          </div>
-
-          {/* Temporary Data Upload */}
-          <div>
-            <h3>Temporary Data Upload</h3>
-            <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
-              Import equipment schedules from Excel file. Required columns: Client, Site, Equipment (identifier), Equipment Name, Anchor Date.
-              <br />
-              <strong>Note:</strong> If client or site doesn't exist, they will be created automatically. If equipment identifier doesn't exist, a new equipment will be created.
-            </p>
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-              <input
-                ref={temporaryFileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleTemporaryDataUpload}
-                disabled={uploading || uploadingTemporary}
-                style={{ display: "none" }}
-              />
-              <button
-                type="button"
-                className="primary"
-                disabled={uploading || uploadingTemporary}
-                style={{ cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer" }}
-                onClick={() => temporaryFileInputRef.current?.click()}
-              >
-                {uploadingTemporary ? "Uploading..." : "📁 Temporary Data Upload"}
-              </button>
-            </div>
-          </div>
-
-          {/* Export Equipments */}
-          <div>
-            <h3>Export Equipments</h3>
-            <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
-              Export all equipment schedules to Excel file.
-            </p>
-            <button
-              type="button"
-              className="primary"
-              onClick={handleExportEquipments}
-            >
-              📥 Export Equipments
-            </button>
           </div>
         </div>
-      </div>
+      )}
+
+      {adminTab === "equipments" && (
+        <div className="card">
+          <div className="card-header">
+            <h2>Equipments</h2>
+          </div>
+          <div style={{ padding: "2rem" }}>
+            <p className="empty">This section is coming soon.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
