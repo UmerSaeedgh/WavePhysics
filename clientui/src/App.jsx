@@ -24,12 +24,17 @@ function formatDate(dateString) {
 }
 
 function App() {
-  const [view, setView] = useState("clients"); // "clients", "client-sites", "site-details", "all-equipments", "upcoming", "overdue", "reports", "admin", "add-equipment"
+  const [view, setView] = useState("clients"); // "clients", "client-sites", "site-details", "all-equipments", "upcoming", "overdue", "reports", "admin", "add-equipment", "edit-client", "edit-site", "edit-contact"
   const [equipmentToEdit, setEquipmentToEdit] = useState(null); // Schedule to edit when navigating to add-equipment page
+  const [clientToEdit, setClientToEdit] = useState(null); // Client to edit when navigating to edit-client page
+  const [siteToEdit, setSiteToEdit] = useState(null); // Site to edit when navigating to edit-site page
+  const [contactToEdit, setContactToEdit] = useState(null); // Contact link to edit when navigating to edit-contact page
+  const [contactContext, setContactContext] = useState(null); // { site, client } context for contact editing
   const [previousView, setPreviousView] = useState(null); // Track previous view to return to after add-equipment
   const [selectedClient, setSelectedClient] = useState(null);
   const [selectedSite, setSelectedSite] = useState(null);
   const [scrollToScheduleId, setScrollToScheduleId] = useState(null);
+  const [scrollToEquipmentId, setScrollToEquipmentId] = useState(null); // Schedule ID to scroll to in all-equipments view
   const [clients, setClients] = useState([]);
   const [sites, setSites] = useState([]);
   const [contacts, setContacts] = useState([]);
@@ -466,8 +471,40 @@ function App() {
               setSelectedClient(client);
               setView("client-sites");
             }}
+            onAddClient={() => {
+              setClientToEdit(null);
+              setPreviousView("clients");
+              setView("edit-client");
+            }}
+            onEditClient={(client) => {
+              setClientToEdit(client);
+              setPreviousView("clients");
+              setView("edit-client");
+            }}
             apiCall={apiCall}
             setError={setError}
+          />
+        )}
+
+        {view === "edit-client" && (
+          <EditClientPage
+            apiCall={apiCall}
+            setError={setError}
+            clientToEdit={clientToEdit}
+            previousView={previousView}
+            onBack={() => {
+              const returnView = previousView || "clients";
+              setClientToEdit(null);
+              setPreviousView(null);
+              setView(returnView);
+            }}
+            onSuccess={async () => {
+              const returnView = previousView || "clients";
+              setClientToEdit(null);
+              setPreviousView(null);
+              setView(returnView);
+              await fetchClients();
+            }}
           />
         )}
 
@@ -482,12 +519,88 @@ function App() {
               setSelectedSite(site);
               setView("site-details");
             }}
+            onAddSite={() => {
+              setSiteToEdit(null);
+              setPreviousView("client-sites");
+              setView("edit-site");
+            }}
+            onEditSite={async (site) => {
+              setSiteToEdit(site);
+              setPreviousView("client-sites");
+              setView("edit-site");
+              // Fetch contacts for the site
+              await fetchSiteContacts(site.id);
+            }}
             onBack={() => {
               setView("clients");
               setSelectedClient(null);
             }}
             apiCall={apiCall}
             setError={setError}
+          />
+        )}
+
+        {view === "edit-site" && selectedClient && (
+          <EditSitePage
+            apiCall={apiCall}
+            setError={setError}
+            siteToEdit={siteToEdit}
+            client={selectedClient}
+            contactLinks={contactLinks}
+            onRefreshContacts={async () => {
+              if (siteToEdit) {
+                await fetchSiteContacts(siteToEdit.id);
+              }
+            }}
+            onEditContact={(link) => {
+              setContactToEdit(link);
+              setContactContext({ site: siteToEdit, client: selectedClient });
+              setPreviousView("edit-site");
+              setView("edit-contact");
+            }}
+            onSuccess={async () => {
+              setSiteToEdit(null);
+              setView("client-sites");
+              await fetchSites(selectedClient.id);
+            }}
+            onBack={() => {
+              setSiteToEdit(null);
+              setView("client-sites");
+            }}
+          />
+        )}
+
+        {view === "edit-contact" && (
+          <EditContactPage
+            apiCall={apiCall}
+            setError={setError}
+            contactToEdit={contactToEdit}
+            contactContext={contactContext}
+            contactLinks={contactLinks}
+            onRefreshContacts={async () => {
+              if (contactContext?.site) {
+                await fetchSiteContacts(contactContext.site.id);
+              }
+            }}
+            onSuccess={async () => {
+              const returnView = previousView || "site-details";
+              const context = contactContext; // Save context before clearing
+              setContactToEdit(null);
+              setContactContext(null);
+              setPreviousView(null);
+              setView(returnView);
+              // Refresh contacts
+              if (context?.site) {
+                await fetchSiteContacts(context.site.id);
+              }
+            }}
+            onBack={() => {
+              setContactToEdit(null);
+              setContactContext(null);
+              const returnView = previousView || "site-details";
+              setPreviousView(null);
+              setView(returnView);
+            }}
           />
         )}
 
@@ -526,27 +639,18 @@ function App() {
             setAllEquipments={setAllEquipments}
             loading={loading}
             setLoading={setLoading}
+            scrollToEquipmentId={scrollToEquipmentId}
+            onScrollComplete={() => setScrollToEquipmentId(null)}
             onNavigateToSchedule={async (scheduleId, siteId) => {
               try {
-                // Clear old schedules first to prevent showing old data
-                setSchedules([]);
-                // Fetch the site directly from API
-                const siteData = await apiCall(`/sites/${siteId}`);
-                if (siteData && siteData.client_id) {
-                  // Fetch the client directly from API
-                  const clientData = await apiCall(`/clients/${siteData.client_id}`);
-                  if (clientData) {
-                    setSelectedClient(clientData);
-                    setSelectedSite(siteData);
-                    // Store schedule ID to scroll to BEFORE changing view
-                    setScrollToScheduleId(scheduleId);
-                    setView("site-details");
-                    // Fetch schedules for the new site (this will trigger the scroll effect)
-                    await fetchSchedules(siteId);
-                  }
-                }
+                // Navigate to all-equipments view and scroll to the equipment
+                setScrollToEquipmentId(scheduleId);
+                setView("all-equipments");
+                // Fetch all equipments to ensure the list is loaded
+                const data = await apiCall("/schedules");
+                setAllEquipments(data || []);
               } catch (err) {
-                setError("Failed to navigate to schedule: " + (err.message || "Unknown error"));
+                setError("Failed to navigate to equipment: " + (err.message || "Unknown error"));
               }
             }}
             onNavigateToAddEquipment={(schedule) => {
@@ -571,25 +675,14 @@ function App() {
             setUpcomingEndDate={setUpcomingEndDate}
             onNavigateToSchedule={async (scheduleId, siteId) => {
               try {
-                // Clear old schedules first to prevent showing old data
-                setSchedules([]);
-                // Fetch the site directly from API
-                const siteData = await apiCall(`/sites/${siteId}`);
-                if (siteData && siteData.client_id) {
-                  // Fetch the client directly from API
-                  const clientData = await apiCall(`/clients/${siteData.client_id}`);
-                  if (clientData) {
-                    setSelectedClient(clientData);
-                    setSelectedSite(siteData);
-                    // Store schedule ID to scroll to BEFORE changing view
-                    setScrollToScheduleId(scheduleId);
-                    setView("site-details");
-                    // Fetch schedules for the new site (this will trigger the scroll effect)
-                    await fetchSchedules(siteId);
-                  }
-                }
+                // Navigate to all-equipments view and scroll to the equipment
+                setScrollToEquipmentId(scheduleId);
+                setView("all-equipments");
+                // Fetch all equipments to ensure the list is loaded
+                const data = await apiCall("/schedules");
+                setAllEquipments(data || []);
               } catch (err) {
-                setError("Failed to navigate to schedule: " + (err.message || "Unknown error"));
+                setError("Failed to navigate to equipment: " + (err.message || "Unknown error"));
               }
             }}
           />
@@ -605,25 +698,14 @@ function App() {
             setLoading={setLoading}
             onNavigateToSchedule={async (scheduleId, siteId) => {
               try {
-                // Clear old schedules first to prevent showing old data
-                setSchedules([]);
-                // Fetch the site directly from API
-                const siteData = await apiCall(`/sites/${siteId}`);
-                if (siteData && siteData.client_id) {
-                  // Fetch the client directly from API
-                  const clientData = await apiCall(`/clients/${siteData.client_id}`);
-                  if (clientData) {
-                    setSelectedClient(clientData);
-                    setSelectedSite(siteData);
-                    // Store schedule ID to scroll to BEFORE changing view
-                    setScrollToScheduleId(scheduleId);
-                    setView("site-details");
-                    // Fetch schedules for the new site (this will trigger the scroll effect)
-                    await fetchSchedules(siteId);
-                  }
-                }
+                // Navigate to all-equipments view and scroll to the equipment
+                setScrollToEquipmentId(scheduleId);
+                setView("all-equipments");
+                // Fetch all equipments to ensure the list is loaded
+                const data = await apiCall("/schedules");
+                setAllEquipments(data || []);
               } catch (err) {
-                setError("Failed to navigate to schedule: " + (err.message || "Unknown error"));
+                setError("Failed to navigate to equipment: " + (err.message || "Unknown error"));
               }
             }}
           />
@@ -670,68 +752,13 @@ function App() {
 }
 
 // Clients List View - Main entry point
-function ClientsListView({ clients, onRefresh, onClientClick, apiCall, setError }) {
-  const [showForm, setShowForm] = useState(false);
-  const [selectedClient, setSelectedClient] = useState(null);
-  const [form, setForm] = useState({ name: "", address: "", billing_info: "", notes: "" });
-
-  function handleChange(e) {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-  }
-
-  function resetForm() {
-    setSelectedClient(null);
-    setShowForm(false);
-    setForm({ name: "", address: "", billing_info: "", notes: "" });
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError("");
-    if (!form.name.trim()) {
-      setError("Name is required");
-      return;
-    }
-
-    try {
-      const isEdit = !!selectedClient;
-      const endpoint = isEdit ? `/clients/${selectedClient.id}` : "/clients";
-      const result = await apiCall(endpoint, {
-        method: isEdit ? "PUT" : "POST",
-        body: JSON.stringify(form),
-      });
-      if (!isEdit && result && result.id) {
-        try {
-          await apiCall(`/clients/${result.id}/equipments/seed-defaults`, { method: "POST" });
-        } catch (seedErr) {
-          console.warn("Failed to seed default equipments:", seedErr);
-        }
-      }
-      await onRefresh();
-      resetForm();
-    } catch (err) {
-      setError(err.message || "Failed to save client");
-    }
-  }
-
-  function startEdit(client) {
-    setSelectedClient(client);
-    setShowForm(true);
-    setForm({ 
-      name: client.name || "", 
-      address: client.address || "", 
-      billing_info: client.billing_info || "", 
-      notes: client.notes || "" 
-    });
-  }
+function ClientsListView({ clients, onRefresh, onClientClick, onAddClient, onEditClient, apiCall, setError }) {
 
   async function handleDelete(clientId) {
     if (!window.confirm("Delete this client? All associated sites will be deleted.")) return;
     try {
       await apiCall(`/clients/${clientId}`, { method: "DELETE" });
       await onRefresh();
-      if (selectedClient?.id === clientId) resetForm();
     } catch (err) {
       // error already set
     }
@@ -742,35 +769,8 @@ function ClientsListView({ clients, onRefresh, onClientClick, apiCall, setError 
       <div className="card">
         <div className="card-header">
           <h2>Clients ({clients.length})</h2>
-          <button className="primary" onClick={() => { resetForm(); setShowForm(true); }}>+ Add New Client</button>
+          <button className="primary" onClick={onAddClient}>+ Add New Client</button>
         </div>
-        
-        {showForm && (
-          <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
-            <form onSubmit={handleSubmit} className="form">
-              <label>
-                Name *
-                <input type="text" name="name" value={form.name} onChange={handleChange} required />
-              </label>
-              <label>
-                Address
-                <input type="text" name="address" value={form.address} onChange={handleChange} placeholder="Client address" />
-              </label>
-              <label>
-                Billing Info
-                <textarea name="billing_info" value={form.billing_info} onChange={handleChange} rows={2} placeholder="Billing address, payment terms, etc." />
-              </label>
-              <label>
-                Notes
-                <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} />
-              </label>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                <button type="submit" className="primary" style={{ marginTop: 0 }}>{selectedClient ? "Save" : "Create"}</button>
-                <button type="button" className="secondary" onClick={resetForm}>Cancel</button>
-              </div>
-            </form>
-          </div>
-        )}
 
         {clients.length === 0 ? (
           <p className="empty">No clients yet. Click "Add New Client" to get started.</p>
@@ -788,7 +788,7 @@ function ClientsListView({ clients, onRefresh, onClientClick, apiCall, setError 
                 </div>
                 <div className="list-actions">
                   <button onClick={() => onClientClick(client)}>Sites</button>
-                  <button onClick={() => startEdit(client)}>Edit</button>
+                  <button onClick={() => onEditClient(client)}>Edit</button>
                   <button className="danger" onClick={() => handleDelete(client.id)}>Delete</button>
                 </div>
               </li>
@@ -800,36 +800,30 @@ function ClientsListView({ clients, onRefresh, onClientClick, apiCall, setError 
   );
 }
 
-// Client Sites View - Shows sites for a selected client
-function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRefreshEquipments, onSiteClick, onBack, apiCall, setError }) {
-  const [showForm, setShowForm] = useState(false);
-  const [selectedSite, setSelectedSite] = useState(null);
+// Edit Client Page
+function EditClientPage({ apiCall, setError, clientToEdit, previousView, onBack, onSuccess }) {
   const [form, setForm] = useState({
     name: "",
     address: "",
-    timezone: "America/Chicago",
+    billing_info: "",
     notes: "",
   });
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    onRefreshSites();
-    onRefreshEquipments();
-  }, []);
+    if (clientToEdit) {
+      setForm({
+        name: clientToEdit.name || "",
+        address: clientToEdit.address || "",
+        billing_info: clientToEdit.billing_info || "",
+        notes: clientToEdit.notes || "",
+      });
+    }
+  }, [clientToEdit]);
 
   function handleChange(e) {
     const { name, value } = e.target;
     setForm(prev => ({ ...prev, [name]: value }));
-  }
-
-  function resetForm() {
-    setSelectedSite(null);
-    setShowForm(false);
-    setForm({
-      name: "",
-      address: "",
-      timezone: "America/Chicago",
-      notes: "",
-    });
   }
 
   async function handleSubmit(e) {
@@ -840,38 +834,406 @@ function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRe
       return;
     }
 
+    setLoading(true);
     try {
-      const isEdit = !!selectedSite;
-      const endpoint = isEdit ? `/sites/${selectedSite.id}` : "/sites";
+      const isEdit = !!clientToEdit;
+      const endpoint = isEdit ? `/clients/${clientToEdit.id}` : "/clients";
+      const result = await apiCall(endpoint, {
+        method: isEdit ? "PUT" : "POST",
+        body: JSON.stringify(form),
+      });
+      
+      if (!isEdit && result && result.id) {
+        try {
+          await apiCall(`/clients/${result.id}/equipments/seed-defaults`, { method: "POST" });
+        } catch (seedErr) {
+          console.warn("Failed to seed default equipments:", seedErr);
+        }
+      }
+      
+      if (onSuccess) {
+        onSuccess();
+      }
+    } catch (err) {
+      setError(err.message || "Failed to save client");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+        <button className="secondary" onClick={onBack}>
+          ← Back to Clients
+        </button>
+        <h2 style={{ margin: 0 }}>{clientToEdit ? "Edit Client" : "Add New Client"}</h2>
+      </div>
+
+      <div className="card">
+        <form onSubmit={handleSubmit} style={{ padding: "1rem" }}>
+        <label>
+          Name *
+          <input
+            type="text"
+            name="name"
+            value={form.name}
+            onChange={handleChange}
+            required
+          />
+        </label>
+
+        <label>
+          Address
+          <input
+            type="text"
+            name="address"
+            value={form.address}
+            onChange={handleChange}
+            placeholder="Client address"
+          />
+        </label>
+
+        <label>
+          Billing Info
+          <textarea
+            name="billing_info"
+            value={form.billing_info}
+            onChange={handleChange}
+            rows={2}
+            placeholder="Billing address, payment terms, etc."
+          />
+        </label>
+
+        <label>
+          Notes
+          <textarea
+            name="notes"
+            value={form.notes}
+            onChange={handleChange}
+            rows={3}
+          />
+        </label>
+
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem" }}>
+          <button type="submit" className="primary" disabled={loading}>
+            {loading ? "Saving..." : (clientToEdit ? "Save Changes" : "Create Client")}
+          </button>
+          <button type="button" className="secondary" onClick={onBack} disabled={loading}>Cancel</button>
+        </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Edit Site Page
+function EditSitePage({ apiCall, setError, siteToEdit, client, contactLinks, onRefreshContacts, onEditContact, onSuccess, onBack }) {
+  const [form, setForm] = useState({
+    name: "",
+    address: "",
+    timezone: "America/Chicago",
+    notes: "",
+  });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (siteToEdit) {
+      setForm({
+        name: siteToEdit.name || "",
+        address: siteToEdit.address || "",
+        timezone: siteToEdit.timezone || "America/Chicago",
+        notes: siteToEdit.notes || "",
+      });
+      // Fetch contacts when editing a site
+      if (onRefreshContacts) {
+        onRefreshContacts();
+      }
+    } else {
+      setForm({ name: "", address: "", timezone: "America/Chicago", notes: "" });
+    }
+  }, [siteToEdit?.id]); // Only depend on siteToEdit.id, not the whole object or onRefreshContacts
+
+  function handleChange(e) {
+    const { name, value } = e.target;
+    setForm(prev => ({ ...prev, [name]: value }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    if (!form.name.trim()) {
+      setError("Name is required");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const isEdit = !!siteToEdit;
+      const endpoint = isEdit ? `/sites/${siteToEdit.id}` : "/sites";
       const payload = { ...form, client_id: client.id };
       await apiCall(endpoint, {
         method: isEdit ? "PUT" : "POST",
         body: JSON.stringify(payload),
       });
-      await onRefreshSites();
-      resetForm();
+      if (onSuccess) {
+        onSuccess();
+      }
     } catch (err) {
-      // error already set
+      setError(err.message || "Failed to save site");
+    } finally {
+      setLoading(false);
     }
   }
 
-  function startEdit(site) {
-    setSelectedSite(site);
-    setShowForm(true);
-    setForm({
-      name: site.name || "",
-      address: site.address || "",
-      timezone: site.timezone || "America/Chicago",
-      notes: site.notes || "",
-    });
+  return (
+    <div>
+      <div style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+        <button className="secondary" onClick={onBack}>
+          ← Back to Sites
+        </button>
+        <h2 style={{ margin: 0 }}>{siteToEdit ? "Edit Site" : "Add New Site"}</h2>
+      </div>
+
+      <div className="card" style={{ marginBottom: "1rem" }}>
+        <form onSubmit={handleSubmit} className="form">
+          <label>
+            Name *
+            <input type="text" name="name" value={form.name} onChange={handleChange} required />
+          </label>
+          <label>
+            Address
+            <input type="text" name="address" value={form.address} onChange={handleChange} placeholder="Site address" />
+          </label>
+          <label>
+            Timezone
+            <input type="text" name="timezone" value={form.timezone} onChange={handleChange} placeholder="America/Chicago" />
+          </label>
+          <label>
+            Notes
+            <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} />
+          </label>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem" }}>
+            <button type="submit" className="primary" disabled={loading}>
+              {loading ? "Saving..." : (siteToEdit ? "Save Changes" : "Create Site")}
+            </button>
+            <button type="button" className="secondary" onClick={onBack} disabled={loading}>Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      {siteToEdit && onEditContact && (
+        <div style={{ marginTop: "1rem" }}>
+          <ContactManagementSection
+            site={siteToEdit}
+            client={client}
+            contactLinks={contactLinks}
+            onRefreshContacts={onRefreshContacts}
+            onEditContact={onEditContact}
+            apiCall={apiCall}
+            setError={setError}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Edit Contact Page
+function EditContactPage({ apiCall, setError, contactToEdit, contactContext, contactLinks, onRefreshContacts, onSuccess, onBack }) {
+  const [form, setForm] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+    phone: "",
+    role: "",
+    is_primary: false,
+  });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (contactToEdit) {
+      setForm({
+        first_name: contactToEdit.first_name || "",
+        last_name: contactToEdit.last_name || "",
+        email: contactToEdit.email || "",
+        phone: contactToEdit.phone || "",
+        role: contactToEdit.role || "",
+        is_primary: contactToEdit.is_primary || false,
+      });
+    } else {
+      setForm({ first_name: "", last_name: "", email: "", phone: "", role: "", is_primary: false });
+    }
+  }, [contactToEdit]);
+
+  function handleChange(e) {
+    const { name, value, type, checked } = e.target;
+    setForm(prev => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
   }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    if (!form.first_name.trim() || !form.last_name.trim()) {
+      setError("First and last name are required");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const isEdit = !!contactToEdit;
+      let contactId;
+      
+      if (isEdit) {
+        // Update existing contact
+        const result = await apiCall(`/contacts/${contactToEdit.contact_id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            first_name: form.first_name,
+            last_name: form.last_name,
+            email: form.email,
+            phone: form.phone,
+          }),
+        });
+        contactId = result.id;
+        
+        // Update the link if it exists
+        if (contactToEdit.id) {
+          try {
+            await apiCall(`/contact-links/${contactToEdit.id}`, {
+              method: "PUT",
+              body: JSON.stringify({
+                role: form.role,
+                is_primary: form.is_primary,
+              }),
+            });
+          } catch (linkErr) {
+            console.warn("Failed to update contact link:", linkErr);
+            setError(linkErr.message || "Failed to update contact link");
+          }
+        }
+      } else {
+        // Create new contact
+        const result = await apiCall("/contacts", {
+          method: "POST",
+          body: JSON.stringify({
+            first_name: form.first_name,
+            last_name: form.last_name,
+            email: form.email,
+            phone: form.phone,
+          }),
+        });
+        contactId = result.id;
+        
+        // Automatically link it to the site/client with role and primary status
+        if (contactContext?.site) {
+          try {
+            await apiCall("/contact-links", {
+              method: "POST",
+              body: JSON.stringify({
+                contact_id: contactId,
+                scope: "SITE",
+                scope_id: contactContext.site.id,
+                role: form.role || "Contact",
+                is_primary: form.is_primary,
+              }),
+            });
+          } catch (linkErr) {
+            console.warn("Failed to link contact:", linkErr);
+          }
+        } else if (contactContext?.client) {
+          try {
+            await apiCall("/contact-links", {
+              method: "POST",
+              body: JSON.stringify({
+                contact_id: contactId,
+                scope: "CLIENT",
+                scope_id: contactContext.client.id,
+                role: form.role || "Contact",
+                is_primary: form.is_primary,
+              }),
+            });
+          } catch (linkErr) {
+            console.warn("Failed to link contact:", linkErr);
+          }
+        }
+      }
+      
+      if (onSuccess) {
+        onSuccess();
+      }
+    } catch (err) {
+      setError(err.message || "Failed to save contact");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const contextName = contactContext?.site?.name || contactContext?.client?.name || "Unknown";
+
+  return (
+    <div>
+      <div style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+        <button className="secondary" onClick={onBack}>
+          ← Back
+        </button>
+        <h2 style={{ margin: 0 }}>{contactToEdit ? "Edit Contact" : "Add New Contact"}</h2>
+      </div>
+
+      <div className="card">
+        <div style={{ padding: "0.5rem 1rem", backgroundColor: "#8193A4", color: "#2D3234", fontSize: "0.9rem", marginBottom: "1rem" }}>
+          {contactContext?.site ? `Site: ${contextName}` : contactContext?.client ? `Client: ${contextName}` : ""}
+        </div>
+
+        <form onSubmit={handleSubmit} className="form" style={{ padding: "1rem" }}>
+          <label>
+            First Name *
+            <input type="text" name="first_name" value={form.first_name} onChange={handleChange} required />
+          </label>
+          <label>
+            Last Name *
+            <input type="text" name="last_name" value={form.last_name} onChange={handleChange} required />
+          </label>
+          <label>
+            Email
+            <input type="email" name="email" value={form.email} onChange={handleChange} />
+          </label>
+          <label>
+            Phone
+            <input type="tel" name="phone" value={form.phone} onChange={handleChange} />
+          </label>
+          <label>
+            Role
+            <input type="text" name="role" value={form.role} onChange={handleChange} placeholder="e.g. Manager, Technician" />
+          </label>
+          <label className="checkbox-label">
+            <input type="checkbox" name="is_primary" checked={form.is_primary} onChange={handleChange} />
+            Primary Contact
+          </label>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem" }}>
+            <button type="submit" className="primary" disabled={loading}>
+              {loading ? "Saving..." : (contactToEdit ? "Save Changes" : "Create Contact")}
+            </button>
+            <button type="button" className="secondary" onClick={onBack} disabled={loading}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Client Sites View - Shows sites for a selected client
+function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRefreshEquipments, onSiteClick, onBack, onAddSite, onEditSite, apiCall, setError }) {
+  useEffect(() => {
+    onRefreshSites();
+    onRefreshEquipments();
+  }, []);
 
   async function handleDelete(siteId) {
     if (!window.confirm("Delete this site?")) return;
     try {
       await apiCall(`/sites/${siteId}`, { method: "DELETE" });
       await onRefreshSites();
-      if (selectedSite?.id === siteId) resetForm();
     } catch (err) {
       // error already set
     }
@@ -887,35 +1249,8 @@ function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRe
       <div className="card">
         <div className="card-header">
           <h2>Sites ({sites.length})</h2>
-          <button className="primary" onClick={() => { resetForm(); setShowForm(true); }}>+ Add New Site</button>
+          <button className="primary" onClick={onAddSite}>+ Add New Site</button>
         </div>
-
-        {showForm && (
-          <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
-            <form onSubmit={handleSubmit} className="form">
-              <label>
-                Name *
-                <input type="text" name="name" value={form.name} onChange={handleChange} required />
-              </label>
-              <label>
-                Address
-                <input type="text" name="address" value={form.address} onChange={handleChange} />
-              </label>
-              <label>
-                Timezone
-                <input type="text" name="timezone" value={form.timezone} onChange={handleChange} placeholder="America/Chicago" />
-              </label>
-              <label>
-                Notes
-                <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} />
-              </label>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                <button type="submit" className="primary" style={{ marginTop: 0 }}>{selectedSite ? "Save" : "Create"}</button>
-                <button type="button" className="secondary" onClick={resetForm}>Cancel</button>
-              </div>
-            </form>
-          </div>
-        )}
 
         {sites.length === 0 ? (
           <p className="empty">No sites yet. Click "Add New Site" to get started.</p>
@@ -931,7 +1266,7 @@ function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRe
                   </div>
                 </div>
                 <div className="list-actions" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => startEdit(site)}>Edit</button>
+                  <button onClick={() => onEditSite(site)}>Edit</button>
                   <button className="danger" onClick={() => handleDelete(site.id)}>Delete</button>
                 </div>
               </li>
@@ -1696,149 +2031,36 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
           client={client}
           contactLinks={contactLinks}
           onRefreshContacts={onRefreshContacts}
-            apiCall={apiCall}
-            setError={setError}
-          />
+          onEditContact={(link) => {
+            setContactToEdit(link);
+            setContactContext({ site: site, client: client });
+            setPreviousView("site-details");
+            setView("edit-contact");
+          }}
+          apiCall={apiCall}
+          setError={setError}
+        />
       </div>
     </div>
   );
 }
 
 // Contact Management Section - Simplified with Add New buttons
-function ContactManagementSection({ site, client, contactLinks, onRefreshContacts, apiCall, setError }) {
-  const [showContactForm, setShowContactForm] = useState(false);
-  const [selectedContact, setSelectedContact] = useState(null);
-  const [selectedLink, setSelectedLink] = useState(null);
-  const [contactForm, setContactForm] = useState({
-    first_name: "",
-    last_name: "",
-    email: "",
-    phone: "",
-    role: "",
-    is_primary: false,
-  });
-
-  function handleContactChange(e) {
-    const { name, value, type, checked } = e.target;
-    setContactForm(prev => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
-  }
-
-  function resetContactForm() {
-    setSelectedContact(null);
-    setSelectedLink(null);
-    setShowContactForm(false);
-    setContactForm({ first_name: "", last_name: "", email: "", phone: "", role: "", is_primary: false });
-  }
-
-  async function handleContactSubmit(e) {
-    e.preventDefault();
-    setError("");
-    if (!contactForm.first_name.trim() || !contactForm.last_name.trim()) {
-      setError("First and last name are required");
-      return;
-    }
-
-    try {
-      const isEdit = !!selectedContact;
-      let contactId;
-      
-      if (isEdit) {
-        // Update existing contact
-        const result = await apiCall(`/contacts/${selectedContact.id}`, {
-          method: "PUT",
-          body: JSON.stringify({
-            first_name: contactForm.first_name,
-            last_name: contactForm.last_name,
-            email: contactForm.email,
-            phone: contactForm.phone,
-          }),
-        });
-        contactId = result.id;
-        
-        // Update the link if it exists
-        if (selectedLink) {
-          try {
-            await apiCall(`/contact-links/${selectedLink.id}`, {
-              method: "PUT",
-              body: JSON.stringify({
-                role: contactForm.role,
-                is_primary: contactForm.is_primary,
-              }),
-            });
-          } catch (linkErr) {
-            console.warn("Failed to update contact link:", linkErr);
-            setError(linkErr.message || "Failed to update contact link");
-          }
-        }
-      } else {
-        // Create new contact
-        const result = await apiCall("/contacts", {
-          method: "POST",
-          body: JSON.stringify({
-            first_name: contactForm.first_name,
-            last_name: contactForm.last_name,
-            email: contactForm.email,
-            phone: contactForm.phone,
-          }),
-        });
-        contactId = result.id;
-        
-        // Automatically link it to the site with role and primary status
-        if (site) {
-          try {
-            await apiCall("/contact-links", {
-              method: "POST",
-              body: JSON.stringify({
-                contact_id: contactId,
-                scope: "SITE",
-                scope_id: site.id,
-                role: contactForm.role || "Contact",
-                is_primary: contactForm.is_primary,
-              }),
-            });
-          } catch (linkErr) {
-            console.warn("Failed to link contact:", linkErr);
-          }
-        }
-      }
-      
-      await onRefreshContacts(); // Refresh the contact links displayed
-      resetContactForm();
-    } catch (err) {
-      // error already set
-    }
-  }
-
-
-  function startEditContact(link) {
-    // link is actually a contact link with contact info
-    setSelectedContact({ id: link.contact_id });
-    setSelectedLink(link);
-    setShowContactForm(true);
-    setContactForm({
-      first_name: link.first_name || "",
-      last_name: link.last_name || "",
-      email: link.email || "",
-      phone: link.phone || "",
-      role: link.role || "",
-      is_primary: link.is_primary || false,
-    });
-  }
-
-
+function ContactManagementSection({ site, client, contactLinks, onRefreshContacts, onEditContact, apiCall, setError }) {
   async function handleDeleteLink(link) {
-    if (!window.confirm("Remove this contact from the site?")) return;
+    const scope = site ? "SITE" : "CLIENT";
+    const scopeId = site ? site.id : client?.id;
+    if (!window.confirm("Remove this contact?")) return;
     try {
-      const links = await apiCall(`/contact-links?scope=SITE&scope_id=${site.id}`);
+      const links = await apiCall(`/contact-links?scope=${scope}&scope_id=${scopeId}`);
       const actualLink = links.find(l => 
         l.contact_id === link.contact_id && 
         l.role === link.role &&
-        l.scope === "SITE"
+        l.scope === scope
       );
       if (actualLink) {
         await apiCall(`/contact-links/${actualLink.id}`, { method: "DELETE" });
         await onRefreshContacts();
-        if (selectedLink?.id === actualLink.id) resetContactForm();
       }
     } catch (err) {
       // error already set
@@ -1850,46 +2072,22 @@ function ContactManagementSection({ site, client, contactLinks, onRefreshContact
       <div className="card" style={{ marginBottom: "1rem" }}>
         <div className="card-header">
           <h3>Contacts ({contactLinks.length})</h3>
-          <button className="primary" onClick={() => { resetContactForm(); setShowContactForm(true); }}>+ Add New Contact</button>
+          <button 
+            className="primary" 
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (onEditContact) {
+                onEditContact(null);
+              }
+            }}
+          >
+            + Add New Contact
+          </button>
         </div>
 
-        {showContactForm && (
-          <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
-            <form onSubmit={handleContactSubmit} className="form">
-              <label>
-                First Name *
-                <input type="text" name="first_name" value={contactForm.first_name} onChange={handleContactChange} required />
-              </label>
-              <label>
-                Last Name *
-                <input type="text" name="last_name" value={contactForm.last_name} onChange={handleContactChange} required />
-              </label>
-              <label>
-                Email
-                <input type="email" name="email" value={contactForm.email} onChange={handleContactChange} />
-              </label>
-              <label>
-                Phone
-                <input type="tel" name="phone" value={contactForm.phone} onChange={handleContactChange} />
-              </label>
-              <label>
-                Role
-                <input type="text" name="role" value={contactForm.role} onChange={handleContactChange} placeholder="e.g. Manager, Technician" />
-              </label>
-              <label className="checkbox-label">
-                <input type="checkbox" name="is_primary" checked={contactForm.is_primary} onChange={handleContactChange} />
-                Primary Contact
-              </label>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                <button type="submit" className="primary" style={{ marginTop: 0 }}>{selectedContact ? "Save" : "Create"}</button>
-                <button type="button" className="secondary" onClick={resetContactForm}>Cancel</button>
-              </div>
-            </form>
-          </div>
-        )}
-
         {contactLinks.length === 0 ? (
-          <p className="empty">No contacts linked to this site. Click "Add New Contact" to get started.</p>
+          <p className="empty">No contacts linked to this {site ? "site" : "client"}. Click "Add New Contact" to get started.</p>
         ) : (
           <ul className="list">
             {contactLinks.map((link, index) => (
@@ -1906,7 +2104,17 @@ function ContactManagementSection({ site, client, contactLinks, onRefreshContact
                   </div>
                 </div>
                 <div className="list-actions">
-                  <button onClick={() => startEditContact(link)}>Edit</button>
+                  <button 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (onEditContact) {
+                        onEditContact(link);
+                      }
+                    }}
+                  >
+                    Edit
+                  </button>
                   <button className="danger" onClick={() => handleDeleteLink(link)}>Remove</button>
                 </div>
               </li>
@@ -3789,7 +3997,50 @@ function WorkOrdersTab({
 }
 
 // All Equipments View
-function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, onNavigateToSchedule, onNavigateToAddEquipment }) {
+function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment }) {
+  const equipmentRefs = useRef({});
+
+  useEffect(() => {
+    if (scrollToEquipmentId && allEquipments.length > 0) {
+      // Verify the equipment exists in the current list
+      const equipmentExists = allEquipments.some(e => e.id === scrollToEquipmentId);
+      if (!equipmentExists) {
+        // Equipment not found, clear scroll target
+        if (onScrollComplete) onScrollComplete();
+        return;
+      }
+      
+      // Wait for DOM to update, then scroll
+      setTimeout(() => {
+        const equipmentElement = equipmentRefs.current[scrollToEquipmentId];
+        if (equipmentElement) {
+          equipmentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Highlight the equipment briefly
+          equipmentElement.style.backgroundColor = '#8193A4';
+          setTimeout(() => {
+            equipmentElement.style.backgroundColor = '';
+            if (onScrollComplete) onScrollComplete();
+          }, 2000);
+        } else {
+          // Element not found yet, try again after a short delay
+          setTimeout(() => {
+            const retryElement = equipmentRefs.current[scrollToEquipmentId];
+            if (retryElement) {
+              retryElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              retryElement.style.backgroundColor = '#8193A4';
+              setTimeout(() => {
+                retryElement.style.backgroundColor = '';
+                if (onScrollComplete) onScrollComplete();
+              }, 2000);
+            } else if (onScrollComplete) {
+              onScrollComplete();
+            }
+          }, 300);
+        }
+      }, 200);
+    }
+  }, [scrollToEquipmentId, allEquipments, onScrollComplete]);
+
   async function fetchAllEquipments() {
     setLoading(true);
     try {
@@ -3802,6 +4053,10 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    fetchAllEquipments();
+  }, []);
 
   async function handleDeleteSchedule(scheduleId) {
     if (!window.confirm("Delete this schedule?")) return;
@@ -3841,7 +4096,11 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
               {allEquipments.map(schedule => {
                 // The API returns equipment_name, client_name, site_name, etc. in the schedule object
                 return (
-                  <li key={schedule.id} className="list-item">
+                  <li 
+                    key={schedule.id} 
+                    ref={el => equipmentRefs.current[schedule.id] = el}
+                    className="list-item"
+                  >
                     <div className="list-main">
                       <div className="list-title">
                         {schedule.equipment_identifier || schedule.equipment_name || `Equipment ID: ${schedule.equipment_id}`}
