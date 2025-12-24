@@ -787,7 +787,7 @@ function ClientsListView({ clients, onRefresh, onClientClick, apiCall, setError 
                   </div>
                 </div>
                 <div className="list-actions">
-                  <button onClick={() => onClientClick(client)}>Update</button>
+                  <button onClick={() => onClientClick(client)}>Sites</button>
                   <button onClick={() => startEdit(client)}>Edit</button>
                   <button className="danger" onClick={() => handleDelete(client.id)}>Delete</button>
                 </div>
