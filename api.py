@@ -2024,9 +2024,17 @@ async def import_equipments(
                     if notes.lower() in ['nan', 'none', '']:
                         notes = None
                 
-                # Get interval_weeks from equipment_type
-                eq_type_row = db.execute("SELECT interval_weeks FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
-                interval_weeks = eq_type_row['interval_weeks'] if eq_type_row and eq_type_row['interval_weeks'] else 52
+                # Get interval_weeks from Excel file if provided, otherwise from equipment_type
+                interval_weeks = None
+                if interval_col and pd.notna(row.get(interval_col)):
+                    try:
+                        interval_weeks = int(float(row[interval_col]))
+                    except:
+                        pass
+                if interval_weeks is None:
+                    # Fall back to equipment_type's interval
+                    eq_type_row = db.execute("SELECT interval_weeks FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
+                    interval_weeks = eq_type_row['interval_weeks'] if eq_type_row and eq_type_row['interval_weeks'] else 52
                 
                 # Create equipment_record
                 try:
@@ -2090,6 +2098,7 @@ async def import_temporary_data(
         equipment_name_col = None  # Equipment Name (textarea value)
         anchor_date_col = None
         due_date_col = None
+        interval_col = None  # Interval (weeks)
         lead_weeks_col = None
         timezone_col = None
         notes_col = None
@@ -2116,6 +2125,8 @@ async def import_temporary_data(
                 anchor_date_col = col
             elif due_date_col is None and any(x in col_lower for x in ['due', 'due_date', 'next_due']):
                 due_date_col = col
+            elif interval_col is None and any(x in col_lower for x in ['interval', 'interval_weeks', 'weeks']):
+                interval_col = col
             elif lead_weeks_col is None and any(x in col_lower for x in ['lead', 'lead_weeks', 'lead_weeks_override']):
                 lead_weeks_col = col
             elif timezone_col is None and any(x in col_lower for x in ['timezone', 'tz', 'time_zone']):
@@ -2277,8 +2288,15 @@ async def import_temporary_data(
                     except:
                         pass
                 
-                # Parse interval weeks (optional)
-                interval_weeks = default_interval_weeks
+                # Parse interval weeks from Excel file if provided, otherwise use default
+                interval_weeks = None
+                if interval_col and pd.notna(row.get(interval_col)):
+                    try:
+                        interval_weeks = int(float(row[interval_col]))
+                    except:
+                        pass
+                if interval_weeks is None:
+                    interval_weeks = default_interval_weeks
                 
                 # Parse lead weeks (optional)
                 lead_weeks = None
@@ -2381,7 +2399,7 @@ async def export_equipments(
                 "Equipment Name": row['equipment_name'],
                 "Anchor Date": row['anchor_date'],
                 "Due Date": row['due_date'] or "",
-                "Interval (weeks)": row['interval_weeks'],
+                "Interval": row['interval_weeks'],
                 "Lead Weeks": row['lead_weeks'] or "",
                 "Timezone": row['timezone'] or "",
                 "Notes": row['notes'] or ""
