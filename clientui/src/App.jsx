@@ -3591,11 +3591,10 @@ function WorkOrdersTab({
 
 // Quick Views Tab
 function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule, onNavigateToAddEquipment }) {
-  const [quickViewTab, setQuickViewTab] = useState("all-equipments"); // "all-equipments", "upcoming", "overdue", "future"
+  const [quickViewTab, setQuickViewTab] = useState("all-equipments"); // "all-equipments", "upcoming", "overdue"
   const [dueThisMonth, setDueThisMonth] = useState([]);
   const [overdue, setOverdue] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
-  const [future, setFuture] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [upcomingStartDate, setUpcomingStartDate] = useState("");
@@ -3702,76 +3701,6 @@ function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule
       if (quickViewTab === "upcoming") {
         await fetchUpcoming();
       }
-      
-      // Fetch future - if upcomingStartDate is set and on future tab, use it to calculate future range
-      if (quickViewTab === "future") {
-        let futureStartDate, futureEndDate;
-        if (upcomingStartDate) {
-          // Future should be from (start_date + 14 days) to (start_date + 14 days + 2 weeks)
-          const startDate = new Date(upcomingStartDate);
-          startDate.setDate(startDate.getDate() + 14); // Add 14 days
-          futureStartDate = startDate.toISOString().split('T')[0];
-          
-          const endDate = new Date(startDate);
-          endDate.setDate(endDate.getDate() + 14); // Add another 2 weeks (14 days)
-          futureEndDate = endDate.toISOString().split('T')[0];
-        }
-        
-        // Try work orders first
-        let futureWOUrl = "/work-orders/upcoming";
-        if (futureStartDate && futureEndDate) {
-          futureWOUrl += `?start_date=${futureStartDate}&end_date=${futureEndDate}`;
-        } else {
-          futureWOUrl += "?weeks=52";
-        }
-        
-        const futureWO = await apiCall(futureWOUrl).catch(() => []);
-        
-        if (!futureWO || futureWO.length === 0) {
-          // Fallback to schedules
-          let futureSchedUrl = "/schedules/upcoming";
-          if (futureStartDate && futureEndDate) {
-            futureSchedUrl += `?start_date=${futureStartDate}&end_date=${futureEndDate}`;
-          } else {
-            futureSchedUrl += "?weeks=52";
-          }
-          
-          const futureSched = await apiCall(futureSchedUrl).catch(() => []);
-          const futureArray = Array.isArray(futureSched) ? futureSched : [];
-          
-          // If not using date range, filter out items that are in upcoming
-          if (!futureStartDate || !futureEndDate) {
-            // First fetch upcoming to know what to filter out
-            await fetchUpcoming();
-            const currentUpcoming = upcoming.length > 0 ? upcoming : [];
-            const upcomingIds = new Set(currentUpcoming.map(item => item.id));
-            setFuture(futureArray.filter(item => !upcomingIds.has(item.id)));
-          } else {
-            setFuture(futureArray);
-          }
-        } else {
-          // Use work orders
-          const futureArray = Array.isArray(futureWO) ? futureWO : [];
-          
-          // If not using date range, filter out items that are in upcoming
-          if (!futureStartDate || !futureEndDate) {
-            // First fetch upcoming to know what to filter out
-            await fetchUpcoming();
-            const currentUpcoming = upcoming.length > 0 ? upcoming : [];
-            const upcomingIds = new Set(currentUpcoming.map(item => item.id));
-            setFuture(futureArray.filter(item => !upcomingIds.has(item.id)));
-          } else {
-            setFuture(futureArray);
-          }
-        }
-      } else {
-        // For other tabs, fetch future normally
-        const futureData = await apiCall("/schedules/upcoming?weeks=52").catch(() => []);
-        const futureArray = Array.isArray(futureData) ? futureData : [];
-        const currentUpcoming = upcoming.length > 0 ? upcoming : [];
-        const upcomingIds = new Set(currentUpcoming.map(item => item.id));
-        setFuture(futureArray.filter(item => !upcomingIds.has(item.id)));
-      }
     } catch (err) {
       const errorMessage = err.message || "Failed to load data";
       setErrorMsg(errorMessage);
@@ -3781,7 +3710,6 @@ function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule
       setDueThisMonth([]);
       setOverdue([]);
       setUpcoming([]);
-      setFuture([]);
     } finally {
       setLoading(false);
     }
@@ -3870,12 +3798,6 @@ function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule
           onClick={() => setQuickViewTab("overdue")}
         >
           Overdue
-        </button>
-        <button
-          className={quickViewTab === "future" ? "active" : ""}
-          onClick={() => setQuickViewTab("future")}
-        >
-          Future
         </button>
       </nav>
 
@@ -4025,22 +3947,6 @@ function QuickViewsTab({ apiCall, setError, clients, sites, onNavigateToSchedule
             <p className="empty">No overdue work orders</p>
           ) : (
             renderWorkOrderList(overdue, "due")
-          )}
-        </div>
-      )}
-
-      {quickViewTab === "future" && (
-        <div className="card">
-          <div className="card-header">
-            <h2>Future</h2>
-            <div>
-              <button className="secondary" onClick={fetchAll}>Refresh</button>
-            </div>
-          </div>
-          {future.length === 0 ? (
-            <p className="empty">No future work orders</p>
-          ) : (
-            renderWorkOrderList(future, "planned")
           )}
         </div>
       )}
