@@ -2578,6 +2578,8 @@ function EquipmentTypesTab({ equipmentTypes, onRefresh, apiCall, setError }) {
 // All Equipments View
 function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment }) {
   const equipmentRefs = useRef({});
+  const [selectedEquipment, setSelectedEquipment] = useState(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
 
   useEffect(() => {
     if (scrollToEquipmentId && allEquipments.length > 0) {
@@ -2683,6 +2685,11 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                     key={equipment.id} 
                     ref={el => equipmentRefs.current[equipment.id] = el}
                     className="list-item"
+                    style={{ cursor: "pointer" }}
+                    onClick={() => {
+                      setSelectedEquipment(equipment);
+                      setShowDetailsModal(true);
+                    }}
                   >
                     <div className="list-main">
                       <div className="list-title">
@@ -2696,7 +2703,7 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                         {equipment.interval_weeks && ` • Interval: ${equipment.interval_weeks} weeks`}
                       </div>
                     </div>
-                    <div className="list-actions">
+                    <div className="list-actions" onClick={(e) => e.stopPropagation()}>
                       <button onClick={() => {
                         if (onNavigateToAddEquipment) {
                           onNavigateToAddEquipment(equipment);
@@ -2711,6 +2718,102 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
           )}
         </div>
       </div>
+
+      {showDetailsModal && selectedEquipment && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(45, 50, 52, 0.9)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }} onClick={() => setShowDetailsModal(false)}>
+          <div style={{
+            backgroundColor: "#D7E5D8",
+            padding: "2rem",
+            borderRadius: "0.5rem",
+            maxWidth: "800px",
+            maxHeight: "80vh",
+            overflow: "auto",
+            width: "90%",
+            color: "#2D3234"
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <h2 style={{ margin: 0, color: "#2D3234" }}>Equipment Details</h2>
+              <button onClick={() => setShowDetailsModal(false)} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+            </div>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              {/* Equipment Information */}
+              <div>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Equipment Information</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
+                  <div><strong>Equipment Name:</strong> {selectedEquipment.equipment_name || "N/A"}</div>
+                  <div><strong>Equipment Type:</strong> {selectedEquipment.equipment_type_name || "N/A"}</div>
+                  <div><strong>Anchor Date:</strong> {formatDate(selectedEquipment.anchor_date)}</div>
+                  {selectedEquipment.due_date && <div><strong>Due Date:</strong> {formatDate(selectedEquipment.due_date)}</div>}
+                  {selectedEquipment.interval_weeks && <div><strong>Interval:</strong> {selectedEquipment.interval_weeks} weeks</div>}
+                  {selectedEquipment.lead_weeks && <div><strong>Lead Weeks:</strong> {selectedEquipment.lead_weeks}</div>}
+                  {selectedEquipment.timezone && <div><strong>Timezone:</strong> {selectedEquipment.timezone}</div>}
+                  <div><strong>Status:</strong> {selectedEquipment.active ? "Active" : "Inactive"}</div>
+                  {selectedEquipment.notes && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <strong>Notes:</strong>
+                      <div style={{ marginTop: "0.25rem", whiteSpace: "pre-wrap" }}>{selectedEquipment.notes}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Client Information */}
+              <div>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Client Information</h3>
+                <div style={{ fontSize: "0.9rem" }}>
+                  <div><strong>Name:</strong> {selectedEquipment.client_name || "N/A"}</div>
+                </div>
+              </div>
+
+              {/* Site Information */}
+              <div>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
+                <div style={{ fontSize: "0.9rem" }}>
+                  <div><strong>Name:</strong> {selectedEquipment.site_name || "N/A"}</div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <button 
+                  className="primary" 
+                  onClick={() => {
+                    setShowDetailsModal(false);
+                    if (onNavigateToAddEquipment) {
+                      onNavigateToAddEquipment(selectedEquipment);
+                    }
+                  }}
+                >
+                  Edit Equipment
+                </button>
+                <button 
+                  className="secondary" 
+                  onClick={() => setShowDetailsModal(false)}
+                  style={{ 
+                    color: "#2D3234", 
+                    border: "1px solid #8193A4",
+                    background: "transparent"
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
