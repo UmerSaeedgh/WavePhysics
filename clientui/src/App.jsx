@@ -24,8 +24,8 @@ function formatDate(dateString) {
 }
 
 function App() {
-  const [view, setView] = useState("clients"); // "clients", "client-sites", "site-details", "all-equipments", "upcoming", "overdue", "reports", "admin", "add-equipment", "edit-client", "edit-site", "edit-contact"
-  const [equipmentToEdit, setEquipmentToEdit] = useState(null); // Schedule to edit when navigating to add-equipment page
+  const [view, setView] = useState("clients"); // "clients", "client-sites", "site-details", "all-equipments", "upcoming", "overdue", "admin", "add-equipment", "edit-client", "edit-site", "edit-contact"
+  const [equipmentToEdit, setEquipmentToEdit] = useState(null); // Equipment record to edit when navigating to add-equipment page
   const [clientToEdit, setClientToEdit] = useState(null); // Client to edit when navigating to edit-client page
   const [siteToEdit, setSiteToEdit] = useState(null); // Site to edit when navigating to edit-site page
   const [contactToEdit, setContactToEdit] = useState(null); // Contact link to edit when navigating to edit-contact page
@@ -33,16 +33,13 @@ function App() {
   const [previousView, setPreviousView] = useState(null); // Track previous view to return to after add-equipment
   const [selectedClient, setSelectedClient] = useState(null);
   const [selectedSite, setSelectedSite] = useState(null);
-  const [scrollToScheduleId, setScrollToScheduleId] = useState(null);
-  const [scrollToEquipmentId, setScrollToEquipmentId] = useState(null); // Schedule ID to scroll to in all-equipments view
+  const [scrollToEquipmentId, setScrollToEquipmentId] = useState(null); // Equipment record ID to scroll to in all-equipments view
   const [clients, setClients] = useState([]);
   const [sites, setSites] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [contactLinks, setContactLinks] = useState([]);
   const [equipmentTypes, setEquipmentTypes] = useState([]);
   const [clientEquipments, setClientEquipments] = useState([]);
-  const [schedules, setSchedules] = useState([]);
-  const [workOrders, setWorkOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   
@@ -70,9 +67,6 @@ function App() {
   // Fetch site details when a site is selected
   useEffect(() => {
     if (selectedSite) {
-      // Clear old schedules when switching sites to prevent showing old data
-      setSchedules([]);
-      fetchSchedules(selectedSite.id);
       fetchSiteContacts(selectedSite.id);
     }
   }, [selectedSite]);
@@ -267,40 +261,6 @@ function App() {
     }
   }
 
-  async function fetchSchedules(siteId = null) {
-    setLoading(true);
-    try {
-      const endpoint = siteId ? `/schedules?site_id=${siteId}` : "/schedules";
-      const data = await apiCall(endpoint);
-      console.log(`Fetched ${data?.length || 0} schedules for site ${siteId}`);
-      setSchedules(data || []);
-    } catch (err) {
-      console.error("Error fetching schedules:", err);
-      // error already set
-      setSchedules([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function fetchWorkOrders(scheduleId = null, status = null) {
-    setLoading(true);
-    try {
-      const params = [];
-      // Ensure scheduleId is a valid number or null
-      const validScheduleId = scheduleId && (typeof scheduleId === 'number' ? scheduleId : 
-                           (!isNaN(parseInt(scheduleId)) ? parseInt(scheduleId) : null));
-      if (validScheduleId) params.push(`schedule_id=${validScheduleId}`);
-      if (status) params.push(`status=${status}`);
-      const endpoint = params.length ? `/work-orders?${params.join("&")}` : "/work-orders";
-      const data = await apiCall(endpoint);
-      setWorkOrders(data);
-    } catch (err) {
-      // error already set
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function fetchAllEquipments() {
     setLoading(true);
@@ -422,12 +382,6 @@ function App() {
             onClick={() => setView("overdue")}
           >
             Overdue
-          </button>
-          <button
-            className={view === "reports" ? "active" : ""}
-            onClick={() => setView("reports")}
-          >
-            Reports
           </button>
           <button
             className={view === "admin" ? "active" : ""}
@@ -591,20 +545,15 @@ function App() {
             client={selectedClient}
             site={selectedSite}
             clientEquipments={clientEquipments}
-            schedules={schedules}
             contactLinks={contactLinks}
-            scrollToScheduleId={scrollToScheduleId}
-            onScrollComplete={() => setScrollToScheduleId(null)}
-            onRefreshSchedules={() => fetchSchedules(selectedSite.id)}
             onRefreshEquipments={() => fetchClientEquipments(selectedClient.id)}
             onRefreshContacts={() => fetchSiteContacts(selectedSite.id)}
             onBack={() => {
               setView("client-sites");
               setSelectedSite(null);
-              setScrollToScheduleId(null);
             }}
-            onNavigateToAddEquipment={(schedule) => {
-              setEquipmentToEdit(schedule);
+            onNavigateToAddEquipment={(equipment) => {
+              setEquipmentToEdit(equipment);
               setPreviousView("site-details");
               setView("add-equipment");
             }}
@@ -708,14 +657,10 @@ function App() {
               setView(returnView);
               // Refresh data if coming from site-details
               if (returnView === "site-details" && selectedSite) {
-                await fetchSchedules(selectedSite.id);
+                // SiteDetailsView will refresh its own data
               }
             }}
           />
-        )}
-
-        {view === "reports" && (
-          <ReportsTab apiCall={apiCall} setError={setError} />
         )}
 
         {view === "admin" && (
@@ -1254,275 +1199,43 @@ function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRe
   );
 }
 
-// Site Details View - Shows equipments, schedules, and contacts for a site
-function SiteDetailsView({ client, site, clientEquipments, schedules, contactLinks, scrollToScheduleId, onScrollComplete, onRefreshSchedules, onRefreshEquipments, onRefreshContacts, onBack, onNavigateToAddEquipment, apiCall, setError }) {
-  const scheduleRefs = useRef({});
-  const [selectedSchedule, setSelectedSchedule] = useState(null);
-  const [scheduleForm, setScheduleForm] = useState({
-    equipment_id: "",
-    anchor_date: "",
-    due_date: "",
-    lead_weeks: "",
-    timezone: "",
-    equipment_identifier: "",
-    notes: "",
-    rrule: "",
-  });
-  const [selectedEquipment, setSelectedEquipment] = useState(null);
-  const [equipmentForm, setEquipmentForm] = useState({
-    name: "",
-    interval_weeks: "52",
-    rrule: "FREQ=WEEKLY;INTERVAL=52",
-    default_lead_weeks: "4",
-  });
-  const [showEquipmentForm, setShowEquipmentForm] = useState(false);
-  const [showCompletedModal, setShowCompletedModal] = useState(false);
-  const [completedSchedules, setCompletedSchedules] = useState([]);
-  const [showScheduleDetailsModal, setShowScheduleDetailsModal] = useState(false);
-  const [selectedScheduleDetails, setSelectedScheduleDetails] = useState(null);
+// Site Details View - Shows equipment records and contacts for a site
+function SiteDetailsView({ client, site, clientEquipments, contactLinks, onRefreshEquipments, onRefreshContacts, onBack, onNavigateToAddEquipment, apiCall, setError }) {
+  const [siteEquipmentRecords, setSiteEquipmentRecords] = useState([]);
+  const [loading, setLoading] = useState(false);
+  async function fetchSiteEquipmentRecords() {
+    setLoading(true);
+    setError("");
+    try {
+      // Fetch all equipment records for the client, then filter by site
+      const allRecords = await apiCall(`/equipment-records?client_id=${client.id}`);
+      const filtered = Array.isArray(allRecords) 
+        ? allRecords.filter(record => record.site_id === site.id)
+        : [];
+      setSiteEquipmentRecords(filtered);
+    } catch (err) {
+      setError(err.message || "Failed to load equipment records");
+      setSiteEquipmentRecords([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    onRefreshSchedules();
+    fetchSiteEquipmentRecords();
     onRefreshEquipments();
     onRefreshContacts();
-  }, []);
+  }, [site.id, client.id]);
 
-  // Scroll to specific schedule when scrollToScheduleId is set and schedules are loaded
-  useEffect(() => {
-    if (scrollToScheduleId && schedules.length > 0) {
-      // Verify the schedule exists in the current site's schedules
-      const scheduleExists = schedules.some(s => s.id === scrollToScheduleId);
-      if (!scheduleExists) {
-        // Schedule not found in current schedules, clear scroll target
-        if (onScrollComplete) onScrollComplete();
-        return;
-      }
-      
-      // Wait for DOM to update, then scroll
-      // Use a longer timeout to ensure the list is fully rendered
-      setTimeout(() => {
-        const scheduleElement = scheduleRefs.current[scrollToScheduleId];
-        if (scheduleElement) {
-          scheduleElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          // Highlight the schedule briefly
-          scheduleElement.style.backgroundColor = '#8193A4';
-          setTimeout(() => {
-            scheduleElement.style.backgroundColor = '';
-            if (onScrollComplete) onScrollComplete();
-          }, 2000);
-        } else {
-          // Element not found yet, try again after a short delay
-          setTimeout(() => {
-            const retryElement = scheduleRefs.current[scrollToScheduleId];
-            if (retryElement) {
-              retryElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              retryElement.style.backgroundColor = '#8193A4';
-              setTimeout(() => {
-                retryElement.style.backgroundColor = '';
-                if (onScrollComplete) onScrollComplete();
-              }, 2000);
-            } else if (onScrollComplete) {
-              onScrollComplete();
-            }
-          }, 300);
-        }
-      }, 200);
-    }
-  }, [scrollToScheduleId, schedules, onScrollComplete, site.id]);
-
-  async function fetchCompletedSchedules() {
+  async function handleDeleteEquipmentRecord(recordId) {
+    if (!window.confirm("Delete this equipment record?")) return;
     try {
-      const result = await apiCall(`/schedules/completed?site_id=${site.id}`);
-      setCompletedSchedules(result);
+      await apiCall(`/equipment-records/${recordId}`, { method: "DELETE" });
+      await fetchSiteEquipmentRecords();
     } catch (err) {
       // error already set
     }
   }
-
-  async function handleCompleteSchedule(scheduleId) {
-    try {
-      console.log("Completing schedule:", scheduleId);
-      const result = await apiCall(`/schedules/${scheduleId}/complete`, { method: "POST" });
-      console.log("Complete result:", result);
-      // Force refresh schedules to get updated list
-      await onRefreshSchedules();
-      // Also refresh completed schedules if modal is open
-      if (showCompletedModal) {
-        await fetchCompletedSchedules();
-      }
-    } catch (err) {
-      console.error("Error completing schedule:", err);
-      // error already set
-    }
-  }
-
-  async function handleUndoSchedule(scheduleId) {
-    try {
-      await apiCall(`/schedules/${scheduleId}/undo`, { method: "POST" });
-      await onRefreshSchedules();
-      await fetchCompletedSchedules();
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  async function handleShowCompleted() {
-    setShowCompletedModal(true);
-    await fetchCompletedSchedules();
-  }
-
-  function handleScheduleChange(e) {
-    const { name, value } = e.target;
-    setScheduleForm(prev => ({ ...prev, [name]: value }));
-  }
-
-  function resetScheduleForm() {
-    setSelectedSchedule(null);
-    setShowScheduleForm(false);
-    setScheduleForm({
-      equipment_id: "",
-      anchor_date: "",
-      due_date: "",
-      lead_weeks: "",
-      timezone: "",
-      equipment_identifier: "",
-      notes: "",
-      rrule: "",
-    });
-  }
-
-  function resetEquipmentForm() {
-    setSelectedEquipment(null);
-    setShowEquipmentForm(false);
-    setEquipmentForm({
-      name: "",
-      interval_weeks: "52",
-      rrule: "FREQ=WEEKLY;INTERVAL=52",
-      default_lead_weeks: "4",
-    });
-  }
-
-  function startEditEquipment(equipment) {
-    setSelectedEquipment(equipment);
-    setShowEquipmentForm(true);
-    setShowNewEquipmentForm(true);
-    setEquipmentForm({
-      name: equipment.name,
-      interval_weeks: equipment.interval_weeks?.toString() || "52",
-      rrule: equipment.rrule || "FREQ=WEEKLY;INTERVAL=52",
-      default_lead_weeks: equipment.default_lead_weeks?.toString() || "4",
-    });
-  }
-
-  async function handleEquipmentSubmit(e) {
-    e.preventDefault();
-    setError("");
-    if (!equipmentForm.name.trim()) {
-      setError("Equipment name is required");
-      return;
-    }
-    try {
-      const isEdit = !!selectedEquipment;
-      const endpoint = isEdit ? `/equipments/${selectedEquipment.id}` : `/clients/${client.id}/equipments`;
-      const payload = {
-        name: equipmentForm.name,
-        interval_weeks: parseInt(equipmentForm.interval_weeks) || 52,
-        rrule: equipmentForm.rrule || `FREQ=WEEKLY;INTERVAL=${parseInt(equipmentForm.interval_weeks) || 52}`,
-        default_lead_weeks: parseInt(equipmentForm.default_lead_weeks) || 4,
-        active: true,
-      };
-      if (!isEdit) {
-        payload.client_id = client.id;
-      }
-      await apiCall(endpoint, {
-        method: isEdit ? "PUT" : "POST",
-        body: JSON.stringify(payload),
-      });
-      await onRefreshEquipments();
-      resetEquipmentForm();
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  async function handleScheduleSubmit(e) {
-    e.preventDefault();
-    setError("");
-    if (!scheduleForm.equipment_id || !scheduleForm.anchor_date) {
-      setError("Equipment and anchor date are required");
-      return;
-    }
-
-    try {
-      const isEdit = !!selectedSchedule;
-      const endpoint = isEdit ? `/schedules/${selectedSchedule.id}` : "/schedules";
-      const payload = {
-        ...scheduleForm,
-        site_id: site.id,
-        equipment_id: parseInt(scheduleForm.equipment_id),
-        lead_weeks: scheduleForm.lead_weeks ? parseInt(scheduleForm.lead_weeks) : null,
-        timezone: scheduleForm.timezone || null,
-      };
-      await apiCall(endpoint, {
-        method: isEdit ? "PUT" : "POST",
-        body: JSON.stringify(payload),
-      });
-      await onRefreshSchedules();
-      resetScheduleForm();
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  function startEditSchedule(schedule) {
-    setSelectedSchedule(schedule);
-    // Ensure equipment_identifier is a string, not equipment_id
-    // Check if equipment_identifier exists and is not a number (to avoid using equipment_id by mistake)
-    let equipmentIdentifier = "";
-    if (schedule.equipment_identifier !== undefined && schedule.equipment_identifier !== null) {
-      // Only use it if it's not a number (equipment_id is a number, equipment_identifier should be a string)
-      if (typeof schedule.equipment_identifier !== 'number') {
-        equipmentIdentifier = String(schedule.equipment_identifier);
-      }
-    }
-    setScheduleForm({
-      equipment_id: schedule.equipment_id?.toString() || "",
-      anchor_date: schedule.anchor_date || "",
-      due_date: schedule.due_date || "",
-      lead_weeks: schedule.lead_weeks?.toString() || "",
-      timezone: schedule.timezone || "",
-      equipment_identifier: equipmentIdentifier,
-      notes: schedule.notes || "",
-      rrule: schedule.rrule || "",
-    });
-    // Auto-populate RRule from equipment if available
-    if (schedule.equipment_id) {
-      const selectedEq = clientEquipments.find(e => e.id === schedule.equipment_id);
-      if (selectedEq && selectedEq.rrule && !schedule.rrule) {
-        setScheduleForm(prev => ({ ...prev, rrule: selectedEq.rrule }));
-      }
-    }
-  }
-
-  async function handleDeleteSchedule(scheduleId) {
-    if (!window.confirm("Delete this schedule?")) return;
-    try {
-      await apiCall(`/schedules/${scheduleId}`, { method: "DELETE" });
-      await onRefreshSchedules();
-      if (selectedSchedule?.id === scheduleId) resetScheduleForm();
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  const [showScheduleForm, setShowScheduleForm] = useState(false);
-  const [showNewEquipmentForm, setShowNewEquipmentForm] = useState(false);
-  const [newEquipmentForm, setNewEquipmentForm] = useState({
-    name: "",
-    interval_weeks: "52",
-    rrule: "FREQ=WEEKLY;INTERVAL=52",
-    default_lead_weeks: "4",
-  });
 
   return (
     <div>
@@ -1533,473 +1246,53 @@ function SiteDetailsView({ client, site, clientEquipments, schedules, contactLin
 
       <div className="card" style={{ marginBottom: "1rem" }}>
         <div className="card-header">
-          <h3>Schedules ({schedules.length})</h3>
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            <button 
-              type="button" 
-              className="secondary" 
-              onClick={handleShowCompleted}
-            >
-              Show Completed Schedules
-            </button>
-            <button className="primary" onClick={() => {
-              if (onNavigateToAddEquipment && client && site) {
-                // Create a schedule-like object with client and site info for pre-selection
-                onNavigateToAddEquipment({ 
-                  client_id: client.id, 
-                  site_id: site.id,
-                  client: client,
-                  site: site
-                });
-              } else {
-                resetScheduleForm();
-                setShowScheduleForm(true);
-              }
-            }} style={{ marginTop: 0 }}>+ Add New Equipment</button>
-          </div>
+          <h3>Equipment Records ({siteEquipmentRecords.length})</h3>
+          <button className="primary" onClick={() => {
+            if (onNavigateToAddEquipment && client && site) {
+              onNavigateToAddEquipment({ 
+                client_id: client.id, 
+                site_id: site.id,
+                client: client,
+                site: site
+              });
+            }
+          }} style={{ marginTop: 0 }}>+ Add New Equipment</button>
         </div>
 
-        {showScheduleForm && (
-          <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
-            <form onSubmit={handleScheduleSubmit} className="form">
-              <label>
-                Equipment Name
-                <textarea 
-                  name="equipment_identifier" 
-                  value={scheduleForm.equipment_identifier || ""} 
-                  onChange={handleScheduleChange} 
-                  rows={2}
-                  placeholder="e.g. Scanner Model XYZ, Room 101"
-                />
-              </label>
-              <label>
-                Equipment Type *
-                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                  <select name="equipment_id" value={scheduleForm.equipment_id} onChange={handleScheduleChange} required style={{ flex: 1 }}>
-                    <option value="">Select equipment</option>
-                    {clientEquipments.map(e => (
-                      <option key={e.id} value={e.id}>{e.name}</option>
-                    ))}
-                  </select>
-                  <button type="button" className="secondary" onClick={() => { setShowNewEquipmentForm(true); setShowEquipmentForm(false); }}>+ Add New</button>
-                  <button type="button" className="secondary" onClick={() => { setShowEquipmentForm(!showEquipmentForm); setShowNewEquipmentForm(false); }}>
-                    {showEquipmentForm ? "Hide" : "Edit Equipments"}
-                  </button>
-                </div>
-                {scheduleForm.equipment_id && (() => {
-                  const selectedEq = clientEquipments.find(e => e.id === parseInt(scheduleForm.equipment_id));
-                  return selectedEq && selectedEq.rrule ? (
-                    <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#8193A4" }}>
-                      Equipment RRule: {selectedEq.rrule}
-                    </div>
-                  ) : null;
-                })()}
-              </label>
-              {showEquipmentForm && (
-                <div style={{ padding: "1rem", backgroundColor: "#D7E5D8", borderRadius: "0.5rem", marginTop: "0.5rem", border: "1px solid #8193A4" }}>
-                  <h4 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "0.95rem" }}>Manage Equipments</h4>
-                  {clientEquipments.length === 0 ? (
-                    <p style={{ color: "#8193A4", fontSize: "0.85rem" }}>No equipments available</p>
-                  ) : (
-                    <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                      {clientEquipments.map(eq => (
-                        <li key={eq.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.5rem", backgroundColor: "#8193A4", borderRadius: "0.25rem" }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: "600", color: "#2D3234", fontSize: "0.9rem" }}>
-                              {eq.name} {eq.is_custom ? "(Custom)" : "(Default)"}
-                            </div>
-                            <div style={{ fontSize: "0.8rem", color: "#2D3234", marginTop: "0.25rem" }}>
-                              Every {eq.interval_weeks} weeks • Lead: {eq.default_lead_weeks} weeks
-                              {eq.rrule && ` • RRule: ${eq.rrule}`}
-                            </div>
-                          </div>
-                          <div style={{ display: "flex", gap: "0.25rem" }}>
-                            <button 
-                              type="button" 
-                              onClick={() => {
-                                startEditEquipment(eq);
-                                setShowNewEquipmentForm(true);
-                              }}
-                              style={{ padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}
-                            >
-                              Edit
-                            </button>
-                            {eq.is_custom && (
-                              <button 
-                                type="button" 
-                                className="danger"
-                                onClick={async () => {
-                                  if (window.confirm(`Delete equipment "${eq.name}"?`)) {
-                                    try {
-                                      await apiCall(`/equipments/${eq.id}`, { method: "DELETE" });
-                                      await onRefreshEquipments();
-                                      if (scheduleForm.equipment_id === eq.id.toString()) {
-                                        setScheduleForm(prev => ({ ...prev, equipment_id: "" }));
-                                      }
-                                    } catch (err) {
-                                      // error already set
-                                    }
-                                  }
-                                }}
-                                style={{ padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}
-                              >
-                                Delete
-                              </button>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-              {(showNewEquipmentForm || selectedEquipment) && (
-                <div style={{ padding: "1rem", backgroundColor: "#8193A4", borderRadius: "0.5rem", marginTop: "0.5rem", color: "#2D3234" }}>
-                  <h4 style={{ marginTop: 0, marginBottom: "1rem", color: "#2D3234" }}>{selectedEquipment ? "Edit Equipment" : "Add New Equipment"}</h4>
-                  <form onSubmit={async (e) => {
-                    e.preventDefault();
-                    setError("");
-                    const formData = selectedEquipment ? equipmentForm : newEquipmentForm;
-                    if (!formData.name.trim()) {
-                      setError("Equipment name is required");
-                      return;
-                    }
-                    try {
-                      const isEdit = !!selectedEquipment;
-                      const endpoint = isEdit ? `/equipments/${selectedEquipment.id}` : `/clients/${client.id}/equipments`;
-                      const payload = {
-                        name: formData.name,
-                        interval_weeks: parseInt(formData.interval_weeks) || 52,
-                        rrule: formData.rrule || `FREQ=WEEKLY;INTERVAL=${parseInt(formData.interval_weeks) || 52}`,
-                        default_lead_weeks: parseInt(formData.default_lead_weeks) || 4,
-                        active: true,
-                      };
-                      if (!isEdit) {
-                        payload.client_id = client.id;
-                      }
-                      const result = await apiCall(endpoint, {
-                        method: isEdit ? "PUT" : "POST",
-                        body: JSON.stringify(payload),
-                      });
-                      await onRefreshEquipments();
-                      if (!isEdit) {
-                        setScheduleForm(prev => ({ ...prev, equipment_id: result.id.toString(), rrule: result.rrule || "" }));
-                      } else if (scheduleForm.equipment_id === selectedEquipment.id.toString()) {
-                        setScheduleForm(prev => ({ ...prev, rrule: result.rrule || "" }));
-                      }
-                      setNewEquipmentForm({ name: "", interval_weeks: "52", rrule: "FREQ=WEEKLY;INTERVAL=52", default_lead_weeks: "4" });
-                      resetEquipmentForm();
-                      setShowNewEquipmentForm(false);
-                    } catch (err) {
-                      // error already set
-                    }
-                  }}>
-                    <label>
-                      Name *
-                      <input
-                        type="text"
-                        value={newEquipmentForm.name}
-                        onChange={(e) => setNewEquipmentForm(prev => ({ ...prev, name: e.target.value }))}
-                        required
-                        placeholder="Equipment name"
-                      />
-                    </label>
-                    <label>
-                      Interval (weeks)
-                      <input
-                        type="number"
-                        value={newEquipmentForm.interval_weeks}
-                        onChange={(e) => setNewEquipmentForm(prev => ({ ...prev, interval_weeks: e.target.value }))}
-                        min="1"
-                      />
-                    </label>
-                    <label>
-                      Lead Weeks
-                      <input
-                        type="number"
-                        value={newEquipmentForm.default_lead_weeks}
-                        onChange={(e) => setNewEquipmentForm(prev => ({ ...prev, default_lead_weeks: e.target.value }))}
-                        min="0"
-                      />
-                    </label>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      <button type="submit" className="primary">{selectedEquipment ? "Save" : "Create"} Equipment</button>
-                      <button type="button" className="secondary" onClick={() => {
-                        setShowNewEquipmentForm(false);
-                        setSelectedEquipment(null);
-                        setNewEquipmentForm({ name: "", interval_weeks: "52", rrule: "FREQ=WEEKLY;INTERVAL=52", default_lead_weeks: "4" });
-                      }}>Cancel</button>
-                    </div>
-                  </form>
-                </div>
-              )}
-              <label>
-                Anchor Date *
-                <input type="date" name="anchor_date" value={scheduleForm.anchor_date} onChange={handleScheduleChange} required />
-              </label>
-              <label>
-                Due Date
-                <input type="date" name="due_date" value={scheduleForm.due_date} onChange={handleScheduleChange} />
-              </label>
-              <label>
-                Lead Weeks (override)
-                <input type="number" name="lead_weeks" value={scheduleForm.lead_weeks} onChange={handleScheduleChange} />
-              </label>
-              <label>
-                Timezone (override)
-                <input type="text" name="timezone" value={scheduleForm.timezone} onChange={handleScheduleChange} placeholder="America/Chicago" />
-              </label>
-              <label>
-                RRule (override)
-                <input 
-                  type="text" 
-                  name="rrule" 
-                  value={scheduleForm.rrule || ""} 
-                  onChange={handleScheduleChange} 
-                  placeholder="FREQ=WEEKLY;INTERVAL=52"
-                />
-                <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
-                  Leave empty to use equipment's default RRule
-                </div>
-              </label>
-              <label>
-                Notes
-                <textarea name="notes" value={scheduleForm.notes} onChange={handleScheduleChange} rows={3} />
-              </label>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                <button type="submit" className="primary" style={{ marginTop: 0 }}>{selectedSchedule ? "Save" : "Create"}</button>
-                <button type="button" className="secondary" onClick={() => { resetScheduleForm(); setShowScheduleForm(false); }}>Cancel</button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {schedules.length === 0 ? (
-          <p className="empty">No schedules yet. Click "Add New Equipment" to get started.</p>
+        {loading ? (
+          <p className="empty">Loading equipment records...</p>
+        ) : siteEquipmentRecords.length === 0 ? (
+          <p className="empty">No equipment records yet. Click "Add New Equipment" to get started.</p>
         ) : (
           <div style={{ maxHeight: "420px", overflowY: "auto", overflowX: "hidden" }}>
             <ul className="list">
-              {schedules.map(schedule => {
-                const equipment = clientEquipments.find(e => e.id === schedule.equipment_id);
-                return (
-                  <li 
-                    key={schedule.id} 
-                    ref={el => scheduleRefs.current[schedule.id] = el}
-                    className="list-item" 
-                    style={{ cursor: "pointer" }} 
-                    onClick={() => {
-                      setSelectedScheduleDetails(schedule);
-                      setShowScheduleDetailsModal(true);
-                    }}
-                  >
-                    <div className="list-main">
-                      <div className="list-title">
-                        {schedule.equipment_identifier || equipment?.name || `Equipment ID: ${schedule.equipment_id}`}
-                      </div>
-                      <div className="list-subtitle">
-                        {equipment?.name && `Equipment: ${equipment.name} • `}
-                        Anchor: {formatDate(schedule.anchor_date)}
-                        {schedule.due_date && ` • Due: ${formatDate(schedule.due_date)}`}
-                        {schedule.client_name && ` • Client: ${schedule.client_name}`}
-                        {schedule.client_address && ` • ${schedule.client_address}`}
-                        {schedule.site_name && ` • Site: ${schedule.site_name}`}
-                        {schedule.site_address && ` • ${schedule.site_address}`}
-                      </div>
+              {siteEquipmentRecords.map(record => (
+                <li key={record.id} className="list-item">
+                  <div className="list-main">
+                    <div className="list-title">
+                      {record.equipment_name || "Unnamed Equipment"}
                     </div>
-                    <div className="list-actions" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => handleCompleteSchedule(schedule.id)}>Done</button>
-                      <button onClick={() => {
-                        if (onNavigateToAddEquipment) {
-                          onNavigateToAddEquipment(schedule);
-                        } else {
-                          startEditSchedule(schedule);
-                          setShowScheduleForm(true);
-                        }
-                      }}>Edit</button>
-                      <button className="danger" onClick={() => handleDeleteSchedule(schedule.id)}>Delete</button>
+                    <div className="list-subtitle">
+                      {record.equipment_type_name && `Type: ${record.equipment_type_name} • `}
+                      {record.anchor_date && `Anchor: ${formatDate(record.anchor_date)}`}
+                      {record.due_date && ` • Due: ${formatDate(record.due_date)}`}
+                      {record.interval_weeks && ` • Interval: ${record.interval_weeks} weeks`}
                     </div>
-                  </li>
-                );
-              })}
+                  </div>
+                  <div className="list-actions" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => {
+                      if (onNavigateToAddEquipment) {
+                        onNavigateToAddEquipment(record);
+                      }
+                    }}>Edit</button>
+                    <button className="danger" onClick={() => handleDeleteEquipmentRecord(record.id)}>Delete</button>
+                  </div>
+                </li>
+              ))}
             </ul>
           </div>
         )}
       </div>
-
-      {showCompletedModal && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(45, 50, 52, 0.9)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000
-        }} onClick={() => setShowCompletedModal(false)}>
-          <div style={{
-            backgroundColor: "#D7E5D8",
-            padding: "2rem",
-            borderRadius: "0.5rem",
-            maxWidth: "800px",
-            maxHeight: "80vh",
-            overflow: "auto",
-            width: "90%",
-            color: "#2D3234"
-          }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>Completed Schedules</h2>
-              <button onClick={() => setShowCompletedModal(false)} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
-            </div>
-            {completedSchedules.length === 0 ? (
-              <p className="empty">No completed schedules</p>
-            ) : (
-              <ul className="list">
-                {completedSchedules.map(schedule => {
-                  const equipment = clientEquipments.find(e => e.id === schedule.equipment_id);
-                  return (
-                    <li key={schedule.id} className="list-item" style={{ cursor: "pointer" }} onClick={() => {
-                      setSelectedScheduleDetails(schedule);
-                      setShowScheduleDetailsModal(true);
-                    }}>
-                      <div className="list-main">
-                        <div className="list-title">
-                          {schedule.equipment_identifier || equipment?.name || `Equipment ID: ${schedule.equipment_id}`}
-                        </div>
-                        <div className="list-subtitle">
-                          {equipment?.name && `Equipment: ${equipment.name} • `}
-                          Anchor: {formatDate(schedule.anchor_date)}
-                          {schedule.due_date && ` • Due: ${formatDate(schedule.due_date)}`}
-                          {schedule.client_name && ` • Client: ${schedule.client_name}`}
-                          {schedule.client_address && ` • ${schedule.client_address}`}
-                          {schedule.site_name && ` • Site: ${schedule.site_name}`}
-                          {schedule.site_address && ` • ${schedule.site_address}`}
-                          {schedule.completed_at && ` • Completed: ${schedule.completed_at}`}
-                        </div>
-                      </div>
-                      <div className="list-actions" onClick={(e) => e.stopPropagation()}>
-                        <button onClick={() => handleUndoSchedule(schedule.id)}>Undo</button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
-
-      {showScheduleDetailsModal && selectedScheduleDetails && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(45, 50, 52, 0.9)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000
-        }} onClick={() => setShowScheduleDetailsModal(false)}>
-          <div style={{
-            backgroundColor: "#D7E5D8",
-            padding: "2rem",
-            borderRadius: "0.5rem",
-            maxWidth: "800px",
-            maxHeight: "80vh",
-            overflow: "auto",
-            width: "90%",
-            color: "#2D3234"
-          }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>Schedule Details</h2>
-              <button onClick={() => setShowScheduleDetailsModal(false)} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
-            </div>
-            
-            {(() => {
-              const schedule = selectedScheduleDetails;
-              const equipment = clientEquipments.find(e => e.id === schedule.equipment_id);
-              return (
-                <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-                  {/* Schedule Information */}
-                  <div>
-                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Schedule Information</h3>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
-                      <div><strong>Equipment Name:</strong> {schedule.equipment_identifier || "N/A"}</div>
-                      <div><strong>Equipment Type:</strong> {equipment?.name || `ID: ${schedule.equipment_id}`}</div>
-                      <div><strong>Anchor Date:</strong> {formatDate(schedule.anchor_date)}</div>
-                      {schedule.due_date && <div><strong>Due Date:</strong> {formatDate(schedule.due_date)}</div>}
-                      {schedule.lead_weeks && <div><strong>Lead Weeks:</strong> {schedule.lead_weeks}</div>}
-                      {schedule.timezone && <div><strong>Timezone:</strong> {schedule.timezone}</div>}
-                      {schedule.completed_at && <div><strong>Completed At:</strong> {schedule.completed_at}</div>}
-                      {schedule.notes && (
-                        <div style={{ gridColumn: "1 / -1" }}>
-                          <strong>Notes:</strong>
-                          <div style={{ marginTop: "0.25rem", whiteSpace: "pre-wrap" }}>{schedule.notes}</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Client Information */}
-                  <div>
-                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Client Information</h3>
-                    <div style={{ fontSize: "0.9rem" }}>
-                      <div><strong>Name:</strong> {schedule.client_name || "N/A"}</div>
-                      {schedule.client_address && <div><strong>Address:</strong> {schedule.client_address}</div>}
-                    </div>
-                  </div>
-
-                  {/* Site Information */}
-                  <div>
-                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
-                    <div style={{ fontSize: "0.9rem" }}>
-                      <div><strong>Name:</strong> {schedule.site_name || "N/A"}</div>
-                      {schedule.site_address && <div><strong>Address:</strong> {schedule.site_address}</div>}
-                    </div>
-                  </div>
-
-                  {/* Contacts */}
-                  {contactLinks && contactLinks.length > 0 && (
-                    <div>
-                      <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Contacts</h3>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        {contactLinks.map((link, idx) => (
-                          <div key={idx} style={{ 
-                            padding: "0.75rem", 
-                            backgroundColor: "#8193A4", 
-                            borderRadius: "0.25rem",
-                            fontSize: "0.9rem"
-                          }}>
-                            <div style={{ fontWeight: "600" }}>
-                              {link.first_name} {link.last_name}
-                              {link.is_primary && " (Primary)"}
-                            </div>
-                            <div style={{ marginTop: "0.25rem" }}>
-                              <strong>Role:</strong> {link.role} {link.scope === 'CLIENT' ? '(Client)' : '(Site)'}
-                            </div>
-                            {link.email && <div><strong>Email:</strong> {link.email}</div>}
-                            {link.phone && <div><strong>Phone:</strong> {link.phone}</div>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {(!contactLinks || contactLinks.length === 0) && (
-                    <div>
-                      <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Contacts</h3>
-                      <div style={{ fontSize: "0.9rem", color: "#8193A4" }}>No contacts available</div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
 
       <div style={{ marginTop: "1rem" }}>
         <ContactManagementSection
@@ -3278,699 +2571,9 @@ function EquipmentTypesTab({ equipmentTypes, onRefresh, apiCall, setError }) {
   );
 }
 
-// Schedules Tab
-function SchedulesTab({
-  clients,
-  sites,
-  clientEquipments,
-  schedules,
-  onRefreshSites,
-  onRefreshSchedules,
-  onRefreshClients,
-  onFetchClientEquipments,
-  apiCall,
-  setError,
-}) {
-  const [selectedSchedule, setSelectedSchedule] = useState(null);
-  const [selectedSiteId, setSelectedSiteId] = useState(null);
-  const [showScheduleDetailsModal, setShowScheduleDetailsModal] = useState(false);
-  const [selectedScheduleDetails, setSelectedScheduleDetails] = useState(null);
-  const [scheduleContacts, setScheduleContacts] = useState([]);
-  const [form, setForm] = useState({
-    site_id: "",
-    equipment_id: "",
-    anchor_date: "",
-    lead_weeks: "",
-    timezone: "",
-    equipment_identifier: "",
-    notes: "",
-  });
+// Schedules Tab - REMOVED
 
-  useEffect(() => {
-    onRefreshClients();
-    onRefreshSites();
-    onRefreshSchedules();
-  }, []);
-
-  // Fetch equipments when site changes
-  useEffect(() => {
-    if (form.site_id) {
-      const site = sites.find(s => s.id === parseInt(form.site_id));
-      if (site) {
-        onFetchClientEquipments(site.client_id);
-      }
-    } else {
-      onFetchClientEquipments(null);
-    }
-  }, [form.site_id, sites]);
-
-  function handleChange(e) {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-  }
-
-  function resetForm() {
-    setSelectedSchedule(null);
-    setForm({
-      site_id: selectedSiteId || "",
-      equipment_id: "",
-      anchor_date: "",
-      lead_weeks: "",
-      timezone: "",
-      equipment_identifier: "",
-      notes: "",
-    });
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError("");
-    if (!form.site_id || !form.equipment_id || !form.anchor_date) {
-      setError("Site, equipment, and anchor date are required");
-      return;
-    }
-
-    try {
-      const isEdit = !!selectedSchedule;
-      const endpoint = isEdit ? `/schedules/${selectedSchedule.id}` : "/schedules";
-      const payload = {
-        ...form,
-        site_id: parseInt(form.site_id),
-        equipment_id: parseInt(form.equipment_id),
-        lead_weeks: form.lead_weeks ? parseInt(form.lead_weeks) : null,
-        timezone: form.timezone || null,
-      };
-      await apiCall(endpoint, {
-        method: isEdit ? "PUT" : "POST",
-        body: JSON.stringify(payload),
-      });
-      await onRefreshSchedules();
-      resetForm();
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  function startEdit(schedule) {
-    setSelectedSchedule(schedule);
-    setSelectedSiteId(schedule.site_id);
-    setForm({
-      site_id: schedule.site_id.toString(),
-      equipment_id: schedule.equipment_id?.toString() || "",
-      anchor_date: schedule.anchor_date || "",
-      lead_weeks: schedule.lead_weeks?.toString() || "",
-      timezone: schedule.timezone || "",
-      equipment_identifier: schedule.equipment_identifier || "",
-      notes: schedule.notes || "",
-    });
-  }
-
-  async function handleDelete(scheduleId) {
-    if (!window.confirm("Delete this schedule?")) return;
-    try {
-      await apiCall(`/schedules/${scheduleId}`, { method: "DELETE" });
-      await onRefreshSchedules();
-      if (selectedSchedule?.id === scheduleId) resetForm();
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  const filteredSchedules = selectedSiteId
-    ? schedules.filter(s => s.site_id === parseInt(selectedSiteId))
-    : schedules;
-
-  return (
-    <div className="two-column">
-      <div className="card">
-        <div className="card-header">
-          <h2>{selectedSchedule ? "Edit Schedule" : "Add Schedule"}</h2>
-          {selectedSchedule && (
-            <button className="secondary" onClick={resetForm}>+ New</button>
-          )}
-        </div>
-        <form onSubmit={handleSubmit} className="form">
-          <label>
-            Site *
-            <select
-              name="site_id"
-              value={form.site_id}
-              onChange={handleChange}
-              required
-            >
-              <option value="">Select site</option>
-              {sites.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Equipment Name
-            <textarea
-              name="equipment_identifier"
-              value={form.equipment_identifier || ""}
-              onChange={handleChange}
-              rows={2}
-              placeholder="e.g. Scanner Model XYZ, Room 101"
-            />
-          </label>
-          <label>
-            Equipment Type *
-            <select
-              name="equipment_id"
-              value={form.equipment_id}
-              onChange={handleChange}
-              required
-              disabled={!form.site_id}
-            >
-              <option value="">{form.site_id ? "Select equipment" : "Select site first"}</option>
-              {clientEquipments.map(e => (
-                <option key={e.id} value={e.id}>{e.name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Anchor Date *
-            <input
-              type="date"
-              name="anchor_date"
-              value={form.anchor_date}
-              onChange={handleChange}
-              required
-            />
-          </label>
-          <label>
-            Lead Weeks (override)
-            <input
-              type="number"
-              name="lead_weeks"
-              value={form.lead_weeks}
-              onChange={handleChange}
-            />
-          </label>
-          <label>
-            Timezone (override)
-            <input
-              type="text"
-              name="timezone"
-              value={form.timezone}
-              onChange={handleChange}
-              placeholder="America/Chicago"
-            />
-          </label>
-            <label>
-              Notes
-              <textarea
-                name="notes"
-                value={form.notes}
-                onChange={handleChange}
-                rows={3}
-              />
-            </label>
-            <button type="submit" className="primary">
-            {selectedSchedule ? "Save" : "Create"}
-            </button>
-          </form>
-      </div>
-
-      <div className="card">
-          <div className="card-header">
-          <h2>Schedules ({filteredSchedules.length})</h2>
-          <div>
-            <select
-              value={selectedSiteId || ""}
-              onChange={(e) => setSelectedSiteId(e.target.value || null)}
-              className="filter-select"
-            >
-              <option value="">All Sites</option>
-              {sites.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-            <button className="secondary" onClick={onRefreshSchedules}>Refresh</button>
-          </div>
-        </div>
-        {filteredSchedules.length === 0 ? (
-          <p className="empty">No schedules yet</p>
-        ) : (
-          <ul className="list">
-            {filteredSchedules.map(schedule => {
-              const site = sites.find(s => s.id === schedule.site_id);
-              return (
-                <li key={schedule.id} className="list-item" style={{ cursor: "pointer" }} onClick={async () => {
-                  setSelectedScheduleDetails(schedule);
-                  setShowScheduleDetailsModal(true);
-                  // Fetch contacts for this schedule's site
-                  try {
-                    const contacts = await apiCall(`/contacts/rollup/site/${schedule.site_id}`);
-                    setScheduleContacts(contacts || []);
-                  } catch (err) {
-                    setScheduleContacts([]);
-                  }
-                }}>
-                  <div className="list-main">
-                    <div className="list-title">
-                      {schedule.equipment_identifier || schedule.equipment_name || `Equipment ID: ${schedule.equipment_id}`} @ {site?.name}
-                    </div>
-                    <div className="list-subtitle">
-                      {schedule.equipment_name && `Equipment: ${schedule.equipment_name} • `}
-                      Anchor: {formatDate(schedule.anchor_date)}
-                      {schedule.due_date && ` • Due: ${formatDate(schedule.due_date)}`}
-                      {schedule.client_name && ` • Client: ${schedule.client_name}`}
-                      {schedule.client_address && ` • ${schedule.client_address}`}
-                      {schedule.site_name && ` • Site: ${schedule.site_name}`}
-                      {schedule.site_address && ` • ${schedule.site_address}`}
-                    </div>
-                  </div>
-                  <div className="list-actions" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => startEdit(schedule)}>Edit</button>
-                    <button className="danger" onClick={() => handleDelete(schedule.id)}>Delete</button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      {showScheduleDetailsModal && selectedScheduleDetails && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(45, 50, 52, 0.9)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000
-        }} onClick={() => setShowScheduleDetailsModal(false)}>
-          <div style={{
-            backgroundColor: "#D7E5D8",
-            padding: "2rem",
-            borderRadius: "0.5rem",
-            maxWidth: "800px",
-            maxHeight: "80vh",
-            overflow: "auto",
-            width: "90%",
-            color: "#2D3234"
-          }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>Schedule Details</h2>
-              <button onClick={() => setShowScheduleDetailsModal(false)} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
-            </div>
-            
-            {(() => {
-              const schedule = selectedScheduleDetails;
-              const equipment = clientEquipments.find(e => e.id === schedule.equipment_id);
-              return (
-                <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-                  {/* Schedule Information */}
-                  <div>
-                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Schedule Information</h3>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
-                      <div><strong>Equipment Name:</strong> {schedule.equipment_identifier || "N/A"}</div>
-                      <div><strong>Equipment Type:</strong> {schedule.equipment_name || equipment?.name || `ID: ${schedule.equipment_id}`}</div>
-                      <div><strong>Anchor Date:</strong> {formatDate(schedule.anchor_date)}</div>
-                      {schedule.due_date && <div><strong>Due Date:</strong> {formatDate(schedule.due_date)}</div>}
-                      {schedule.lead_weeks && <div><strong>Lead Weeks:</strong> {schedule.lead_weeks}</div>}
-                      {schedule.timezone && <div><strong>Timezone:</strong> {schedule.timezone}</div>}
-                      {schedule.notes && (
-                        <div style={{ gridColumn: "1 / -1" }}>
-                          <strong>Notes:</strong>
-                          <div style={{ marginTop: "0.25rem", whiteSpace: "pre-wrap" }}>{schedule.notes}</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Client Information */}
-                  <div>
-                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Client Information</h3>
-                    <div style={{ fontSize: "0.9rem" }}>
-                      <div><strong>Name:</strong> {schedule.client_name || "N/A"}</div>
-                      {schedule.client_address && <div><strong>Address:</strong> {schedule.client_address}</div>}
-                    </div>
-                  </div>
-
-                  {/* Site Information */}
-                  <div>
-                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
-                    <div style={{ fontSize: "0.9rem" }}>
-                      <div><strong>Name:</strong> {schedule.site_name || "N/A"}</div>
-                      {schedule.site_address && <div><strong>Address:</strong> {schedule.site_address}</div>}
-                    </div>
-                  </div>
-
-                  {/* Contacts */}
-                  {scheduleContacts && scheduleContacts.length > 0 && (
-                    <div>
-                      <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Contacts</h3>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        {scheduleContacts.map((link, idx) => (
-                          <div key={idx} style={{ 
-                            padding: "0.75rem", 
-                            backgroundColor: "#8193A4", 
-                            borderRadius: "0.25rem",
-                            fontSize: "0.9rem"
-                          }}>
-                            <div style={{ fontWeight: "600" }}>
-                              {link.first_name} {link.last_name}
-                              {link.is_primary && " (Primary)"}
-                            </div>
-                            <div style={{ marginTop: "0.25rem" }}>
-                              <strong>Role:</strong> {link.role} {link.scope === 'CLIENT' ? '(Client)' : '(Site)'}
-                            </div>
-                            {link.email && <div><strong>Email:</strong> {link.email}</div>}
-                            {link.phone && <div><strong>Phone:</strong> {link.phone}</div>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {(!scheduleContacts || scheduleContacts.length === 0) && (
-                    <div>
-                      <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Contacts</h3>
-                      <div style={{ fontSize: "0.9rem", color: "#8193A4" }}>No contacts available</div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Work Orders Tab
-function WorkOrdersTab({
-  schedules,
-  workOrders,
-  onRefresh,
-  onRefreshSchedules,
-  apiCall,
-  setError,
-}) {
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [selectedScheduleId, setSelectedScheduleId] = useState(null);
-  const [statusFilter, setStatusFilter] = useState("");
-  const [form, setForm] = useState({
-    schedule_id: "",
-    due_date: "",
-    planned_date: "",
-    invoice_ref: "",
-    notes: "",
-  });
-
-  useEffect(() => {
-    onRefreshSchedules();
-    onRefresh(null, null);
-  }, []);
-
-  function handleChange(e) {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-  }
-
-  function resetForm() {
-    setSelectedOrder(null);
-    setForm({
-      schedule_id: "",
-      due_date: "",
-      planned_date: "",
-      invoice_ref: "",
-      notes: "",
-    });
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError("");
-    if (!form.schedule_id || !form.due_date) {
-      setError("Schedule and due date are required");
-      return;
-    }
-
-    try {
-      const isEdit = !!selectedOrder;
-      const endpoint = isEdit ? `/work-orders/${selectedOrder.id}` : "/work-orders";
-      const payload = {
-        ...form,
-        schedule_id: parseInt(form.schedule_id),
-        planned_date: form.planned_date || null,
-      };
-      await apiCall(endpoint, {
-        method: isEdit ? "PUT" : "POST",
-        body: JSON.stringify(payload),
-      });
-      const validScheduleId = selectedScheduleId && (typeof selectedScheduleId === 'number' ? selectedScheduleId : 
-                             (!isNaN(parseInt(selectedScheduleId)) ? parseInt(selectedScheduleId) : null));
-      await onRefresh(validScheduleId, statusFilter || null);
-      resetForm();
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  async function handleCreateFromSchedule(scheduleId) {
-    try {
-      await apiCall(`/work-orders/from-schedule/${scheduleId}`, { method: "POST" });
-      const validScheduleId = selectedScheduleId && (typeof selectedScheduleId === 'number' ? selectedScheduleId : 
-                             (!isNaN(parseInt(selectedScheduleId)) ? parseInt(selectedScheduleId) : null));
-      await onRefresh(validScheduleId, statusFilter || null);
-      setError("");
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  function startEdit(order) {
-    setSelectedOrder(order);
-    setForm({
-      schedule_id: order.schedule_id.toString(),
-      due_date: order.due_date || "",
-      planned_date: order.planned_date || "",
-      invoice_ref: order.invoice_ref || "",
-      notes: order.notes || "",
-    });
-  }
-
-  async function handleUpdateStatus(orderId, newStatus) {
-    try {
-      await apiCall(`/work-orders/${orderId}`, {
-        method: "PUT",
-        body: JSON.stringify({ status: newStatus }),
-      });
-      const validScheduleId = selectedScheduleId && (typeof selectedScheduleId === 'number' ? selectedScheduleId : 
-                             (!isNaN(parseInt(selectedScheduleId)) ? parseInt(selectedScheduleId) : null));
-      await onRefresh(validScheduleId, statusFilter || null);
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  async function handleMarkDone(orderId) {
-    try {
-      await apiCall(`/work-orders/${orderId}`, {
-        method: "PUT",
-        body: JSON.stringify({ done_date: new Date().toISOString().split("T")[0] }),
-      });
-      const validScheduleId = selectedScheduleId && (typeof selectedScheduleId === 'number' ? selectedScheduleId : 
-                             (!isNaN(parseInt(selectedScheduleId)) ? parseInt(selectedScheduleId) : null));
-      await onRefresh(validScheduleId, statusFilter || null);
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  async function handleDelete(orderId) {
-    if (!window.confirm("Delete this work order?")) return;
-    try {
-      await apiCall(`/work-orders/${orderId}`, { method: "DELETE" });
-      const validScheduleId = selectedScheduleId && (typeof selectedScheduleId === 'number' ? selectedScheduleId : 
-                             (!isNaN(parseInt(selectedScheduleId)) ? parseInt(selectedScheduleId) : null));
-      await onRefresh(validScheduleId, statusFilter || null);
-      if (selectedOrder?.id === orderId) resetForm();
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  let filteredOrders = workOrders;
-  if (selectedScheduleId) {
-    filteredOrders = filteredOrders.filter(o => o.schedule_id === parseInt(selectedScheduleId));
-  }
-  if (statusFilter) {
-    filteredOrders = filteredOrders.filter(o => o.status === statusFilter);
-  }
-
-  return (
-    <div className="two-column">
-      <div className="card">
-        <div className="card-header">
-          <h2>{selectedOrder ? "Edit Work Order" : "Add Work Order"}</h2>
-          {selectedOrder && (
-            <button className="secondary" onClick={resetForm}>+ New</button>
-          )}
-        </div>
-        <form onSubmit={handleSubmit} className="form">
-          <label>
-            Schedule *
-            <select
-              name="schedule_id"
-              value={form.schedule_id}
-              onChange={handleChange}
-              required
-            >
-              <option value="">Select schedule</option>
-              {schedules.map(s => (
-                <option key={s.id} value={s.id}>
-                  Schedule #{s.id} - {s.equipment_name || `Equipment ${s.equipment_id}`} {s.site_name ? `@ ${s.site_name}` : ""} {s.due_date ? `(${formatDate(s.due_date)})` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Due Date *
-            <input
-              type="date"
-              name="due_date"
-              value={form.due_date}
-              onChange={handleChange}
-              required
-            />
-          </label>
-          <label>
-            Planned Date
-            <input
-              type="date"
-              name="planned_date"
-              value={form.planned_date}
-              onChange={handleChange}
-            />
-          </label>
-          <label>
-            Invoice Reference
-            <input
-              type="text"
-              name="invoice_ref"
-              value={form.invoice_ref}
-              onChange={handleChange}
-            />
-          </label>
-          <label>
-            Notes
-            <textarea
-              name="notes"
-              value={form.notes}
-              onChange={handleChange}
-              rows={3}
-            />
-          </label>
-          <button type="submit" className="primary">
-            {selectedOrder ? "Save" : "Create"}
-            </button>
-        </form>
-          </div>
-
-      <div className="card">
-        <div className="card-header">
-          <h2>Work Orders ({filteredOrders.length})</h2>
-          <div>
-            <select
-              value={selectedScheduleId || ""}
-              onChange={(e) => {
-                const value = e.target.value;
-                setSelectedScheduleId(value ? parseInt(value) : null);
-              }}
-              className="filter-select"
-            >
-              <option value="">All Schedules</option>
-              {schedules.map(s => (
-                <option key={s.id} value={s.id}>Schedule #{s.id}</option>
-              ))}
-            </select>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="filter-select"
-            >
-              <option value="">All Status</option>
-              <option value="PLANNED">Planned</option>
-              <option value="DUE">Due</option>
-              <option value="DONE">Done</option>
-            </select>
-            {filteredOrders.length > 0 && (
-              <a
-                href={`${API_BASE}/work-orders/export/ics?${selectedScheduleId ? `schedule_id=${selectedScheduleId}` : ''}`}
-                className="secondary"
-                style={{ textDecoration: 'none', marginRight: '0.5rem' }}
-              >
-                Export ICS
-              </a>
-            )}
-            <button className="secondary" onClick={() => {
-              const validScheduleId = selectedScheduleId && (typeof selectedScheduleId === 'number' ? selectedScheduleId : 
-                                     (!isNaN(parseInt(selectedScheduleId)) ? parseInt(selectedScheduleId) : null));
-              onRefresh(validScheduleId, statusFilter || null);
-            }}>Refresh</button>
-          </div>
-        </div>
-        {filteredOrders.length === 0 ? (
-          <p className="empty">No work orders yet</p>
-        ) : (
-          <ul className="list">
-            {filteredOrders.map(order => {
-              const schedule = schedules.find(s => s.id === order.schedule_id);
-              const statusClass = order.status === "DONE" ? "done" : order.status === "DUE" ? "due" : "planned";
-              return (
-                <li key={order.id} className={`list-item ${statusClass}`}>
-                  <div className="list-main">
-                    <div className="list-title">
-                      Work Order #{order.id} - {order.status}
-                    </div>
-                    <div className="list-subtitle">
-                      Due: {formatDate(order.due_date)}
-                      {order.planned_date && ` • Planned: ${formatDate(order.planned_date)}`}
-                      {order.done_date && ` • Done: ${formatDate(order.done_date)}`}
-                      {schedule && ` • Schedule #${schedule.id}`}
-                    </div>
-                  </div>
-                  <div className="list-actions">
-                    {order.status !== "DONE" && (
-                      <button onClick={() => handleMarkDone(order.id)}>Mark Done</button>
-                    )}
-                    <button onClick={() => startEdit(order)}>Edit</button>
-                    <button className="danger" onClick={() => handleDelete(order.id)}>Delete</button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid #8193A4" }}>
-          <h3 style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>Create from Schedule</h3>
-          {schedules.map(schedule => (
-            <div key={schedule.id} style={{ marginBottom: "0.5rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
-              <span style={{ flex: 1, fontSize: "0.85rem" }}>
-                Schedule #{schedule.id} - {schedule.equipment_name || `Equipment ${schedule.equipment_id}`} {schedule.site_name ? `@ ${schedule.site_name}` : ""} {schedule.due_date ? `(Due: ${formatDate(schedule.due_date)})` : ""}
-              </span>
-                    <button
-                className="secondary"
-                onClick={() => handleCreateFromSchedule(schedule.id)}
-                    >
-                Create Work Order
-                    </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+// Work Orders Tab - REMOVED
 
 // All Equipments View
 function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment }) {
@@ -4808,7 +3411,7 @@ function AdminTab({ apiCall, setError }) {
             <div>
               <h3>Import Equipments</h3>
               <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
-                Import equipment schedules from Excel file. Required columns: Client, Site, Equipment (identifier), Equipment Name, Anchor Date.
+                Import equipment records from Excel file. Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date.
                 <br />
                 <strong>Note:</strong> If client or site doesn't exist, the row will be skipped. If equipment identifier doesn't exist, a new equipment will be created.
               </p>
@@ -4837,7 +3440,7 @@ function AdminTab({ apiCall, setError }) {
             <div>
               <h3>Temporary Data Upload</h3>
               <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
-                Import equipment schedules from Excel file. Required columns: Client, Site, Equipment (identifier), Equipment Name, Anchor Date.
+                Import equipment records from Excel file. Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date.
                 <br />
                 <strong>Note:</strong> If client or site doesn't exist, they will be created automatically. If equipment identifier doesn't exist, a new equipment will be created.
               </p>
@@ -4866,7 +3469,7 @@ function AdminTab({ apiCall, setError }) {
             <div>
               <h3>Export Equipments</h3>
               <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
-                Export all equipment schedules to Excel file.
+                Export all equipment records to Excel file.
               </p>
               <button
                 type="button"
@@ -4894,104 +3497,6 @@ function AdminTab({ apiCall, setError }) {
   );
 }
 
-// Reports Tab
-function ReportsTab({ apiCall, setError }) {
-  const [clientReport, setClientReport] = useState([]);
-  const [modalityReport, setModalityReport] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    fetchReports();
-  }, []);
-
-  async function fetchReports() {
-    setLoading(true);
-    try {
-      const [client, equipment] = await Promise.all([
-        apiCall("/reports/by-client"),
-        apiCall("/reports/by-equipment"),
-      ]);
-      setClientReport(client);
-      setModalityReport(equipment);
-    } catch (err) {
-      // error already set
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (loading) return <div className="card"><p>Loading...</p></div>;
-
-  return (
-    <div className="reports-layout">
-      <div className="card">
-        <div className="card-header">
-          <h2>Report by Client</h2>
-          <button className="secondary" onClick={fetchReports}>Refresh</button>
-        </div>
-        {clientReport.length === 0 ? (
-          <p className="empty">No data</p>
-        ) : (
-          <table className="report-table">
-            <thead>
-              <tr>
-                <th>Client</th>
-                <th>Sites</th>
-                <th>Schedules</th>
-                <th>Work Orders</th>
-                <th>Overdue</th>
-                <th>Due This Month</th>
-              </tr>
-            </thead>
-            <tbody>
-              {clientReport.map(r => (
-                <tr key={r.client_id}>
-                  <td>{r.client_name}</td>
-                  <td>{r.total_sites}</td>
-                  <td>{r.total_schedules}</td>
-                  <td>{r.total_work_orders}</td>
-                  <td className={r.overdue_count > 0 ? "due" : ""}>{r.overdue_count}</td>
-                  <td>{r.due_this_month_count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="card-header">
-          <h2>Report by Equipment</h2>
-        </div>
-        {modalityReport.length === 0 ? (
-          <p className="empty">No data</p>
-        ) : (
-          <table className="report-table">
-            <thead>
-              <tr>
-                <th>Equipment</th>
-                <th>Schedules</th>
-                <th>Work Orders</th>
-                <th>Overdue</th>
-                <th>Due This Month</th>
-              </tr>
-            </thead>
-            <tbody>
-              {modalityReport.map(r => (
-                <tr key={r.equipment_id}>
-                  <td>{r.equipment_name}</td>
-                  <td>{r.total_schedules}</td>
-                  <td>{r.total_work_orders}</td>
-                  <td className={r.overdue_count > 0 ? "due" : ""}>{r.overdue_count}</td>
-                  <td>{r.due_this_month_count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  );
-}
+// Reports Tab - REMOVED
 
 export default App;
