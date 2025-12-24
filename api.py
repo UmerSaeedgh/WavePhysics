@@ -1035,91 +1035,119 @@ def list_client_equipments(
     active_only: bool = Query(False, description="Filter to active only"),
     db: sqlite3.Connection = Depends(get_db)
 ):
-    """List all equipments for a client"""
-    query = "SELECT id, client_id, name, interval_weeks, rrule, default_lead_weeks, active, is_custom FROM client_equipments WHERE client_id = ?"
-    params = [client_id]
+    """List all equipment types (global, not per-client) - maintained for backward compatibility"""
+    # Verify client exists
+    client_row = db.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone()
+    if client_row is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    query = "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE 1=1"
+    params = []
     
     if active_only:
         query += " AND active = 1"
     
-    query += " ORDER BY is_custom, name"
+    query += " ORDER BY name"
     cur = db.execute(query, params)
     rows = cur.fetchall()
-    return [EquipmentRead(**dict(row)) for row in rows]
+    # Adapt equipment_types to EquipmentRead format (with client_id and is_custom=False)
+    return [EquipmentRead(
+        id=row['id'],
+        client_id=client_id,
+        name=row['name'],
+        interval_weeks=row['interval_weeks'],
+        rrule=row['rrule'],
+        default_lead_weeks=row['default_lead_weeks'],
+        active=bool(row['active']),
+        is_custom=False
+    ) for row in rows]
 
 
 @app.get("/equipments/{equipment_id}", response_model=EquipmentRead)
 def get_equipment(equipment_id: int, db: sqlite3.Connection = Depends(get_db)):
+    """Get equipment type - maintained for backward compatibility"""
     row = db.execute(
-        "SELECT id, client_id, name, interval_weeks, rrule, default_lead_weeks, active, is_custom FROM client_equipments WHERE id = ?",
+        "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
         (equipment_id,),
     ).fetchone()
 
     if row is None:
         raise HTTPException(status_code=404, detail="Equipment not found")
 
-    return EquipmentRead(**dict(row))
+    # Try to get a client_id from equipment_record if any exists, otherwise use 0
+    client_row = db.execute(
+        "SELECT client_id FROM equipment_record WHERE equipment_type_id = ? LIMIT 1",
+        (equipment_id,)
+    ).fetchone()
+    client_id = client_row['client_id'] if client_row else 0
+
+    return EquipmentRead(
+        id=row['id'],
+        client_id=client_id,
+        name=row['name'],
+        interval_weeks=row['interval_weeks'],
+        rrule=row['rrule'],
+        default_lead_weeks=row['default_lead_weeks'],
+        active=bool(row['active']),
+        is_custom=False
+    )
 
 
 @app.post("/clients/{client_id}/equipments", response_model=EquipmentRead, status_code=status.HTTP_201_CREATED)
 def create_client_equipment(client_id: int, payload: EquipmentCreate, db: sqlite3.Connection = Depends(get_db)):
+    """Create equipment type (global) - maintained for backward compatibility"""
     # Verify client exists
     client_row = db.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone()
     if client_row is None:
         raise HTTPException(status_code=404, detail="Client not found")
     
-    # Ensure client_id matches
-    if payload.client_id != client_id:
-        raise HTTPException(status_code=400, detail="Client ID mismatch")
-
-    # Normalize name to uppercase
-    name_upper = payload.name.upper()
-    
-    # Check for existing equipment case-insensitively
-    existing = db.execute("SELECT id FROM client_equipments WHERE client_id = ? AND UPPER(name) = ?", (client_id, name_upper)).fetchone()
+    # Check for existing equipment type case-insensitively
+    existing = db.execute("SELECT id FROM equipment_types WHERE UPPER(name) = ?", (payload.name.upper(),)).fetchone()
     if existing:
-        raise HTTPException(status_code=400, detail="Equipment name must be unique per client (case-insensitive)")
+        raise HTTPException(status_code=400, detail="Equipment type name must be unique (case-insensitive)")
 
     try:
         cur = db.execute(
-            "INSERT INTO client_equipments (client_id, name, interval_weeks, rrule, default_lead_weeks, active, is_custom) VALUES (?, ?, ?, ?, ?, ?, 1)",
-            (payload.client_id, name_upper, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
+            "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?)",
+            (payload.name, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
         )
         db.commit()
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Equipment name must be unique per client")
+        raise HTTPException(status_code=400, detail="Equipment type name must be unique")
 
     row = db.execute(
-        "SELECT id, client_id, name, interval_weeks, rrule, default_lead_weeks, active, is_custom FROM client_equipments WHERE id = ?",
+        "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
         (cur.lastrowid,),
     ).fetchone()
-    return EquipmentRead(**dict(row))
+    return EquipmentRead(
+        id=row['id'],
+        client_id=client_id,
+        name=row['name'],
+        interval_weeks=row['interval_weeks'],
+        rrule=row['rrule'],
+        default_lead_weeks=row['default_lead_weeks'],
+        active=bool(row['active']),
+        is_custom=False
+    )
 
 
 @app.put("/equipments/{equipment_id}", response_model=EquipmentRead)
 def update_equipment(equipment_id: int, payload: EquipmentUpdate, db: sqlite3.Connection = Depends(get_db)):
-    row = db.execute("SELECT id, is_custom FROM client_equipments WHERE id = ?", (equipment_id,)).fetchone()
+    """Update equipment type (global) - maintained for backward compatibility"""
+    row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (equipment_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Equipment not found")
-    
-    # Don't allow editing default equipments (only custom ones)
-    if row['is_custom'] == 0:
-        raise HTTPException(status_code=400, detail="Cannot edit default equipment. Only custom equipments can be modified.")
 
     fields = []
     values = []
 
     if payload.name is not None:
-        # Normalize name to uppercase
-        name_upper = payload.name.upper()
         # Check for duplicate (case-insensitive) excluding current equipment
-        client_id_row = db.execute("SELECT client_id FROM client_equipments WHERE id = ?", (equipment_id,)).fetchone()
-        if client_id_row:
-            existing = db.execute("SELECT id FROM client_equipments WHERE client_id = ? AND UPPER(name) = ? AND id != ?", (client_id_row['client_id'], name_upper, equipment_id)).fetchone()
-            if existing:
-                raise HTTPException(status_code=400, detail="Equipment name must be unique per client (case-insensitive)")
+        existing = db.execute("SELECT id FROM equipment_types WHERE UPPER(name) = ? AND id != ?", (payload.name.upper(), equipment_id)).fetchone()
+        if existing:
+            raise HTTPException(status_code=400, detail="Equipment type name must be unique (case-insensitive)")
         fields.append("name = ?")
-        values.append(name_upper)
+        values.append(payload.name)
     if payload.interval_weeks is not None:
         fields.append("interval_weeks = ?")
         values.append(payload.interval_weeks)
@@ -1137,31 +1165,51 @@ def update_equipment(equipment_id: int, payload: EquipmentUpdate, db: sqlite3.Co
         values.append(equipment_id)
         try:
             db.execute(
-                f"UPDATE client_equipments SET {', '.join(fields)} WHERE id = ?",
+                f"UPDATE equipment_types SET {', '.join(fields)} WHERE id = ?",
                 values,
             )
             db.commit()
         except sqlite3.IntegrityError:
-            raise HTTPException(status_code=400, detail="Equipment name must be unique per client")
+            raise HTTPException(status_code=400, detail="Equipment type name must be unique")
 
     row = db.execute(
-        "SELECT id, client_id, name, interval_weeks, rrule, default_lead_weeks, active, is_custom FROM client_equipments WHERE id = ?",
+        "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
         (equipment_id,),
     ).fetchone()
-    return EquipmentRead(**dict(row))
+    
+    # Try to get a client_id from equipment_record if any exists, otherwise use 0
+    client_row = db.execute(
+        "SELECT client_id FROM equipment_record WHERE equipment_type_id = ? LIMIT 1",
+        (equipment_id,)
+    ).fetchone()
+    client_id = client_row['client_id'] if client_row else 0
+    
+    return EquipmentRead(
+        id=row['id'],
+        client_id=client_id,
+        name=row['name'],
+        interval_weeks=row['interval_weeks'],
+        rrule=row['rrule'],
+        default_lead_weeks=row['default_lead_weeks'],
+        active=bool(row['active']),
+        is_custom=False
+    )
 
 
 @app.delete("/equipments/{equipment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_equipment(equipment_id: int, db: sqlite3.Connection = Depends(get_db)):
-    # Check if it's a custom equipment (only custom can be deleted)
-    row = db.execute("SELECT is_custom FROM client_equipments WHERE id = ?", (equipment_id,)).fetchone()
+    """Delete equipment type (global) - maintained for backward compatibility"""
+    # Check if equipment type exists
+    row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (equipment_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Equipment not found")
     
-    if row['is_custom'] == 0:
-        raise HTTPException(status_code=400, detail="Cannot delete default equipment. Only custom equipments can be deleted.")
+    # Check if it's being used by any equipment_record
+    used = db.execute("SELECT id FROM equipment_record WHERE equipment_type_id = ? LIMIT 1", (equipment_id,)).fetchone()
+    if used:
+        raise HTTPException(status_code=400, detail="Cannot delete equipment type that is in use by equipment records")
     
-    cur = db.execute("DELETE FROM client_equipments WHERE id = ?", (equipment_id,))
+    cur = db.execute("DELETE FROM equipment_types WHERE id = ?", (equipment_id,))
     db.commit()
 
     if cur.rowcount == 0:
@@ -1172,7 +1220,7 @@ def delete_equipment(equipment_id: int, db: sqlite3.Connection = Depends(get_db)
 
 @app.post("/clients/{client_id}/equipments/seed-defaults", status_code=status.HTTP_201_CREATED)
 def seed_default_equipments(client_id: int, db: sqlite3.Connection = Depends(get_db)):
-    """Seed default equipments for a client"""
+    """Seed default equipment types (global) - maintained for backward compatibility"""
     # Verify client exists
     client_row = db.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone()
     if client_row is None:
@@ -1180,14 +1228,14 @@ def seed_default_equipments(client_id: int, db: sqlite3.Connection = Depends(get
     
     created = []
     for name, interval, rrule_str, lead_weeks in DEFAULT_EQUIPMENTS:
-        # Check if exists for this client
-        existing = db.execute("SELECT id FROM client_equipments WHERE client_id = ? AND name = ?", (client_id, name)).fetchone()
+        # Check if equipment type already exists (global, not per-client)
+        existing = db.execute("SELECT id FROM equipment_types WHERE name = ?", (name,)).fetchone()
         if existing:
             continue
         
         cur = db.execute(
-            "INSERT INTO client_equipments (client_id, name, interval_weeks, rrule, default_lead_weeks, active, is_custom) VALUES (?, ?, ?, ?, ?, 1, 0)",
-            (client_id, name, interval, rrule_str, lead_weeks),
+            "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, 1)",
+            (name, interval, rrule_str, lead_weeks),
         )
         created.append(cur.lastrowid)
     
@@ -2643,7 +2691,7 @@ async def import_excel(
         # Process each row
         client_map = {}  # name -> id
         site_map = {}    # (client_id, site_name) -> id
-        equipment_map = {}  # (client_id, equipment_name) -> id
+        equipment_map = {}  # equipment_type_name (uppercase) -> equipment_type_id
         
         for idx, row in df.iterrows():
             try:
@@ -2671,17 +2719,6 @@ async def import_excel(
                             db.commit()
                             client_id = cur.lastrowid
                             stats["clients_created"] += 1
-                            
-                            # Seed default equipments for new client
-                            for name, interval, rrule_str, lead_weeks in DEFAULT_EQUIPMENTS:
-                                try:
-                                    db.execute(
-                                        "INSERT INTO client_equipments (client_id, name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?, ?)",
-                                        (client_id, name, interval, rrule_str, lead_weeks)
-                                    )
-                                except sqlite3.IntegrityError:
-                                    pass  # Already exists
-                            db.commit()
                         
                         client_map[client_name] = client_id
                     
@@ -2714,43 +2751,30 @@ async def import_excel(
                     site_id = site_map[site_key]
                 
                 # equipment_col now points to "identifier" column (equipment type/dropdown value)
-                equipment_name = str(row[equipment_col]).strip().upper()
-                if not equipment_name or equipment_name in ['NAN', 'NONE', '']:
+                equipment_type_name = str(row[equipment_col]).strip()
+                if not equipment_type_name or equipment_type_name.upper() in ['NAN', 'NONE', '']:
                     continue
                 
-                equipment_key = (client_id, equipment_name)
-                if equipment_key not in equipment_map:
+                # Get or create equipment_type
+                equipment_type_key = equipment_type_name.upper()
+                if equipment_type_key not in equipment_map:
                     existing = db.execute(
-                        "SELECT id FROM client_equipments WHERE client_id = ? AND UPPER(name) = ?",
-                        (client_id, equipment_name)
+                        "SELECT id, interval_weeks, default_lead_weeks FROM equipment_types WHERE UPPER(name) = ?",
+                        (equipment_type_key,)
                     ).fetchone()
                     if existing:
-                        equipment_id = existing['id']
-                        db.execute("UPDATE client_equipments SET name = ? WHERE id = ?", (equipment_name, equipment_id))
-                        db.commit()
+                        equipment_type_id = existing['id']
                     else:
+                        # Create equipment_type entry
                         cur = db.execute(
-                            "INSERT INTO client_equipments (client_id, name, interval_weeks, rrule, default_lead_weeks, is_custom) VALUES (?, ?, ?, ?, ?, ?)",
-                            (client_id, equipment_name, 52, "FREQ=WEEKLY;INTERVAL=52", 4, 1)
+                            "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
+                            (equipment_type_name, 52, "FREQ=WEEKLY;INTERVAL=52", 4)
                         )
                         db.commit()
-                        equipment_id = cur.lastrowid
+                        equipment_type_id = cur.lastrowid
                         stats["equipments_created"] += 1
-                    equipment_map[equipment_key] = equipment_id
-                equipment_id = equipment_map[equipment_key]
-                
-                # Get or create equipment_type for this equipment (equipment_type_id FK requires it)
-                equipment_type = db.execute("SELECT id FROM equipment_types WHERE name = ?", (equipment_name,)).fetchone()
-                if equipment_type:
-                    equipment_type_id = equipment_type['id']
-                else:
-                    # Create equipment_type entry
-                    cur = db.execute(
-                        "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
-                        (equipment_name, 52, "FREQ=WEEKLY;INTERVAL=52", 4)
-                    )
-                    db.commit()
-                    equipment_type_id = cur.lastrowid
+                    equipment_map[equipment_type_key] = equipment_type_id
+                equipment_type_id = equipment_map[equipment_type_key]
                 
                 # Parse anchor date (required)
                 if pd.isna(row[anchor_date_col]):
@@ -2828,15 +2852,22 @@ async def import_excel(
                     site_row = db.execute("SELECT timezone FROM sites WHERE id = ?", (site_id,)).fetchone()
                     timezone = site_row['timezone'] if site_row and site_row['timezone'] else "America/Chicago"
                 
-                # Get default lead_weeks from equipment if not provided
+                # Get default lead_weeks from equipment_type if not provided
                 if lead_weeks is None:
-                    eq_row = db.execute("SELECT default_lead_weeks FROM client_equipments WHERE id = ?", (equipment_id,)).fetchone()
-                    lead_weeks = eq_row['default_lead_weeks'] if eq_row and eq_row['default_lead_weeks'] else 4
+                    eq_type_row = db.execute("SELECT default_lead_weeks FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
+                    lead_weeks = eq_type_row['default_lead_weeks'] if eq_type_row and eq_type_row['default_lead_weeks'] else 4
+                
+                # Get interval_weeks from equipment_type
+                eq_type_row = db.execute("SELECT interval_weeks FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
+                interval_weeks = eq_type_row['interval_weeks'] if eq_type_row and eq_type_row['interval_weeks'] else 52
+                
+                # Use equipment_identifier as equipment_name, or fallback to equipment_type_name
+                equipment_name = equipment_identifier if equipment_identifier else equipment_type_name
                 
                 try:
                     db.execute(
-                        "INSERT INTO schedules (site_id, equipment_id, equipment_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (site_id, equipment_id, equipment_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes)
+                        "INSERT INTO equipment_record (client_id, site_id, equipment_type_id, equipment_name, anchor_date, due_date, interval_weeks, lead_weeks, timezone, notes, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                        (client_id, site_id, equipment_type_id, equipment_name, anchor_date, due_date, interval_weeks, lead_weeks, timezone, notes)
                     )
                     db.commit()
                     stats["schedules_created"] += 1
@@ -3228,17 +3259,6 @@ async def import_temporary_data(
                         db.commit()
                         client_id = cur.lastrowid
                         stats["clients_created"] += 1
-                        
-                        # Seed default equipments for new client
-                        for name, interval, rrule_str, lead_weeks in DEFAULT_EQUIPMENTS:
-                            try:
-                                db.execute(
-                                    "INSERT INTO client_equipments (client_id, name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?, ?)",
-                                    (client_id, name, interval, rrule_str, lead_weeks)
-                                )
-                            except sqlite3.IntegrityError:
-                                pass  # Already exists
-                        db.commit()
                     
                     client_map[client_name] = client_id
                 
