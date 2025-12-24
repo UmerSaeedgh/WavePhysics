@@ -2580,6 +2580,10 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
   const equipmentRefs = useRef({});
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showDoneModal, setShowDoneModal] = useState(false);
+  const [doneEquipment, setDoneEquipment] = useState(null);
+  const [calculatedDueDate, setCalculatedDueDate] = useState("");
+  const [doneInterval, setDoneInterval] = useState("");
 
   useEffect(() => {
     if (scrollToEquipmentId && allEquipments.length > 0) {
@@ -2654,6 +2658,76 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
     }
   }
 
+  function calculateDueDate(baseDate, intervalWeeks) {
+    if (!baseDate || !intervalWeeks) return "";
+    const date = new Date(baseDate);
+    const newDate = new Date(date);
+    newDate.setDate(newDate.getDate() + (parseInt(intervalWeeks) * 7));
+    return newDate.toISOString().split('T')[0];
+  }
+
+  function handleDoneClick(equipment) {
+    setDoneEquipment(equipment);
+    const initialInterval = equipment.interval_weeks?.toString() || "";
+    setDoneInterval(initialInterval);
+    
+    // Calculate new due date: current due date + interval weeks
+    if (equipment.due_date && equipment.interval_weeks) {
+      setCalculatedDueDate(calculateDueDate(equipment.due_date, equipment.interval_weeks));
+    } else if (equipment.anchor_date && equipment.interval_weeks) {
+      // If no due date, use anchor date + interval weeks
+      setCalculatedDueDate(calculateDueDate(equipment.anchor_date, equipment.interval_weeks));
+    } else {
+      setCalculatedDueDate("");
+    }
+    setShowDoneModal(true);
+  }
+
+  function handleIntervalChange(newInterval) {
+    setDoneInterval(newInterval);
+    // Recalculate due date when interval changes
+    if (doneEquipment) {
+      const baseDate = doneEquipment.due_date || doneEquipment.anchor_date;
+      if (baseDate && newInterval) {
+        setCalculatedDueDate(calculateDueDate(baseDate, newInterval));
+      }
+    }
+  }
+
+  async function handleSaveDone() {
+    if (!doneEquipment || !calculatedDueDate) {
+      setError("Due date is required");
+      return;
+    }
+    try {
+      const updatePayload = {
+        due_date: calculatedDueDate
+      };
+      // Update interval if it changed
+      if (doneInterval && parseInt(doneInterval) !== doneEquipment.interval_weeks) {
+        updatePayload.interval_weeks = parseInt(doneInterval);
+      }
+      await apiCall(`/equipment-records/${doneEquipment.id}`, {
+        method: "PUT",
+        body: JSON.stringify(updatePayload)
+      });
+      await fetchAllEquipments();
+      setShowDoneModal(false);
+      setDoneEquipment(null);
+      setCalculatedDueDate("");
+      setDoneInterval("");
+    } catch (err) {
+      // error already set
+    }
+  }
+
+  function handleCancelDone() {
+    setShowDoneModal(false);
+    setDoneEquipment(null);
+    setCalculatedDueDate("");
+    setDoneInterval("");
+  }
+
   return (
     <div>
       <div className="card">
@@ -2704,6 +2778,7 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                       </div>
                     </div>
                     <div className="list-actions" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => handleDoneClick(equipment)}>Done</button>
                       <button onClick={() => {
                         if (onNavigateToAddEquipment) {
                           onNavigateToAddEquipment(equipment);
@@ -2808,6 +2883,103 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                   }}
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDoneModal && doneEquipment && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(45, 50, 52, 0.9)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }} onClick={handleCancelDone}>
+          <div style={{
+            backgroundColor: "#D7E5D8",
+            padding: "2rem",
+            borderRadius: "0.5rem",
+            maxWidth: "500px",
+            width: "90%",
+            color: "#2D3234"
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <h2 style={{ margin: 0, color: "#2D3234" }}>Mark as Done</h2>
+              <button onClick={handleCancelDone} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+            </div>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  Interval (weeks)
+                </label>
+                <input
+                  type="number"
+                  value={doneInterval}
+                  onChange={(e) => handleIntervalChange(e.target.value)}
+                  min="1"
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    backgroundColor: "#fff",
+                    color: "#2D3234"
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  Calculated Due Date
+                </label>
+                <input
+                  type="date"
+                  value={calculatedDueDate}
+                  onChange={(e) => setCalculatedDueDate(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    backgroundColor: "#fff",
+                    color: "#2D3234"
+                  }}
+                />
+                <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
+                  {(doneEquipment.due_date || doneEquipment.anchor_date) ? 
+                    `${formatDate(doneEquipment.due_date || doneEquipment.anchor_date)} + ${doneInterval || 0} weeks` :
+                    "Set base date first"
+                  }
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <button 
+                  className="primary" 
+                  onClick={handleSaveDone}
+                  disabled={!calculatedDueDate}
+                >
+                  Save
+                </button>
+                <button 
+                  className="secondary" 
+                  onClick={handleCancelDone}
+                  style={{ 
+                    color: "#2D3234", 
+                    border: "1px solid #8193A4",
+                    background: "transparent"
+                  }}
+                >
+                  Cancel
                 </button>
               </div>
             </div>
