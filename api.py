@@ -532,9 +532,9 @@ def delete_contact_link(link_id: int, db: sqlite3.Connection = Depends(get_db)):
     return
 
 
-# ========== TEST TYPES ==========
+# ========== EQUIPMENT TYPES ==========
 
-class TestTypeCreate(BaseModel):
+class EquipmentTypeCreate(BaseModel):
     name: str
     interval_weeks: int
     rrule: str
@@ -542,7 +542,7 @@ class TestTypeCreate(BaseModel):
     active: bool = True
 
 
-class TestTypeUpdate(BaseModel):
+class EquipmentTypeUpdate(BaseModel):
     name: Optional[str] = None
     interval_weeks: Optional[int] = None
     rrule: Optional[str] = None
@@ -550,7 +550,7 @@ class TestTypeUpdate(BaseModel):
     active: Optional[bool] = None
 
 
-class TestTypeRead(BaseModel):
+class EquipmentTypeRead(BaseModel):
     id: int
     name: str
     interval_weeks: int
@@ -559,57 +559,57 @@ class TestTypeRead(BaseModel):
     active: bool
 
 
-@app.get("/test-types", response_model=List[TestTypeRead])
-def list_test_types(
+@app.get("/equipment-types", response_model=List[EquipmentTypeRead])
+def list_equipment_types(
     active_only: bool = Query(False, description="Filter to active only"),
     db: sqlite3.Connection = Depends(get_db)
 ):
     if active_only:
         cur = db.execute(
-            "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM test_types WHERE active = 1 ORDER BY name"
+            "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE active = 1 ORDER BY name"
         )
     else:
-        cur = db.execute("SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM test_types ORDER BY name")
+        cur = db.execute("SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types ORDER BY name")
     rows = cur.fetchall()
-    return [TestTypeRead(**dict(row)) for row in rows]
+    return [EquipmentTypeRead(**dict(row)) for row in rows]
 
 
-@app.get("/test-types/{test_type_id}", response_model=TestTypeRead)
-def get_test_type(test_type_id: int, db: sqlite3.Connection = Depends(get_db)):
+@app.get("/equipment-types/{equipment_type_id}", response_model=EquipmentTypeRead)
+def get_equipment_type(equipment_type_id: int, db: sqlite3.Connection = Depends(get_db)):
     row = db.execute(
-        "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM test_types WHERE id = ?",
-        (test_type_id,),
+        "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
+        (equipment_type_id,),
     ).fetchone()
 
     if row is None:
-        raise HTTPException(status_code=404, detail="Test type not found")
+        raise HTTPException(status_code=404, detail="Equipment type not found")
 
-    return TestTypeRead(**dict(row))
+    return EquipmentTypeRead(**dict(row))
 
 
-@app.post("/test-types", response_model=TestTypeRead, status_code=status.HTTP_201_CREATED)
-def create_test_type(payload: TestTypeCreate, db: sqlite3.Connection = Depends(get_db)):
+@app.post("/equipment-types", response_model=EquipmentTypeRead, status_code=status.HTTP_201_CREATED)
+def create_equipment_type(payload: EquipmentTypeCreate, db: sqlite3.Connection = Depends(get_db)):
     try:
         cur = db.execute(
-            "INSERT INTO test_types (name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?)",
             (payload.name, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
         )
         db.commit()
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Test type name must be unique")
+        raise HTTPException(status_code=400, detail="Equipment type name must be unique")
 
     row = db.execute(
-        "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM test_types WHERE id = ?",
+        "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
         (cur.lastrowid,),
     ).fetchone()
-    return TestTypeRead(**dict(row))
+    return EquipmentTypeRead(**dict(row))
 
 
-@app.put("/test-types/{test_type_id}", response_model=TestTypeRead)
-def update_test_type(test_type_id: int, payload: TestTypeUpdate, db: sqlite3.Connection = Depends(get_db)):
-    row = db.execute("SELECT id FROM test_types WHERE id = ?", (test_type_id,)).fetchone()
+@app.put("/equipment-types/{equipment_type_id}", response_model=EquipmentTypeRead)
+def update_equipment_type(equipment_type_id: int, payload: EquipmentTypeUpdate, db: sqlite3.Connection = Depends(get_db)):
+    row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
     if row is None:
-        raise HTTPException(status_code=404, detail="Test type not found")
+        raise HTTPException(status_code=404, detail="Equipment type not found")
 
     fields = []
     values = []
@@ -631,37 +631,37 @@ def update_test_type(test_type_id: int, payload: TestTypeUpdate, db: sqlite3.Con
         values.append(1 if payload.active else 0)
 
     if fields:
-        values.append(test_type_id)
+        values.append(equipment_type_id)
         try:
             db.execute(
-                f"UPDATE test_types SET {', '.join(fields)} WHERE id = ?",
+                f"UPDATE equipment_types SET {', '.join(fields)} WHERE id = ?",
                 values,
             )
             db.commit()
         except sqlite3.IntegrityError:
-            raise HTTPException(status_code=400, detail="Test type name must be unique")
+            raise HTTPException(status_code=400, detail="Equipment type name must be unique")
 
     row = db.execute(
-        "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM test_types WHERE id = ?",
-        (test_type_id,),
+        "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
+        (equipment_type_id,),
     ).fetchone()
-    return TestTypeRead(**dict(row))
+    return EquipmentTypeRead(**dict(row))
 
 
-@app.delete("/test-types/{test_type_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_test_type(test_type_id: int, db: sqlite3.Connection = Depends(get_db)):
-    cur = db.execute("DELETE FROM test_types WHERE id = ?", (test_type_id,))
+@app.delete("/equipment-types/{equipment_type_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_equipment_type(equipment_type_id: int, db: sqlite3.Connection = Depends(get_db)):
+    cur = db.execute("DELETE FROM equipment_types WHERE id = ?", (equipment_type_id,))
     db.commit()
 
     if cur.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Test type not found")
+        raise HTTPException(status_code=404, detail="Equipment type not found")
 
     return
 
 
-@app.post("/test-types/seed", status_code=status.HTTP_201_CREATED)
-def seed_test_types(db: sqlite3.Connection = Depends(get_db)):
-    """Seed default test types"""
+@app.post("/equipment-types/seed", status_code=status.HTTP_201_CREATED)
+def seed_equipment_types(db: sqlite3.Connection = Depends(get_db)):
+    """Seed default equipment types"""
     defaults = [
         ("NM Audit", 13, "FREQ=WEEKLY;INTERVAL=13", 3),
         ("ACR PET / Gamma camera ACR", 26, "FREQ=WEEKLY;INTERVAL=26", 4),
@@ -671,18 +671,313 @@ def seed_test_types(db: sqlite3.Connection = Depends(get_db)):
     created = []
     for name, interval, rrule_str, lead_weeks in defaults:
         # Check if exists
-        existing = db.execute("SELECT id FROM test_types WHERE name = ?", (name,)).fetchone()
+        existing = db.execute("SELECT id FROM equipment_types WHERE name = ?", (name,)).fetchone()
         if existing:
             continue
         
         cur = db.execute(
-            "INSERT INTO test_types (name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, 1)",
+            "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, 1)",
             (name, interval, rrule_str, lead_weeks),
         )
         created.append(cur.lastrowid)
     
     db.commit()
     return {"created": len(created), "ids": created}
+
+
+# ========== EQUIPMENT RECORDS ==========
+
+class EquipmentRecordCreate(BaseModel):
+    client_id: int
+    site_id: int
+    equipment_type_id: int
+    equipment_name: str
+    anchor_date: str  # YYYY-MM-DD
+    due_date: Optional[str] = None  # YYYY-MM-DD
+    interval_weeks: int = 52
+    lead_weeks: Optional[int] = None
+    active: bool = True
+    notes: Optional[str] = None
+    timezone: Optional[str] = None
+
+
+class EquipmentRecordUpdate(BaseModel):
+    site_id: Optional[int] = None
+    equipment_type_id: Optional[int] = None
+    equipment_name: Optional[str] = None
+    anchor_date: Optional[str] = None
+    due_date: Optional[str] = None
+    interval_weeks: Optional[int] = None
+    lead_weeks: Optional[int] = None
+    active: Optional[bool] = None
+    notes: Optional[str] = None
+    timezone: Optional[str] = None
+
+
+class EquipmentRecordRead(BaseModel):
+    id: int
+    client_id: int
+    site_id: int
+    equipment_type_id: int
+    equipment_name: str
+    anchor_date: str
+    due_date: Optional[str] = None
+    interval_weeks: int
+    lead_weeks: Optional[int] = None
+    active: bool
+    notes: Optional[str] = None
+    timezone: Optional[str] = None
+    client_name: Optional[str] = None
+    site_name: Optional[str] = None
+    equipment_type_name: Optional[str] = None
+
+
+@app.get("/equipment-records", response_model=List[EquipmentRecordRead])
+def list_equipment_records(
+    client_id: Optional[int] = Query(None, description="Filter by client"),
+    active_only: bool = Query(False, description="Filter to active only"),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
+                      er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.active, er.notes, er.timezone,
+                      c.name as client_name,
+                      s.name as site_name,
+                      et.name as equipment_type_name
+               FROM equipment_record er
+               LEFT JOIN clients c ON er.client_id = c.id
+               LEFT JOIN sites s ON er.site_id = s.id
+               LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+               WHERE 1=1"""
+    params = []
+    
+    if client_id:
+        query += " AND er.client_id = ?"
+        params.append(client_id)
+    
+    if active_only:
+        query += " AND er.active = 1"
+    
+    query += " ORDER BY er.anchor_date DESC"
+    
+    cur = db.execute(query, params)
+    rows = cur.fetchall()
+    result = []
+    for row in rows:
+        record_dict = dict(row)
+        record_dict['active'] = bool(record_dict.get('active', 1))
+        result.append(EquipmentRecordRead(**record_dict))
+    return result
+
+
+@app.get("/equipment-records/upcoming", response_model=List[EquipmentRecordRead])
+def get_upcoming_equipment_records(
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    weeks: Optional[int] = Query(None, description="Number of weeks from today"),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    today = dt.date.today()
+    
+    if weeks:
+        end_date_obj = today + dt.timedelta(weeks=weeks)
+        start_date_obj = today
+    elif start_date and end_date:
+        start_date_obj = dt.datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_date_obj = dt.datetime.strptime(end_date, "%Y-%m-%d").date()
+    else:
+        # Default to 2 weeks
+        start_date_obj = today
+        end_date_obj = today + dt.timedelta(weeks=2)
+    
+    query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
+                      er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.active, er.notes, er.timezone,
+                      c.name as client_name,
+                      s.name as site_name,
+                      et.name as equipment_type_name
+               FROM equipment_record er
+               LEFT JOIN clients c ON er.client_id = c.id
+               LEFT JOIN sites s ON er.site_id = s.id
+               LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+               WHERE er.active = 1 
+                 AND (er.due_date IS NOT NULL AND er.due_date >= ? AND er.due_date <= ?)
+               ORDER BY er.due_date"""
+    
+    cur = db.execute(query, (start_date_obj.isoformat(), end_date_obj.isoformat()))
+    rows = cur.fetchall()
+    result = []
+    for row in rows:
+        record_dict = dict(row)
+        record_dict['active'] = bool(record_dict.get('active', 1))
+        result.append(EquipmentRecordRead(**record_dict))
+    return result
+
+
+@app.get("/equipment-records/overdue", response_model=List[EquipmentRecordRead])
+def get_overdue_equipment_records(db: sqlite3.Connection = Depends(get_db)):
+    today = dt.date.today()
+    
+    query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
+                      er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.active, er.notes, er.timezone,
+                      c.name as client_name,
+                      s.name as site_name,
+                      et.name as equipment_type_name
+               FROM equipment_record er
+               LEFT JOIN clients c ON er.client_id = c.id
+               LEFT JOIN sites s ON er.site_id = s.id
+               LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+               WHERE er.active = 1 
+                 AND er.due_date IS NOT NULL 
+                 AND er.due_date < ?
+               ORDER BY er.due_date"""
+    
+    cur = db.execute(query, (today.isoformat(),))
+    rows = cur.fetchall()
+    result = []
+    for row in rows:
+        record_dict = dict(row)
+        record_dict['active'] = bool(record_dict.get('active', 1))
+        result.append(EquipmentRecordRead(**record_dict))
+    return result
+
+
+@app.get("/equipment-records/{equipment_record_id}", response_model=EquipmentRecordRead)
+def get_equipment_record(equipment_record_id: int, db: sqlite3.Connection = Depends(get_db)):
+    row = db.execute(
+        """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
+                  er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                  er.active, er.notes, er.timezone,
+                  c.name as client_name,
+                  s.name as site_name,
+                  et.name as equipment_type_name
+           FROM equipment_record er
+           LEFT JOIN clients c ON er.client_id = c.id
+           LEFT JOIN sites s ON er.site_id = s.id
+           LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+           WHERE er.id = ?""",
+        (equipment_record_id,),
+    ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Equipment record not found")
+
+    record_dict = dict(row)
+    record_dict['active'] = bool(record_dict.get('active', 1))
+    return EquipmentRecordRead(**record_dict)
+
+
+@app.post("/equipment-records", response_model=EquipmentRecordRead, status_code=status.HTTP_201_CREATED)
+def create_equipment_record(payload: EquipmentRecordCreate, db: sqlite3.Connection = Depends(get_db)):
+    # Verify client exists
+    client_row = db.execute("SELECT id FROM clients WHERE id = ?", (payload.client_id,)).fetchone()
+    if client_row is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    # Verify site exists and belongs to the client
+    site_row = db.execute("SELECT id, client_id FROM sites WHERE id = ?", (payload.site_id,)).fetchone()
+    if site_row is None:
+        raise HTTPException(status_code=404, detail="Site not found")
+    if site_row['client_id'] != payload.client_id:
+        raise HTTPException(status_code=400, detail="Site does not belong to the specified client")
+    
+    # Verify equipment type exists
+    equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (payload.equipment_type_id,)).fetchone()
+    if equipment_type_row is None:
+        raise HTTPException(status_code=404, detail="Equipment type not found")
+    
+    try:
+        cur = db.execute(
+            "INSERT INTO equipment_record (client_id, site_id, equipment_type_id, equipment_name, anchor_date, due_date, interval_weeks, lead_weeks, active, notes, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (payload.client_id, payload.site_id, payload.equipment_type_id, payload.equipment_name, payload.anchor_date, payload.due_date, payload.interval_weeks, payload.lead_weeks, 1 if payload.active else 0, payload.notes, payload.timezone),
+        )
+        db.commit()
+    except sqlite3.IntegrityError as e:
+        raise HTTPException(status_code=400, detail=f"Database error: {str(e)}")
+
+    return get_equipment_record(cur.lastrowid, db)
+
+
+@app.put("/equipment-records/{equipment_record_id}", response_model=EquipmentRecordRead)
+def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUpdate, db: sqlite3.Connection = Depends(get_db)):
+    row = db.execute("SELECT id FROM equipment_record WHERE id = ?", (equipment_record_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Equipment record not found")
+
+    # Verify equipment type if being updated
+    if payload.equipment_type_id is not None:
+        equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (payload.equipment_type_id,)).fetchone()
+        if equipment_type_row is None:
+            raise HTTPException(status_code=404, detail="Equipment type not found")
+
+    # Verify site if being updated
+    if payload.site_id is not None:
+        site_row = db.execute("SELECT id, client_id FROM sites WHERE id = ?", (payload.site_id,)).fetchone()
+        if site_row is None:
+            raise HTTPException(status_code=404, detail="Site not found")
+        # Get current record to check client_id
+        current_record = db.execute("SELECT client_id FROM equipment_record WHERE id = ?", (equipment_record_id,)).fetchone()
+        if current_record and site_row['client_id'] != current_record['client_id']:
+            raise HTTPException(status_code=400, detail="Site does not belong to the same client")
+
+    fields = []
+    values = []
+
+    if payload.site_id is not None:
+        fields.append("site_id = ?")
+        values.append(payload.site_id)
+    if payload.equipment_type_id is not None:
+        fields.append("equipment_type_id = ?")
+        values.append(payload.equipment_type_id)
+    if payload.equipment_name is not None:
+        fields.append("equipment_name = ?")
+        values.append(payload.equipment_name)
+    if payload.anchor_date is not None:
+        fields.append("anchor_date = ?")
+        values.append(payload.anchor_date)
+    if payload.due_date is not None:
+        fields.append("due_date = ?")
+        values.append(payload.due_date)
+    if payload.interval_weeks is not None:
+        fields.append("interval_weeks = ?")
+        values.append(payload.interval_weeks)
+    if payload.lead_weeks is not None:
+        fields.append("lead_weeks = ?")
+        values.append(payload.lead_weeks)
+    if payload.active is not None:
+        fields.append("active = ?")
+        values.append(1 if payload.active else 0)
+    if payload.notes is not None:
+        fields.append("notes = ?")
+        values.append(payload.notes)
+    if payload.timezone is not None:
+        fields.append("timezone = ?")
+        values.append(payload.timezone)
+
+    if fields:
+        values.append(equipment_record_id)
+        try:
+            db.execute(
+                f"UPDATE equipment_record SET {', '.join(fields)} WHERE id = ?",
+                values,
+            )
+            db.commit()
+        except sqlite3.IntegrityError as e:
+            raise HTTPException(status_code=400, detail=f"Database error: {str(e)}")
+
+    return get_equipment_record(equipment_record_id, db)
+
+
+@app.delete("/equipment-records/{equipment_record_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_equipment_record(equipment_record_id: int, db: sqlite3.Connection = Depends(get_db)):
+    cur = db.execute("DELETE FROM equipment_record WHERE id = ?", (equipment_record_id,))
+    db.commit()
+
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Equipment record not found")
+
+    return
 
 
 # ========== CLIENT EQUIPMENTS ==========
@@ -971,15 +1266,15 @@ def list_schedules(
 ):
     if site_id:
         cur = db.execute(
-            """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id, 
-                      COALESCE(ce.name, tt.name) as equipment_name,
+            """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.equipment_type_id) as equipment_id, 
+                      COALESCE(ce.name, et.name) as equipment_name,
                       sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
                       COALESCE(sch.completed, 0) as completed, sch.completed_at,
                       c.name as client_name, c.address as client_address,
                       s.name as site_name, s.address as site_address
                FROM schedules sch
                LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-               LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+               LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
                LEFT JOIN sites s ON sch.site_id = s.id
                LEFT JOIN clients c ON s.client_id = c.id
                WHERE sch.site_id = ? AND COALESCE(sch.completed, 0) = 0 ORDER BY sch.anchor_date""",
@@ -987,15 +1282,15 @@ def list_schedules(
         )
     else:
         cur = db.execute(
-            """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
-                      COALESCE(ce.name, tt.name) as equipment_name,
+            """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.equipment_type_id) as equipment_id,
+                      COALESCE(ce.name, et.name) as equipment_name,
                       sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
                       COALESCE(sch.completed, 0) as completed, sch.completed_at,
                       c.name as client_name, c.address as client_address,
                       s.name as site_name, s.address as site_address
                FROM schedules sch
                LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-               LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+               LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
                LEFT JOIN sites s ON sch.site_id = s.id
                LEFT JOIN clients c ON s.client_id = c.id
                WHERE COALESCE(sch.completed, 0) = 0 ORDER BY sch.anchor_date"""
@@ -1018,15 +1313,15 @@ def list_completed_schedules(
 ):
     if site_id:
         cur = db.execute(
-            """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id, 
-                      COALESCE(ce.name, tt.name) as equipment_name,
+            """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.equipment_type_id) as equipment_id, 
+                      COALESCE(ce.name, et.name) as equipment_name,
                       sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
                       COALESCE(sch.completed, 0) as completed, sch.completed_at,
                       c.name as client_name, c.address as client_address,
                       s.name as site_name, s.address as site_address
                FROM schedules sch
                LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-               LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+               LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
                LEFT JOIN sites s ON sch.site_id = s.id
                LEFT JOIN clients c ON s.client_id = c.id
                WHERE sch.site_id = ? AND COALESCE(sch.completed, 0) = 1 ORDER BY sch.completed_at DESC, sch.anchor_date DESC""",
@@ -1034,15 +1329,15 @@ def list_completed_schedules(
         )
     else:
         cur = db.execute(
-            """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
-                      COALESCE(ce.name, tt.name) as equipment_name,
+            """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.equipment_type_id) as equipment_id,
+                      COALESCE(ce.name, et.name) as equipment_name,
                       sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
                       COALESCE(sch.completed, 0) as completed, sch.completed_at,
                       c.name as client_name, c.address as client_address,
                       s.name as site_name, s.address as site_address
                FROM schedules sch
                LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-               LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+               LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
                LEFT JOIN sites s ON sch.site_id = s.id
                LEFT JOIN clients c ON s.client_id = c.id
                WHERE COALESCE(sch.completed, 0) = 1 ORDER BY sch.completed_at DESC, sch.anchor_date DESC"""
@@ -1079,8 +1374,8 @@ def get_overdue_schedules(db: sqlite3.Connection = Depends(get_db)):
     today = dt.date.today()
     
     cur = db.execute(
-        """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
-                  COALESCE(ce.name, tt.name) as equipment_name,
+        """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.equipment_type_id) as equipment_id,
+                  COALESCE(ce.name, et.name) as equipment_name,
                   sch.anchor_date, sch.due_date, sch.equipment_identifier, sch.notes,
                   COALESCE(s.name, 'Unknown') as site_name,
                   COALESCE(c.name, 'Unknown') as client_name
@@ -1088,7 +1383,7 @@ def get_overdue_schedules(db: sqlite3.Connection = Depends(get_db)):
            LEFT JOIN sites s ON sch.site_id = s.id
            LEFT JOIN clients c ON s.client_id = c.id
            LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-           LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+           LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
            WHERE COALESCE(sch.completed, 0) = 0 
              AND sch.due_date IS NOT NULL 
              AND sch.due_date < ?
@@ -1117,8 +1412,8 @@ def get_due_this_month_schedules(db: sqlite3.Connection = Depends(get_db)):
         month_end = dt.date(today.year, today.month + 1, 1)
     
     cur = db.execute(
-        """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
-                  COALESCE(ce.name, tt.name) as equipment_name,
+        """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.equipment_type_id) as equipment_id,
+                  COALESCE(ce.name, et.name) as equipment_name,
                   sch.anchor_date, sch.due_date, sch.equipment_identifier, sch.notes,
                   COALESCE(s.name, 'Unknown') as site_name,
                   COALESCE(c.name, 'Unknown') as client_name
@@ -1126,7 +1421,7 @@ def get_due_this_month_schedules(db: sqlite3.Connection = Depends(get_db)):
            LEFT JOIN sites s ON sch.site_id = s.id
            LEFT JOIN clients c ON s.client_id = c.id
            LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-           LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+           LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
            WHERE COALESCE(sch.completed, 0) = 0 
              AND sch.due_date IS NOT NULL 
              AND sch.due_date >= ? AND sch.due_date < ?
@@ -1181,8 +1476,8 @@ def get_upcoming_schedules(
         end = today + dt.timedelta(weeks=2)
     
     cur = db.execute(
-        """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
-                  COALESCE(ce.name, tt.name) as equipment_name,
+        """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.equipment_type_id) as equipment_id,
+                  COALESCE(ce.name, et.name) as equipment_name,
                   sch.anchor_date, sch.due_date, sch.equipment_identifier, sch.notes,
                   COALESCE(s.name, 'Unknown') as site_name,
                   COALESCE(c.name, 'Unknown') as client_name
@@ -1190,7 +1485,7 @@ def get_upcoming_schedules(
            LEFT JOIN sites s ON sch.site_id = s.id
            LEFT JOIN clients c ON s.client_id = c.id
            LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-           LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+           LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
            WHERE COALESCE(sch.completed, 0) = 0 
              AND sch.due_date IS NOT NULL 
              AND sch.due_date >= ? AND sch.due_date <= ?
@@ -1242,15 +1537,15 @@ def undo_schedule(schedule_id: int, db: sqlite3.Connection = Depends(get_db)):
 @app.get("/schedules/{schedule_id}", response_model=ScheduleRead)
 def get_schedule(schedule_id: int, db: sqlite3.Connection = Depends(get_db)):
     row = db.execute(
-        """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
-                  COALESCE(ce.name, tt.name) as equipment_name,
+        """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.equipment_type_id) as equipment_id,
+                  COALESCE(ce.name, et.name) as equipment_name,
                   sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
                   COALESCE(sch.completed, 0) as completed, sch.completed_at,
                   c.name as client_name, c.address as client_address,
                   s.name as site_name, s.address as site_address
            FROM schedules sch
            LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-           LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+           LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
            LEFT JOIN sites s ON sch.site_id = s.id
            LEFT JOIN clients c ON s.client_id = c.id
            WHERE sch.id = ?""",
@@ -1280,18 +1575,18 @@ def create_schedule(payload: ScheduleCreate, db: sqlite3.Connection = Depends(ge
     if equipment_row['client_id'] != site_row['client_id']:
         raise HTTPException(status_code=400, detail="Equipment does not belong to the same client as the site")
 
-    # Get or create test_type for this equipment
-    test_type = db.execute("SELECT id FROM test_types WHERE name = ?", (equipment_row['name'],)).fetchone()
-    if test_type:
-        test_type_id = test_type['id']
+    # Get or create equipment_type for this equipment
+    equipment_type = db.execute("SELECT id FROM equipment_types WHERE name = ?", (equipment_row['name'],)).fetchone()
+    if equipment_type:
+        equipment_type_id = equipment_type['id']
     else:
-        # Create test_type entry
+        # Create equipment_type entry
         cur = db.execute(
-            "INSERT INTO test_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
+            "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
             (equipment_row['name'], 52, "FREQ=WEEKLY;INTERVAL=52", 4)
         )
         db.commit()
-        test_type_id = cur.lastrowid
+        equipment_type_id = cur.lastrowid
 
     # Use site timezone if not provided
     timezone = payload.timezone or site_row['timezone']
@@ -1306,8 +1601,8 @@ def create_schedule(payload: ScheduleCreate, db: sqlite3.Connection = Depends(ge
             raise HTTPException(status_code=400, detail="Schedule already exists for this site/equipment/anchor_date")
         
         cur = db.execute(
-            "INSERT INTO schedules (site_id, equipment_id, test_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (payload.site_id, payload.equipment_id, test_type_id, payload.anchor_date, payload.due_date, payload.lead_weeks, timezone, payload.equipment_identifier, payload.notes),
+            "INSERT INTO schedules (site_id, equipment_id, equipment_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (payload.site_id, payload.equipment_id, equipment_type_id, payload.anchor_date, payload.due_date, payload.lead_weeks, timezone, payload.equipment_identifier, payload.notes),
         )
         db.commit()
     except HTTPException:
@@ -1391,15 +1686,15 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, db: sqlite3.Conne
             raise HTTPException(status_code=400, detail="Schedule conflict")
 
     row = db.execute(
-        """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.test_type_id) as equipment_id,
-                  COALESCE(ce.name, tt.name) as equipment_name,
+        """SELECT sch.id, sch.site_id, COALESCE(sch.equipment_id, sch.equipment_type_id) as equipment_id,
+                  COALESCE(ce.name, et.name) as equipment_name,
                   sch.anchor_date, sch.due_date, sch.lead_weeks, sch.timezone, sch.equipment_identifier, sch.notes, sch.last_generated_until,
                   COALESCE(sch.completed, 0) as completed, sch.completed_at,
                   c.name as client_name, c.address as client_address,
                   s.name as site_name, s.address as site_address
            FROM schedules sch
            LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-           LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+           LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
            LEFT JOIN sites s ON sch.site_id = s.id
            LEFT JOIN clients c ON s.client_id = c.id
            WHERE sch.id = ?""",
@@ -1495,13 +1790,13 @@ def get_due_this_month(db: sqlite3.Connection = Depends(get_db)):
         """SELECT wo.id, wo.schedule_id, wo.due_date, wo.planned_date, wo.done_date, wo.status, wo.invoice_ref, wo.notes,
                   COALESCE(s.name, 'Unknown') as site_name, 
                   COALESCE(c.name, 'Unknown') as client_name, 
-                  COALESCE(ce.name, tt.name, 'Unknown') as equipment_name
+                  COALESCE(ce.name, et.name, 'Unknown') as equipment_name
            FROM work_orders wo
            LEFT JOIN schedules sch ON wo.schedule_id = sch.id
            LEFT JOIN sites s ON sch.site_id = s.id
            LEFT JOIN clients c ON s.client_id = c.id
            LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-           LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+           LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
            WHERE wo.due_date >= ? AND wo.due_date < ? AND wo.status != 'DONE'
            ORDER BY wo.due_date""",
         (month_start.isoformat(), month_end.isoformat())
@@ -1527,13 +1822,13 @@ def get_overdue(db: sqlite3.Connection = Depends(get_db)):
         """SELECT wo.id, wo.schedule_id, wo.due_date, wo.planned_date, wo.done_date, wo.status, wo.invoice_ref, wo.notes,
                   COALESCE(s.name, 'Unknown') as site_name, 
                   COALESCE(c.name, 'Unknown') as client_name, 
-                  COALESCE(ce.name, tt.name, 'Unknown') as equipment_name
+                  COALESCE(ce.name, et.name, 'Unknown') as equipment_name
            FROM work_orders wo
            LEFT JOIN schedules sch ON wo.schedule_id = sch.id
            LEFT JOIN sites s ON sch.site_id = s.id
            LEFT JOIN clients c ON s.client_id = c.id
            LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-           LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+           LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
            WHERE wo.due_date < ? AND wo.status != 'DONE'
            ORDER BY wo.due_date""",
         (today.isoformat(),)
@@ -1590,13 +1885,13 @@ def get_upcoming(
         """SELECT wo.id, wo.schedule_id, wo.due_date, wo.planned_date, wo.done_date, wo.status, wo.invoice_ref, wo.notes,
                   COALESCE(s.name, 'Unknown') as site_name, 
                   COALESCE(c.name, 'Unknown') as client_name, 
-                  COALESCE(ce.name, tt.name, 'Unknown') as equipment_name
+                  COALESCE(ce.name, et.name, 'Unknown') as equipment_name
            FROM work_orders wo
            LEFT JOIN schedules sch ON wo.schedule_id = sch.id
            LEFT JOIN sites s ON sch.site_id = s.id
            LEFT JOIN clients c ON s.client_id = c.id
            LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-           LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+           LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
            WHERE wo.due_date >= ? AND wo.due_date <= ? AND wo.status != 'DONE'
            ORDER BY wo.due_date""",
         (start.isoformat(), end.isoformat())
@@ -1663,18 +1958,18 @@ def create_work_order(payload: WorkOrderCreate, db: sqlite3.Connection = Depends
 def create_work_order_from_schedule(schedule_id: int, db: sqlite3.Connection = Depends(get_db)):
     """Create a work order from the next due date of a schedule"""
     schedule = db.execute(
-        "SELECT id, site_id, COALESCE(equipment_id, test_type_id) as equipment_id, anchor_date, last_generated_until FROM schedules WHERE id = ?",
+        "SELECT id, site_id, COALESCE(equipment_id, equipment_type_id) as equipment_id, anchor_date, last_generated_until FROM schedules WHERE id = ?",
         (schedule_id,),
     ).fetchone()
     
     if schedule is None:
         raise HTTPException(status_code=404, detail="Schedule not found")
     
-    # Get equipment rrule (try client_equipments first, fallback to test_types for migration)
+    # Get equipment rrule (try client_equipments first, fallback to equipment_types for migration)
     equipment = db.execute("SELECT rrule FROM client_equipments WHERE id = ?", (schedule['equipment_id'],)).fetchone()
     if not equipment:
-        # Fallback to test_types for backward compatibility
-        equipment = db.execute("SELECT rrule FROM test_types WHERE id = ?", (schedule['equipment_id'],)).fetchone()
+        # Fallback to equipment_types for backward compatibility
+        equipment = db.execute("SELECT rrule FROM equipment_types WHERE id = ?", (schedule['equipment_id'],)).fetchone()
     
     if equipment is None:
         raise HTTPException(status_code=404, detail="Equipment not found")
@@ -2111,7 +2406,7 @@ def report_by_equipment(db: sqlite3.Connection = Depends(get_db)):
     cur = db.execute(
         """SELECT 
                COALESCE(ce.id, tt.id) as equipment_id,
-               COALESCE(ce.name, tt.name) as equipment_name,
+               COALESCE(ce.name, et.name) as equipment_name,
                COUNT(DISTINCT sch.id) as total_schedules,
                COUNT(DISTINCT wo.id) as total_work_orders,
                SUM(CASE WHEN wo.due_date < ? AND wo.status != 'DONE' THEN 1 ELSE 0 END) as overdue_count,
@@ -2123,16 +2418,16 @@ def report_by_equipment(db: sqlite3.Connection = Depends(get_db)):
            UNION ALL
            SELECT 
                tt.id as equipment_id,
-               tt.name as equipment_name,
+               et.name as equipment_name,
                COUNT(DISTINCT sch.id) as total_schedules,
                COUNT(DISTINCT wo.id) as total_work_orders,
                SUM(CASE WHEN wo.due_date < ? AND wo.status != 'DONE' THEN 1 ELSE 0 END) as overdue_count,
                SUM(CASE WHEN wo.due_date >= ? AND wo.due_date < ? AND wo.status != 'DONE' THEN 1 ELSE 0 END) as due_this_month_count
-           FROM test_types tt
-           LEFT JOIN schedules sch ON tt.id = sch.test_type_id AND sch.equipment_id IS NULL
+           FROM equipment_types tt
+           LEFT JOIN schedules sch ON tt.id = sch.equipment_type_id AND sch.equipment_id IS NULL
            LEFT JOIN work_orders wo ON sch.id = wo.schedule_id
            WHERE sch.id IS NOT NULL
-           GROUP BY tt.id, tt.name
+           GROUP BY tt.id, et.name
            ORDER BY equipment_name""",
         (today.isoformat(), month_start.isoformat(), month_end.isoformat(), today.isoformat(), month_start.isoformat(), month_end.isoformat())
     )
@@ -2152,14 +2447,14 @@ def export_work_orders_ics(
     """Export work orders to ICS calendar format"""
     query = """SELECT wo.id, wo.due_date, wo.planned_date, wo.status, wo.notes,
                       c.name as client_name, s.name as site_name, 
-                      COALESCE(ce.name, tt.name, 'Unknown') as equipment_name,
+                      COALESCE(ce.name, et.name, 'Unknown') as equipment_name,
                       s.address as site_address
                FROM work_orders wo
                JOIN schedules sch ON wo.schedule_id = sch.id
                JOIN sites s ON sch.site_id = s.id
                JOIN clients c ON s.client_id = c.id
                LEFT JOIN client_equipments ce ON sch.equipment_id = ce.id
-               LEFT JOIN test_types tt ON sch.test_type_id = tt.id
+               LEFT JOIN equipment_types tt ON sch.equipment_type_id = tt.id
                WHERE 1=1"""
     params = []
     
@@ -2271,7 +2566,7 @@ async def import_excel(
             elif equipment_col is None and ('identifier' in col_lower or 'equipment_identifier' in col_lower):
                 equipment_col = col
             # Other equipment type patterns (but NOT "equipment" itself, as that's the name)
-            elif equipment_col is None and any(x in col_lower for x in ['test', 'test_type', 'type', 'modality']):
+            elif equipment_col is None and any(x in col_lower for x in ['test', 'equipment_type', 'type', 'modality']):
                 equipment_col = col
             elif anchor_date_col is None and any(x in col_lower for x in ['anchor', 'anchor_date', 'start_date', 'initial_date']):
                 anchor_date_col = col
@@ -2444,18 +2739,18 @@ async def import_excel(
                     equipment_map[equipment_key] = equipment_id
                 equipment_id = equipment_map[equipment_key]
                 
-                # Get or create test_type for this equipment (test_type_id FK requires it)
-                test_type = db.execute("SELECT id FROM test_types WHERE name = ?", (equipment_name,)).fetchone()
-                if test_type:
-                    test_type_id = test_type['id']
+                # Get or create equipment_type for this equipment (equipment_type_id FK requires it)
+                equipment_type = db.execute("SELECT id FROM equipment_types WHERE name = ?", (equipment_name,)).fetchone()
+                if equipment_type:
+                    equipment_type_id = equipment_type['id']
                 else:
-                    # Create test_type entry
+                    # Create equipment_type entry
                     cur = db.execute(
-                        "INSERT INTO test_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
+                        "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
                         (equipment_name, 52, "FREQ=WEEKLY;INTERVAL=52", 4)
                     )
                     db.commit()
-                    test_type_id = cur.lastrowid
+                    equipment_type_id = cur.lastrowid
                 
                 # Parse anchor date (required)
                 if pd.isna(row[anchor_date_col]):
@@ -2540,8 +2835,8 @@ async def import_excel(
                 
                 try:
                     db.execute(
-                        "INSERT INTO schedules (site_id, equipment_id, test_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (site_id, equipment_id, test_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes)
+                        "INSERT INTO schedules (site_id, equipment_id, equipment_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (site_id, equipment_id, equipment_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes)
                     )
                     db.commit()
                     stats["schedules_created"] += 1
@@ -2577,10 +2872,10 @@ async def import_equipments(
     db: sqlite3.Connection = Depends(get_db)
 ):
     """
-    Import equipment schedules from Excel file.
-    Required columns: Client, Site, Equipment (identifier), Equipment Name, Anchor Date
+    Import equipment records from Excel file.
+    Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date
     - If client or site doesn't exist, the row is skipped (voided)
-    - If equipment identifier doesn't exist, a new equipment is created
+    - If equipment type doesn't exist, it will be created in equipment_types table
     """
     if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="File must be an Excel file (.xlsx or .xls)")
@@ -2596,10 +2891,11 @@ async def import_equipments(
         # Identify columns
         client_col = None
         site_col = None
-        equipment_col = None  # Equipment Identifier (dropdown value)
-        equipment_name_col = None  # Equipment Name (textarea value)
+        equipment_type_col = None  # Equipment Type (dropdown value - maps to equipment_type_id)
+        equipment_name_col = None  # Equipment Name (text field)
         anchor_date_col = None
         due_date_col = None
+        interval_col = None  # Interval (weeks)
         lead_weeks_col = None
         timezone_col = None
         notes_col = None
@@ -2610,22 +2906,21 @@ async def import_equipments(
                 client_col = col
             elif site_col is None and any(x in col_lower for x in ['site', 'location', 'facility']):
                 site_col = col
-            elif equipment_col is None and ('identifier' in col_lower or 'equipment_identifier' in col_lower):
-                # "identifier" column = Equipment Identifier (dropdown value - used to match/create equipment)
-                equipment_col = col
-            elif equipment_col is None and any(x in col_lower for x in ['test', 'test_type', 'type', 'modality']):
-                # Other equipment identifier patterns (but NOT "equipment" itself, as that's the name)
-                equipment_col = col
-            elif equipment_name_col is None and 'equipment_name' in col_lower:
-                # "equipment_name" column = Equipment Name (textarea value - stored in schedule.equipment_identifier)
+            elif equipment_type_col is None and any(x in col_lower for x in ['equipment_type', 'equipmenttype', 'type', 'test', 'modality']):
+                # Equipment Type (dropdown value - maps to equipment_type_id)
+                equipment_type_col = col
+            elif equipment_name_col is None and ('equipment_name' in col_lower or 'equipmentname' in col_lower):
+                # Equipment Name (text field)
                 equipment_name_col = col
-            elif equipment_name_col is None and col_lower == 'equipment':
-                # "equipment" column = Equipment Name (textarea value - stored in schedule.equipment_identifier)
+            elif equipment_name_col is None and col_lower == 'equipment' and 'type' not in col_lower:
+                # "equipment" column = Equipment Name (but not if it's "equipment_type")
                 equipment_name_col = col
             elif anchor_date_col is None and any(x in col_lower for x in ['anchor', 'anchor_date', 'start_date', 'initial_date']):
                 anchor_date_col = col
             elif due_date_col is None and any(x in col_lower for x in ['due', 'due_date', 'next_due']):
                 due_date_col = col
+            elif interval_col is None and any(x in col_lower for x in ['interval', 'interval_weeks', 'weeks']):
+                interval_col = col
             elif lead_weeks_col is None and any(x in col_lower for x in ['lead', 'lead_weeks', 'lead_weeks_override']):
                 lead_weeks_col = col
             elif timezone_col is None and any(x in col_lower for x in ['timezone', 'tz', 'time_zone']):
@@ -2634,11 +2929,11 @@ async def import_equipments(
                 notes_col = col
         
         # Check required columns
-        if not client_col or not site_col or not equipment_col or not equipment_name_col or not anchor_date_col:
+        if not client_col or not site_col or not equipment_type_col or not equipment_name_col or not anchor_date_col:
             missing = []
             if not client_col: missing.append("Client")
             if not site_col: missing.append("Site")
-            if not equipment_col: missing.append("Equipment/Equipment Identifier")
+            if not equipment_type_col: missing.append("Equipment Type")
             if not equipment_name_col: missing.append("Equipment Name")
             if not anchor_date_col: missing.append("Anchor Date")
             raise HTTPException(
@@ -2650,8 +2945,8 @@ async def import_equipments(
         stats = {
             "rows_processed": 0,
             "rows_skipped": 0,
-            "schedules_created": 0,
-            "equipments_created": 0,
+            "equipment_records_created": 0,
+            "equipment_types_created": 0,
             "duplicates_skipped": 0,
             "errors": []
         }
@@ -2694,63 +2989,38 @@ async def import_equipments(
                 site_id = site_row['id']
                 default_timezone = site_row['timezone'] or "America/Chicago"
                 
-                # Get equipment identifier (dropdown value)
-                equipment_identifier = str(row[equipment_col]).strip().upper()
-                if not equipment_identifier or equipment_identifier in ['NAN', 'NONE', '']:
+                # Get equipment type (dropdown value)
+                equipment_type_name = str(row[equipment_type_col]).strip()
+                if not equipment_type_name or equipment_type_name.lower() in ['nan', 'none', '']:
                     stats["rows_skipped"] += 1
-                    stats["errors"].append(f"Row {idx + 2}: Missing equipment identifier")
+                    stats["errors"].append(f"Row {idx + 2}: Missing equipment type")
                     continue
                 
-                # Match or create equipment
-                equipment_row = db.execute(
-                    "SELECT id, default_lead_weeks FROM client_equipments WHERE client_id = ? AND UPPER(name) = ?",
-                    (client_id, equipment_identifier)
-                ).fetchone()
-                
-                if equipment_row:
-                    equipment_id = equipment_row['id']
-                    default_lead_weeks = equipment_row['default_lead_weeks'] or 4
+                # Get or create equipment_type
+                equipment_type = db.execute("SELECT id, interval_weeks, default_lead_weeks FROM equipment_types WHERE name = ?", (equipment_type_name,)).fetchone()
+                if equipment_type:
+                    equipment_type_id = equipment_type['id']
+                    default_interval_weeks = equipment_type['interval_weeks'] or 52
+                    default_lead_weeks = equipment_type['default_lead_weeks'] or 4
                 else:
-                    # Create new equipment
+                    # Create new equipment_type
                     rrule_str = "FREQ=WEEKLY;INTERVAL=52"
                     cur = db.execute(
-                        "INSERT INTO client_equipments (client_id, name, interval_weeks, rrule, default_lead_weeks, is_custom) VALUES (?, ?, ?, ?, ?, ?)",
-                        (client_id, equipment_identifier, 52, rrule_str, 4, 1)
+                        "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
+                        (equipment_type_name, 52, rrule_str, 4)
                     )
                     db.commit()
-                    equipment_id = cur.lastrowid
+                    equipment_type_id = cur.lastrowid
+                    default_interval_weeks = 52
                     default_lead_weeks = 4
-                    stats["equipments_created"] += 1
-                    
-                    # Create test_type entry
-                    test_type = db.execute("SELECT id FROM test_types WHERE name = ?", (equipment_identifier,)).fetchone()
-                    if not test_type:
-                        db.execute(
-                            "INSERT INTO test_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
-                            (equipment_identifier, 52, rrule_str, 4)
-                        )
-                        db.commit()
+                    stats["equipment_types_created"] += 1
                 
-                # Get or create test_type for schedule FK
-                test_type = db.execute("SELECT id FROM test_types WHERE name = ?", (equipment_identifier,)).fetchone()
-                if test_type:
-                    test_type_id = test_type['id']
-                else:
-                    cur = db.execute(
-                        "INSERT INTO test_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
-                        (equipment_identifier, 52, "FREQ=WEEKLY;INTERVAL=52", 4)
-                    )
-                    db.commit()
-                    test_type_id = cur.lastrowid
-                
-                # Get equipment name (textarea value - equipment_identifier field in schedule)
-                equipment_name = None
-                if equipment_name_col and pd.notna(row.get(equipment_name_col)):
-                    raw_value = row[equipment_name_col]
-                    if not pd.isna(raw_value) and not isinstance(raw_value, (int, float)):
-                        equipment_name = str(raw_value).strip()
-                        if equipment_name.lower() in ['nan', 'none', '']:
-                            equipment_name = None
+                # Get equipment name (required)
+                equipment_name = str(row[equipment_name_col]).strip()
+                if not equipment_name or equipment_name.lower() in ['nan', 'none', '']:
+                    stats["rows_skipped"] += 1
+                    stats["errors"].append(f"Row {idx + 2}: Missing equipment name")
+                    continue
                 
                 # Parse anchor date (required)
                 if pd.isna(row[anchor_date_col]):
@@ -2812,8 +3082,8 @@ async def import_equipments(
                 # Create schedule
                 try:
                     db.execute(
-                        "INSERT INTO schedules (site_id, equipment_id, test_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (site_id, equipment_id, test_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_name, notes)
+                        "INSERT INTO schedules (site_id, equipment_id, equipment_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (site_id, equipment_id, equipment_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_name, notes)
                     )
                     db.commit()
                     stats["schedules_created"] += 1
@@ -2848,10 +3118,10 @@ async def import_temporary_data(
     db: sqlite3.Connection = Depends(get_db)
 ):
     """
-    Import equipment schedules from Excel file (temporary data upload).
-    Required columns: Client, Site, Equipment (identifier), Equipment Name, Anchor Date
+    Import equipment records from Excel file (temporary data upload).
+    Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date
     - If client or site doesn't exist, they will be created automatically
-    - If equipment identifier doesn't exist, a new equipment will be created
+    - If equipment type doesn't exist, it will be created in equipment_types table
     """
     if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="File must be an Excel file (.xlsx or .xls)")
@@ -2884,7 +3154,7 @@ async def import_temporary_data(
             elif equipment_col is None and ('identifier' in col_lower or 'equipment_identifier' in col_lower):
                 # "identifier" column = Equipment Identifier (dropdown value - used to match/create equipment)
                 equipment_col = col
-            elif equipment_col is None and any(x in col_lower for x in ['test', 'test_type', 'type', 'modality']):
+            elif equipment_col is None and any(x in col_lower for x in ['test', 'equipment_type', 'type', 'modality']):
                 # Other equipment identifier patterns (but NOT "equipment" itself, as that's the name)
                 equipment_col = col
             elif equipment_name_col is None and 'equipment_name' in col_lower:
@@ -2921,8 +3191,8 @@ async def import_temporary_data(
         stats = {
             "rows_processed": 0,
             "rows_skipped": 0,
-            "schedules_created": 0,
-            "equipments_created": 0,
+            "equipment_records_created": 0,
+            "equipment_types_created": 0,
             "clients_created": 0,
             "sites_created": 0,
             "duplicates_skipped": 0,
@@ -3006,63 +3276,37 @@ async def import_temporary_data(
                 
                 site_id, default_timezone = site_map[site_key]
                 
-                # Get equipment identifier (dropdown value)
-                equipment_identifier = str(row[equipment_col]).strip().upper()
-                if not equipment_identifier or equipment_identifier in ['NAN', 'NONE', '']:
+                # Get equipment type (dropdown value)
+                equipment_type_name = str(row[equipment_col]).strip()
+                if not equipment_type_name or equipment_type_name.lower() in ['nan', 'none', '']:
                     stats["rows_skipped"] += 1
-                    stats["errors"].append(f"Row {idx + 2}: Missing equipment identifier")
+                    stats["errors"].append(f"Row {idx + 2}: Missing equipment type")
                     continue
                 
-                # Match or create equipment
-                equipment_row = db.execute(
-                    "SELECT id, default_lead_weeks FROM client_equipments WHERE client_id = ? AND UPPER(name) = ?",
-                    (client_id, equipment_identifier)
-                ).fetchone()
-                
-                if equipment_row:
-                    equipment_id = equipment_row['id']
-                    default_lead_weeks = equipment_row['default_lead_weeks'] or 4
+                # Get or create equipment_type
+                equipment_type = db.execute("SELECT id, interval_weeks, default_lead_weeks FROM equipment_types WHERE name = ?", (equipment_type_name,)).fetchone()
+                if equipment_type:
+                    equipment_type_id = equipment_type['id']
+                    default_interval_weeks = equipment_type['interval_weeks'] or 52
+                    default_lead_weeks = equipment_type['default_lead_weeks'] or 4
                 else:
-                    # Create new equipment
+                    # Create new equipment_type
                     rrule_str = "FREQ=WEEKLY;INTERVAL=52"
                     cur = db.execute(
-                        "INSERT INTO client_equipments (client_id, name, interval_weeks, rrule, default_lead_weeks, is_custom) VALUES (?, ?, ?, ?, ?, ?)",
-                        (client_id, equipment_identifier, 52, rrule_str, 4, 1)
+                        "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
+                        (equipment_type_name, 52, rrule_str, 4)
                     )
                     db.commit()
-                    equipment_id = cur.lastrowid
+                    equipment_type_id = cur.lastrowid
+                    default_interval_weeks = 52
                     default_lead_weeks = 4
-                    stats["equipments_created"] += 1
-                    
-                    # Create test_type entry
-                    test_type = db.execute("SELECT id FROM test_types WHERE name = ?", (equipment_identifier,)).fetchone()
-                    if not test_type:
-                        db.execute(
-                            "INSERT INTO test_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
-                            (equipment_identifier, 52, rrule_str, 4)
-                        )
-                        db.commit()
+                    stats["equipment_types_created"] += 1
                 
-                # Get or create test_type for schedule FK
-                test_type = db.execute("SELECT id FROM test_types WHERE name = ?", (equipment_identifier,)).fetchone()
-                if test_type:
-                    test_type_id = test_type['id']
-                else:
-                    cur = db.execute(
-                        "INSERT INTO test_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
-                        (equipment_identifier, 52, "FREQ=WEEKLY;INTERVAL=52", 4)
-                    )
-                    db.commit()
-                    test_type_id = cur.lastrowid
-                
-                # Get equipment name (textarea value - equipment_identifier field in schedule)
-                equipment_name = None
-                if equipment_name_col and pd.notna(row.get(equipment_name_col)):
-                    raw_value = row[equipment_name_col]
-                    if not pd.isna(raw_value) and not isinstance(raw_value, (int, float)):
-                        equipment_name = str(raw_value).strip()
-                        if equipment_name.lower() in ['nan', 'none', '']:
-                            equipment_name = None
+                # Get equipment name (required)
+                equipment_name = str(row[equipment_name_col]).strip() if equipment_name_col and pd.notna(row.get(equipment_name_col)) else None
+                if not equipment_name or equipment_name.lower() in ['nan', 'none', '']:
+                    # Use equipment type name as fallback
+                    equipment_name = equipment_type_name
                 
                 # Parse anchor date (required)
                 if pd.isna(row[anchor_date_col]):
@@ -3095,6 +3339,9 @@ async def import_temporary_data(
                     except:
                         pass
                 
+                # Parse interval weeks (optional)
+                interval_weeks = default_interval_weeks
+                
                 # Parse lead weeks (optional)
                 lead_weeks = None
                 if lead_weeks_col and pd.notna(row.get(lead_weeks_col)):
@@ -3121,14 +3368,14 @@ async def import_temporary_data(
                     if notes.lower() in ['nan', 'none', '']:
                         notes = None
                 
-                # Create schedule
+                # Create equipment_record
                 try:
                     db.execute(
-                        "INSERT INTO schedules (site_id, equipment_id, test_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_identifier, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (site_id, equipment_id, test_type_id, anchor_date, due_date, lead_weeks, timezone, equipment_name, notes)
+                        "INSERT INTO equipment_record (client_id, site_id, equipment_type_id, equipment_name, anchor_date, due_date, interval_weeks, lead_weeks, timezone, notes, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (client_id, site_id, equipment_type_id, equipment_name, anchor_date, due_date, interval_weeks, lead_weeks, timezone, notes, 1)
                     )
                     db.commit()
-                    stats["schedules_created"] += 1
+                    stats["equipment_records_created"] += 1
                 except sqlite3.IntegrityError as e:
                     error_str = str(e)
                     if "UNIQUE constraint" in error_str:
@@ -3159,28 +3406,29 @@ async def export_equipments(
     db: sqlite3.Connection = Depends(get_db)
 ):
     """
-    Export all equipment schedules to Excel format
+    Export all equipment records to Excel format
     """
     try:
-        # Query all schedules with related data
-        # Note: ce.name = equipment type (identifier/dropdown), sch.equipment_identifier = equipment name (equipment/textarea)
+        # Query all equipment records with related data
         cur = db.execute("""
             SELECT 
                 c.name as client_name,
                 s.name as site_name,
-                ce.name as equipment_type,  -- This is the identifier (dropdown value)
-                sch.equipment_identifier as equipment_name,  -- This is the equipment name (textarea value)
-                sch.anchor_date,
-                sch.due_date,
-                sch.lead_weeks,
-                sch.timezone,
-                sch.notes
-            FROM schedules sch
-            JOIN sites s ON sch.site_id = s.id
-            JOIN clients c ON s.client_id = c.id
-            JOIN client_equipments ce ON sch.equipment_id = ce.id
-            WHERE sch.completed = 0
-            ORDER BY c.name, s.name, sch.anchor_date
+                et.name as equipment_type,
+                er.equipment_name,
+                er.anchor_date,
+                er.due_date,
+                er.interval_weeks,
+                er.lead_weeks,
+                er.timezone,
+                er.notes,
+                er.active
+            FROM equipment_record er
+            JOIN clients c ON er.client_id = c.id
+            JOIN sites s ON er.site_id = s.id
+            JOIN equipment_types et ON er.equipment_type_id = et.id
+            WHERE er.active = 1
+            ORDER BY c.name, s.name, er.anchor_date
         """)
         
         rows = cur.fetchall()
@@ -3191,11 +3439,12 @@ async def export_equipments(
             data.append({
                 "Client": row['client_name'],
                 "Site": row['site_name'],
-                "Identifier": row['equipment_type'],  # Equipment type (dropdown value from ce.name)
-                "Equipment": row['equipment_name'] or "",  # Equipment name (textarea value from sch.equipment_identifier)
+                "Equipment Type": row['equipment_type'],
+                "Equipment Name": row['equipment_name'],
                 "Anchor Date": row['anchor_date'],
                 "Due Date": row['due_date'] or "",
-                "Lead Weeks": row['lead_weeks'],
+                "Interval (weeks)": row['interval_weeks'],
+                "Lead Weeks": row['lead_weeks'] or "",
                 "Timezone": row['timezone'] or "",
                 "Notes": row['notes'] or ""
             })

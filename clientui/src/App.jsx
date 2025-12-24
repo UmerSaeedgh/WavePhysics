@@ -39,7 +39,7 @@ function App() {
   const [sites, setSites] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [contactLinks, setContactLinks] = useState([]);
-  const [testTypes, setTestTypes] = useState([]);
+  const [equipmentTypes, setEquipmentTypes] = useState([]);
   const [clientEquipments, setClientEquipments] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [workOrders, setWorkOrders] = useState([]);
@@ -56,7 +56,7 @@ function App() {
 
   useEffect(() => {
     fetchClients();
-    fetchTestTypes();
+    fetchEquipmentTypes();
   }, []);
 
   // Fetch sites when a client is selected
@@ -77,12 +77,13 @@ function App() {
     }
   }, [selectedSite]);
 
-  // Fetch data when all-equipments view is selected
-  useEffect(() => {
-    if (view === "all-equipments") {
-      fetchAllEquipments();
-    }
-  }, [view]);
+  // Note: AllEquipmentsView handles its own data fetching, so we don't need to fetch here
+  // This useEffect is kept for potential future use but currently disabled
+  // useEffect(() => {
+  //   if (view === "all-equipments") {
+  //     fetchAllEquipments();
+  //   }
+  // }, [view]);
 
   // Fetch data when upcoming view is selected
   useEffect(() => {
@@ -97,6 +98,22 @@ function App() {
       fetchOverdue();
     }
   }, [view]);
+
+  async function fetchOverdue() {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await apiCall("/equipment-records/overdue").catch(() => []);
+      setOverdue(Array.isArray(data) ? data : []);
+    } catch (err) {
+      const errorMessage = err.message || "Failed to load data";
+      setError(errorMessage);
+      console.error("Error fetching data:", err);
+      setOverdue([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function fetchSiteContacts(siteId) {
     try {
@@ -221,11 +238,11 @@ function App() {
     }
   }
 
-  async function fetchTestTypes() {
+  async function fetchEquipmentTypes() {
     setLoading(true);
     try {
-      const data = await apiCall("/test-types");
-      setTestTypes(data);
+      const data = await apiCall("/equipment-types");
+      setEquipmentTypes(data);
     } catch (err) {
       // error already set
     } finally {
@@ -287,11 +304,16 @@ function App() {
 
   async function fetchAllEquipments() {
     setLoading(true);
+    setError(""); // Clear any previous errors before fetching
     try {
-      const data = await apiCall("/schedules");
+      const data = await apiCall("/equipment-records");
       setAllEquipments(data || []);
     } catch (err) {
-      setError(err.message || "Failed to fetch equipments");
+      // Only set error if it's a real error, not just empty response
+      const errorMsg = err.message || "Failed to fetch equipments";
+      if (!errorMsg.includes("404") && !errorMsg.includes("No equipments")) {
+        setError(errorMsg);
+      }
       setAllEquipments([]);
     } finally {
       setLoading(false);
@@ -302,8 +324,7 @@ function App() {
     setLoading(true);
     setError("");
     try {
-      let url = "/work-orders/upcoming";
-      let schedUrl = "/schedules/upcoming";
+      let url = "/equipment-records/upcoming";
       
       if (upcomingStartDate) {
         let endDate = upcomingEndDate;
@@ -314,56 +335,17 @@ function App() {
           endDate = startDate.toISOString().split('T')[0];
         }
         url += `?start_date=${upcomingStartDate}&end_date=${endDate}`;
-        schedUrl += `?start_date=${upcomingStartDate}&end_date=${endDate}`;
       } else {
         // Default to 2 weeks from today
         url += "?weeks=2";
-        schedUrl += "?weeks=2";
       }
       
-      const upWO = await apiCall(url).catch(() => []);
-      
-      if (!upWO || upWO.length === 0) {
-        // Fallback to schedules
-        const upSched = await apiCall(schedUrl).catch(() => []);
-        setUpcoming(Array.isArray(upSched) ? upSched : []);
-      } else {
-        setUpcoming(Array.isArray(upWO) ? upWO : []);
-      }
+      const data = await apiCall(url).catch(() => []);
+      setUpcoming(Array.isArray(data) ? data : []);
     } catch (err) {
       const errorMessage = err.message || "Failed to load upcoming data";
       setError(errorMessage);
       console.error("Error fetching upcoming data:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function fetchOverdue() {
-    setLoading(true);
-    setError("");
-    try {
-      // Try to fetch work orders first, fallback to schedules if no work orders exist
-      const [overWO] = await Promise.all([
-        apiCall("/work-orders/overdue").catch(() => []),
-      ]);
-      
-      let overSched;
-      
-      // If no work orders, use schedules instead
-      if (!overWO || overWO.length === 0) {
-        [overSched] = await Promise.all([
-          apiCall("/schedules/overdue").catch(() => []),
-        ]);
-        setOverdue(Array.isArray(overSched) ? overSched : []);
-      } else {
-        setOverdue(Array.isArray(overWO) ? overWO : []);
-      }
-    } catch (err) {
-      const errorMessage = err.message || "Failed to load data";
-      setError(errorMessage);
-      console.error("Error fetching data:", err);
-      setOverdue([]);
     } finally {
       setLoading(false);
     }
@@ -641,14 +623,12 @@ function App() {
             setLoading={setLoading}
             scrollToEquipmentId={scrollToEquipmentId}
             onScrollComplete={() => setScrollToEquipmentId(null)}
-            onNavigateToSchedule={async (scheduleId, siteId) => {
+            onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment
-                setScrollToEquipmentId(scheduleId);
+                setScrollToEquipmentId(equipmentRecordId);
                 setView("all-equipments");
-                // Fetch all equipments to ensure the list is loaded
-                const data = await apiCall("/schedules");
-                setAllEquipments(data || []);
+                // AllEquipmentsView will fetch the data when it mounts
               } catch (err) {
                 setError("Failed to navigate to equipment: " + (err.message || "Unknown error"));
               }
@@ -673,14 +653,12 @@ function App() {
             setUpcomingStartDate={setUpcomingStartDate}
             upcomingEndDate={upcomingEndDate}
             setUpcomingEndDate={setUpcomingEndDate}
-            onNavigateToSchedule={async (scheduleId, siteId) => {
+            onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment
-                setScrollToEquipmentId(scheduleId);
+                setScrollToEquipmentId(equipmentRecordId);
                 setView("all-equipments");
-                // Fetch all equipments to ensure the list is loaded
-                const data = await apiCall("/schedules");
-                setAllEquipments(data || []);
+                // AllEquipmentsView will fetch the data when it mounts
               } catch (err) {
                 setError("Failed to navigate to equipment: " + (err.message || "Unknown error"));
               }
@@ -696,14 +674,12 @@ function App() {
             setOverdue={setOverdue}
             loading={loading}
             setLoading={setLoading}
-            onNavigateToSchedule={async (scheduleId, siteId) => {
+            onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment
-                setScrollToEquipmentId(scheduleId);
+                setScrollToEquipmentId(equipmentRecordId);
                 setView("all-equipments");
-                // Fetch all equipments to ensure the list is loaded
-                const data = await apiCall("/schedules");
-                setAllEquipments(data || []);
+                // AllEquipmentsView will fetch the data when it mounts
               } catch (err) {
                 setError("Failed to navigate to equipment: " + (err.message || "Unknown error"));
               }
@@ -3112,7 +3088,7 @@ function ContactsTab({
 }
 
 // Equipments Tab (Legacy Test Types)
-function TestTypesTab({ testTypes, onRefresh, apiCall, setError }) {
+function EquipmentTypesTab({ equipmentTypes, onRefresh, apiCall, setError }) {
   const [selectedType, setSelectedType] = useState(null);
   const [form, setForm] = useState({
     name: "",
@@ -3148,7 +3124,7 @@ function TestTypesTab({ testTypes, onRefresh, apiCall, setError }) {
 
     try {
       const isEdit = !!selectedType;
-      const endpoint = isEdit ? `/test-types/${selectedType.id}` : "/test-types";
+      const endpoint = isEdit ? `/equipment-types/${selectedType.id}` : "/equipment-types";
       const payload = {
         ...form,
         interval_weeks: parseInt(form.interval_weeks),
@@ -3182,7 +3158,7 @@ function TestTypesTab({ testTypes, onRefresh, apiCall, setError }) {
   async function handleDelete(typeId) {
     if (!window.confirm("Delete this equipment?")) return;
     try {
-      await apiCall(`/test-types/${typeId}`, { method: "DELETE" });
+      await apiCall(`/equipment-types/${typeId}`, { method: "DELETE" });
       await onRefresh();
       if (selectedType?.id === typeId) resetForm();
     } catch (err) {
@@ -3192,7 +3168,7 @@ function TestTypesTab({ testTypes, onRefresh, apiCall, setError }) {
 
   async function handleSeed() {
     try {
-      await apiCall("/test-types/seed", { method: "POST" });
+      await apiCall("/equipment-types/seed", { method: "POST" });
       await onRefresh();
       setError("");
     } catch (err) {
@@ -3273,14 +3249,14 @@ function TestTypesTab({ testTypes, onRefresh, apiCall, setError }) {
 
       <div className="card">
         <div className="card-header">
-          <h2>Equipments ({testTypes.length})</h2>
+          <h2>Equipments ({equipmentTypes.length})</h2>
           <button className="secondary" onClick={onRefresh}>Refresh</button>
         </div>
-        {testTypes.length === 0 ? (
+        {equipmentTypes.length === 0 ? (
           <p className="empty">No equipments yet. Click "Seed Default Equipments" to add defaults.</p>
         ) : (
           <ul className="list">
-            {testTypes.map(type => (
+            {equipmentTypes.map(type => (
               <li key={type.id} className="list-item">
                 <div className="list-main">
                   <div className="list-title">{type.name}</div>
@@ -4043,11 +4019,16 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
 
   async function fetchAllEquipments() {
     setLoading(true);
+    setError(""); // Clear any previous errors before fetching
     try {
-      const data = await apiCall("/schedules");
+      const data = await apiCall("/equipment-records");
       setAllEquipments(data || []);
     } catch (err) {
-      setError(err.message || "Failed to fetch equipments");
+      // Only set error if it's a real error, not just empty response
+      const errorMsg = err.message || "Failed to fetch equipments";
+      if (!errorMsg.includes("404") && !errorMsg.includes("No equipments")) {
+        setError(errorMsg);
+      }
       setAllEquipments([]);
     } finally {
       setLoading(false);
@@ -4058,10 +4039,10 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
     fetchAllEquipments();
   }, []);
 
-  async function handleDeleteSchedule(scheduleId) {
-    if (!window.confirm("Delete this schedule?")) return;
+  async function handleDeleteEquipment(equipmentId) {
+    if (!window.confirm("Delete this equipment record?")) return;
     try {
-      await apiCall(`/schedules/${scheduleId}`, { method: "DELETE" });
+      await apiCall(`/equipment-records/${equipmentId}`, { method: "DELETE" });
       await fetchAllEquipments();
     } catch (err) {
       // error already set
@@ -4093,35 +4074,32 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
             <p className="empty">No equipments found</p>
           ) : (
             <ul className="list">
-              {allEquipments.map(schedule => {
-                // The API returns equipment_name, client_name, site_name, etc. in the schedule object
+              {allEquipments.map(equipment => {
                 return (
                   <li 
-                    key={schedule.id} 
-                    ref={el => equipmentRefs.current[schedule.id] = el}
+                    key={equipment.id} 
+                    ref={el => equipmentRefs.current[equipment.id] = el}
                     className="list-item"
                   >
                     <div className="list-main">
                       <div className="list-title">
-                        {schedule.equipment_identifier || schedule.equipment_name || `Equipment ID: ${schedule.equipment_id}`}
+                        {equipment.equipment_name || `Equipment ID: ${equipment.id}`}
                       </div>
                       <div className="list-subtitle">
-                        {schedule.equipment_name && `Equipment: ${schedule.equipment_name} • `}
-                        Anchor: {formatDate(schedule.anchor_date)}
-                        {schedule.due_date && ` • Due: ${formatDate(schedule.due_date)}`}
-                        {schedule.client_name && ` • Client: ${schedule.client_name}`}
-                        {schedule.client_address && ` • ${schedule.client_address}`}
-                        {schedule.site_name && ` • Site: ${schedule.site_name}`}
-                        {schedule.site_address && ` • ${schedule.site_address}`}
+                        {equipment.equipment_type_name && `Type: ${equipment.equipment_type_name} • `}
+                        Anchor: {formatDate(equipment.anchor_date)}
+                        {equipment.due_date && ` • Due: ${formatDate(equipment.due_date)}`}
+                        {equipment.client_name && ` • Client: ${equipment.client_name}`}
+                        {equipment.interval_weeks && ` • Interval: ${equipment.interval_weeks} weeks`}
                       </div>
                     </div>
                     <div className="list-actions">
                       <button onClick={() => {
                         if (onNavigateToAddEquipment) {
-                          onNavigateToAddEquipment(schedule);
+                          onNavigateToAddEquipment(equipment);
                         }
                       }}>Edit</button>
-                      <button className="danger" onClick={() => handleDeleteSchedule(schedule.id)}>Delete</button>
+                      <button className="danger" onClick={() => handleDeleteEquipment(equipment.id)}>Delete</button>
                     </div>
                   </li>
                 );
@@ -4140,8 +4118,7 @@ function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLo
     setLoading(true);
     setError("");
     try {
-      let url = "/work-orders/upcoming";
-      let schedUrl = "/schedules/upcoming";
+      let url = "/equipment-records/upcoming";
       
       if (upcomingStartDate) {
         let endDate = upcomingEndDate;
@@ -4152,22 +4129,13 @@ function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLo
           endDate = startDate.toISOString().split('T')[0];
         }
         url += `?start_date=${upcomingStartDate}&end_date=${endDate}`;
-        schedUrl += `?start_date=${upcomingStartDate}&end_date=${endDate}`;
       } else {
         // Default to 2 weeks from today
         url += "?weeks=2";
-        schedUrl += "?weeks=2";
       }
       
-      const upWO = await apiCall(url).catch(() => []);
-      
-      if (!upWO || upWO.length === 0) {
-        // Fallback to schedules
-        const upSched = await apiCall(schedUrl).catch(() => []);
-        setUpcoming(Array.isArray(upSched) ? upSched : []);
-      } else {
-        setUpcoming(Array.isArray(upWO) ? upWO : []);
-      }
+      const data = await apiCall(url).catch(() => []);
+      setUpcoming(Array.isArray(data) ? data : []);
     } catch (err) {
       const errorMessage = err.message || "Failed to load upcoming data";
       setError(errorMessage);
@@ -4177,26 +4145,27 @@ function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLo
     }
   }
 
-  function renderWorkOrderList(items, className = "") {
+  function renderEquipmentList(items, className = "") {
     return (
       <ul className="list">
         {items.map(item => (
           <li 
             key={item.id} 
             className={`list-item ${className}`}
-            style={{ cursor: item.schedule_id || item.site_id ? "pointer" : "default" }}
+            style={{ cursor: "pointer" }}
             onClick={() => {
-              if (item.schedule_id && item.site_id && onNavigateToSchedule) {
-                onNavigateToSchedule(item.schedule_id, item.site_id);
-              } else if (item.site_id && item.id && !item.status && onNavigateToSchedule) {
-                onNavigateToSchedule(item.id, item.site_id);
+              if (onNavigateToSchedule && item.id) {
+                onNavigateToSchedule(item.id, null);
               }
             }}
           >
             <div className="list-main">
-              <div className="list-title">{item.equipment_name || 'Unknown'} @ {item.site_name}</div>
+              <div className="list-title">{item.equipment_name || 'Unknown'}</div>
               <div className="list-subtitle">
-                Client: {item.client_name} • Due: {formatDate(item.due_date)} {item.status ? `• Status: ${item.status}` : ''}
+                {item.equipment_type_name && `Type: ${item.equipment_type_name} • `}
+                Client: {item.client_name}
+                {item.site_name && ` • Site: ${item.site_name}`}
+                {` • Due: ${formatDate(item.due_date)}`}
               </div>
             </div>
           </li>
@@ -4204,6 +4173,10 @@ function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLo
       </ul>
     );
   }
+
+  useEffect(() => {
+    fetchUpcoming();
+  }, [upcomingStartDate, upcomingEndDate]);
 
   if (loading) return <div className="card"><p>Loading...</p></div>;
 
@@ -4276,9 +4249,9 @@ function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLo
           </div>
         </div>
         {upcoming.length === 0 ? (
-          <p className="empty">No upcoming work orders</p>
+          <p className="empty">No upcoming equipment records</p>
         ) : (
-          renderWorkOrderList(upcoming, "planned")
+          renderEquipmentList(upcoming, "planned")
         )}
       </div>
     </div>
@@ -4291,22 +4264,8 @@ function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoadi
     setLoading(true);
     setError("");
     try {
-      // Try to fetch work orders first, fallback to schedules if no work orders exist
-      const [overWO] = await Promise.all([
-        apiCall("/work-orders/overdue").catch(() => []),
-      ]);
-      
-      let overSched;
-      
-      // If no work orders, use schedules instead
-      if (!overWO || overWO.length === 0) {
-        [overSched] = await Promise.all([
-          apiCall("/schedules/overdue").catch(() => []),
-        ]);
-        setOverdue(Array.isArray(overSched) ? overSched : []);
-      } else {
-        setOverdue(Array.isArray(overWO) ? overWO : []);
-      }
+      const data = await apiCall("/equipment-records/overdue").catch(() => []);
+      setOverdue(Array.isArray(data) ? data : []);
     } catch (err) {
       const errorMessage = err.message || "Failed to load data";
       setError(errorMessage);
@@ -4317,26 +4276,27 @@ function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoadi
     }
   }
 
-  function renderWorkOrderList(items, className = "") {
+  function renderEquipmentList(items, className = "") {
     return (
       <ul className="list">
         {items.map(item => (
           <li 
             key={item.id} 
             className={`list-item ${className}`}
-            style={{ cursor: item.schedule_id || item.site_id ? "pointer" : "default" }}
+            style={{ cursor: "pointer" }}
             onClick={() => {
-              if (item.schedule_id && item.site_id && onNavigateToSchedule) {
-                onNavigateToSchedule(item.schedule_id, item.site_id);
-              } else if (item.site_id && item.id && !item.status && onNavigateToSchedule) {
-                onNavigateToSchedule(item.id, item.site_id);
+              if (onNavigateToSchedule && item.id) {
+                onNavigateToSchedule(item.id, null);
               }
             }}
           >
             <div className="list-main">
-              <div className="list-title">{item.equipment_name || 'Unknown'} @ {item.site_name}</div>
+              <div className="list-title">{item.equipment_name || 'Unknown'}</div>
               <div className="list-subtitle">
-                Client: {item.client_name} • Due: {formatDate(item.due_date)} {item.status ? `• Status: ${item.status}` : ''}
+                {item.equipment_type_name && `Type: ${item.equipment_type_name} • `}
+                Client: {item.client_name}
+                {item.site_name && ` • Site: ${item.site_name}`}
+                {` • Due: ${formatDate(item.due_date)}`}
               </div>
             </div>
           </li>
@@ -4344,6 +4304,10 @@ function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoadi
       </ul>
     );
   }
+
+  useEffect(() => {
+    fetchOverdue();
+  }, []);
 
   if (loading) return <div className="card"><p>Loading...</p></div>;
 
@@ -4357,9 +4321,9 @@ function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoadi
           </div>
         </div>
         {overdue.length === 0 ? (
-          <p className="empty">No overdue work orders</p>
+          <p className="empty">No overdue equipment records</p>
         ) : (
-          renderWorkOrderList(overdue, "due")
+          renderEquipmentList(overdue, "due")
         )}
       </div>
     </div>
@@ -4372,103 +4336,71 @@ function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoadi
 function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, previousView, onBack, onSuccess }) {
   const [selectedClientId, setSelectedClientId] = useState("");
   const [selectedSiteId, setSelectedSiteId] = useState("");
-  const [clientEquipments, setClientEquipments] = useState([]);
   const [availableSites, setAvailableSites] = useState([]);
+  const [equipmentTypes, setEquipmentTypes] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [scheduleForm, setScheduleForm] = useState({
-    equipment_id: "",
+  const [equipmentForm, setEquipmentForm] = useState({
+    equipment_type_id: "",
+    equipment_name: "",
     anchor_date: "",
     due_date: "",
     interval_weeks: "",
     lead_weeks: "",
     timezone: "",
-    equipment_identifier: "",
     notes: "",
-    rrule: "",
+    active: true,
   });
 
   useEffect(() => {
-    async function loadEquipmentData() {
-      if (equipmentToEdit) {
-        // Check if this is a new equipment with pre-selected client/site (from site-details)
-        if (equipmentToEdit.client && equipmentToEdit.site) {
-          setSelectedClientId(equipmentToEdit.client.id.toString());
-          setSelectedSiteId(equipmentToEdit.site.id.toString());
-          await fetchSitesForClient(equipmentToEdit.client.id);
-          await fetchClientEquipments(equipmentToEdit.client.id);
-        } else if (equipmentToEdit.id) {
-          // This is editing an existing schedule
-          // Try to find site in props first, otherwise fetch from API
-          let site = sites.find(s => s.id === equipmentToEdit.site_id);
-          if (!site && equipmentToEdit.site_id) {
-            // Fetch site from API if not in props
-            try {
-              site = await apiCall(`/sites/${equipmentToEdit.site_id}`);
-            } catch (err) {
-              console.error("Failed to fetch site:", err);
-            }
-          }
-          
-          if (site) {
-            const clientId = site.client_id.toString();
-            setSelectedClientId(clientId);
-            setSelectedSiteId(site.id.toString());
-            // Fetch sites and equipments for this client
-            await fetchSitesForClient(site.client_id);
-            await fetchClientEquipments(site.client_id);
-          }
-          
-          let equipmentIdentifier = "";
-          if (equipmentToEdit.equipment_identifier !== undefined && equipmentToEdit.equipment_identifier !== null) {
-            if (typeof equipmentToEdit.equipment_identifier !== 'number') {
-              equipmentIdentifier = String(equipmentToEdit.equipment_identifier);
-            }
-          }
-          // Get interval_weeks from equipment if available
-          let intervalWeeks = "";
-          if (equipmentToEdit.equipment_id) {
-            // Try to find in already loaded clientEquipments first
-            let equipment = clientEquipments.find(e => e.id === equipmentToEdit.equipment_id);
-            // If not found, try to fetch it
-            if (!equipment && site) {
-              try {
-                const equipmentData = await apiCall(`/equipments/${equipmentToEdit.equipment_id}`);
-                if (equipmentData && equipmentData.interval_weeks) {
-                  intervalWeeks = equipmentData.interval_weeks.toString();
-                }
-              } catch (err) {
-                console.error("Failed to fetch equipment:", err);
-              }
-            } else if (equipment && equipment.interval_weeks) {
-              intervalWeeks = equipment.interval_weeks.toString();
-            }
-          }
-          
-          setScheduleForm({
-            equipment_id: equipmentToEdit.equipment_id?.toString() || "",
-            anchor_date: equipmentToEdit.anchor_date || "",
-            due_date: equipmentToEdit.due_date || "",
-            interval_weeks: intervalWeeks,
-            lead_weeks: equipmentToEdit.lead_weeks?.toString() || "",
-            timezone: equipmentToEdit.timezone || "",
-            equipment_identifier: equipmentIdentifier,
-            notes: equipmentToEdit.notes || "",
-            rrule: equipmentToEdit.rrule || "",
+    async function loadData() {
+      // Fetch equipment types
+      try {
+        const types = await apiCall("/equipment-types?active_only=true");
+        setEquipmentTypes(types || []);
+      } catch (err) {
+        setEquipmentTypes([]);
+      }
+
+      if (equipmentToEdit && equipmentToEdit.id) {
+        // Load existing equipment record
+        try {
+          const record = await apiCall(`/equipment-records/${equipmentToEdit.id}`);
+          setSelectedClientId(record.client_id.toString());
+          setSelectedSiteId(record.site_id.toString());
+          await fetchSitesForClient(record.client_id);
+          setEquipmentForm({
+            equipment_type_id: record.equipment_type_id?.toString() || "",
+            equipment_name: record.equipment_name || "",
+            anchor_date: record.anchor_date || "",
+            due_date: record.due_date || "",
+            interval_weeks: record.interval_weeks?.toString() || "",
+            lead_weeks: record.lead_weeks?.toString() || "",
+            timezone: record.timezone || "",
+            notes: record.notes || "",
+            active: record.active !== undefined ? record.active : true,
           });
+        } catch (err) {
+          console.error("Failed to load equipment record:", err);
         }
+      } else if (equipmentToEdit && equipmentToEdit.client) {
+        // Pre-select client if provided
+        setSelectedClientId(equipmentToEdit.client.id.toString());
+        if (equipmentToEdit.site) {
+          setSelectedSiteId(equipmentToEdit.site.id.toString());
+        }
+        await fetchSitesForClient(equipmentToEdit.client.id);
       }
     }
-    loadEquipmentData();
-  }, [equipmentToEdit, sites, apiCall]);
+    loadData();
+  }, [equipmentToEdit, apiCall]);
 
-  // Fetch sites and client equipments when client changes
+  // Fetch sites when client changes
   useEffect(() => {
     if (selectedClientId) {
       fetchSitesForClient(selectedClientId);
-      fetchClientEquipments(selectedClientId);
     } else {
       setAvailableSites([]);
-      setClientEquipments([]);
+      setSelectedSiteId("");
     }
   }, [selectedClientId]);
 
@@ -4481,24 +4413,15 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
     }
   }
 
-  async function fetchClientEquipments(clientId) {
-    try {
-      const data = await apiCall(`/clients/${clientId}/equipments`);
-      setClientEquipments(data || []);
-    } catch (err) {
-      setClientEquipments([]);
-    }
-  }
-
   function handleChange(e) {
-    const { name, value } = e.target;
-    setScheduleForm(prev => {
-      const updated = { ...prev, [name]: value };
-      // Auto-populate interval_weeks when equipment is selected
-      if (name === "equipment_id" && value) {
-        const selectedEquipment = clientEquipments.find(eq => eq.id === parseInt(value));
-        if (selectedEquipment && selectedEquipment.interval_weeks) {
-          updated.interval_weeks = selectedEquipment.interval_weeks.toString();
+    const { name, value, type, checked } = e.target;
+    setEquipmentForm(prev => {
+      const updated = { ...prev, [name]: type === "checkbox" ? checked : value };
+      // Auto-populate interval_weeks when equipment type is selected
+      if (name === "equipment_type_id" && value) {
+        const selectedType = equipmentTypes.find(t => t.id === parseInt(value));
+        if (selectedType && selectedType.interval_weeks) {
+          updated.interval_weeks = selectedType.interval_weeks.toString();
         }
       }
       return updated;
@@ -4509,27 +4432,38 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
     e.preventDefault();
     setLoading(true);
     try {
+      if (!selectedClientId || !selectedSiteId) {
+        setError("Client and Site are required");
+        return;
+      }
+      if (!equipmentForm.equipment_type_id || !equipmentForm.equipment_name || !equipmentForm.anchor_date) {
+        setError("Equipment Type, Equipment Name, and Anchor Date are required");
+        return;
+      }
+
       const payload = {
+        client_id: parseInt(selectedClientId),
         site_id: parseInt(selectedSiteId),
-        equipment_id: scheduleForm.equipment_id ? parseInt(scheduleForm.equipment_id) : null,
-        anchor_date: scheduleForm.anchor_date,
-        due_date: scheduleForm.due_date || null,
-        lead_weeks: scheduleForm.lead_weeks ? parseInt(scheduleForm.lead_weeks) : null,
-        timezone: scheduleForm.timezone || null,
-        equipment_identifier: scheduleForm.equipment_identifier || null,
-        notes: scheduleForm.notes || null,
-        rrule: scheduleForm.rrule || null,
+        equipment_type_id: parseInt(equipmentForm.equipment_type_id),
+        equipment_name: equipmentForm.equipment_name,
+        anchor_date: equipmentForm.anchor_date,
+        due_date: equipmentForm.due_date || null,
+        interval_weeks: equipmentForm.interval_weeks ? parseInt(equipmentForm.interval_weeks) : 52,
+        lead_weeks: equipmentForm.lead_weeks ? parseInt(equipmentForm.lead_weeks) : null,
+        timezone: equipmentForm.timezone || null,
+        notes: equipmentForm.notes || null,
+        active: equipmentForm.active,
       };
 
       if (equipmentToEdit && equipmentToEdit.id) {
-        // Update existing schedule
-        await apiCall(`/schedules/${equipmentToEdit.id}`, {
+        // Update existing equipment record
+        await apiCall(`/equipment-records/${equipmentToEdit.id}`, {
           method: "PUT",
           body: JSON.stringify(payload),
         });
       } else {
-        // Create new schedule
-        await apiCall("/schedules", {
+        // Create new equipment record
+        await apiCall("/equipment-records", {
           method: "POST",
           body: JSON.stringify(payload),
         });
@@ -4580,7 +4514,7 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
             required
             disabled={!selectedClientId}
           >
-            <option value="">Select a site</option>
+            <option value="">{selectedClientId ? "Select a site" : "Select client first"}</option>
             {availableSites.map(site => (
               <option key={site.id} value={site.id.toString()}>
                 {site.name}
@@ -4590,30 +4524,32 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
         </label>
 
         <label>
-          Equipment Name
-          <input
-            type="text"
-            name="equipment_identifier"
-            value={scheduleForm.equipment_identifier}
-            onChange={handleChange}
-          />
-        </label>
-
-        <label>
           Equipment Type *
           <select
-            name="equipment_id"
-            value={scheduleForm.equipment_id}
+            name="equipment_type_id"
+            value={equipmentForm.equipment_type_id}
             onChange={handleChange}
             required
           >
-            <option value="">Select an equipment</option>
-            {clientEquipments.map(equipment => (
-              <option key={equipment.id} value={equipment.id.toString()}>
-                {equipment.name}
+            <option value="">Select an equipment type</option>
+            {equipmentTypes.map(type => (
+              <option key={type.id} value={type.id.toString()}>
+                {type.name}
               </option>
             ))}
           </select>
+        </label>
+
+        <label>
+          Equipment Name *
+          <input
+            type="text"
+            name="equipment_name"
+            value={equipmentForm.equipment_name}
+            onChange={handleChange}
+            required
+            placeholder="e.g., Scanner Model XYZ, Room 101"
+          />
         </label>
 
         <label>
@@ -4621,7 +4557,7 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
           <input
             type="date"
             name="anchor_date"
-            value={scheduleForm.anchor_date}
+            value={equipmentForm.anchor_date}
             onChange={handleChange}
             required
           />
@@ -4632,19 +4568,20 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
           <input
             type="date"
             name="due_date"
-            value={scheduleForm.due_date}
+            value={equipmentForm.due_date}
             onChange={handleChange}
           />
         </label>
 
         <label>
-          Interval (weeks)
+          Interval (weeks) *
           <input
             type="number"
             name="interval_weeks"
-            value={scheduleForm.interval_weeks}
+            value={equipmentForm.interval_weeks}
             onChange={handleChange}
             min="1"
+            required
             placeholder="e.g., 52"
           />
         </label>
@@ -4654,7 +4591,7 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
           <input
             type="number"
             name="lead_weeks"
-            value={scheduleForm.lead_weeks}
+            value={equipmentForm.lead_weeks}
             onChange={handleChange}
             min="0"
           />
@@ -4665,7 +4602,7 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
           <input
             type="text"
             name="timezone"
-            value={scheduleForm.timezone}
+            value={equipmentForm.timezone}
             onChange={handleChange}
             placeholder="e.g., America/New_York"
           />
@@ -4675,21 +4612,20 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
           Notes
           <textarea
             name="notes"
-            value={scheduleForm.notes}
+            value={equipmentForm.notes}
             onChange={handleChange}
             rows="3"
           />
         </label>
 
-        <label>
-          Recurrence Rule (RRULE)
+        <label className="checkbox-label">
           <input
-            type="text"
-            name="rrule"
-            value={scheduleForm.rrule}
+            type="checkbox"
+            name="active"
+            checked={equipmentForm.active}
             onChange={handleChange}
-            placeholder="e.g., FREQ=MONTHLY;INTERVAL=1"
           />
+          Active
         </label>
 
         <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
@@ -4743,7 +4679,7 @@ function AdminTab({ apiCall, setError }) {
       const stats = result.stats || {};
       
       let message = `Import completed successfully.\n\n`;
-      message += `Created: ${stats.equipments_created || 0} equipment type(s), ${stats.schedules_created || 0} schedule(s).\n`;
+      message += `Created: ${stats.equipment_types_created || 0} equipment type(s), ${stats.equipment_records_created || 0} equipment record(s).\n`;
       if (stats.rows_skipped > 0) {
         message += `Skipped: ${stats.rows_skipped} row(s) due to missing or invalid data.\n`;
       }
@@ -4798,7 +4734,7 @@ function AdminTab({ apiCall, setError }) {
       const stats = result.stats || {};
       
       let message = `Import completed successfully.\n\n`;
-      message += `Created: ${stats.clients_created || 0} client(s), ${stats.sites_created || 0} site(s), ${stats.equipments_created || 0} equipment type(s), ${stats.schedules_created || 0} schedule(s).\n`;
+      message += `Created: ${stats.clients_created || 0} client(s), ${stats.sites_created || 0} site(s), ${stats.equipment_types_created || 0} equipment type(s), ${stats.equipment_records_created || 0} equipment record(s).\n`;
       if (stats.rows_skipped > 0) {
         message += `Skipped: ${stats.rows_skipped} row(s) due to missing or invalid data.\n`;
       }

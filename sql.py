@@ -56,7 +56,17 @@ def init_schema(conn):
           UNIQUE(contact_id, scope, scope_id, role)
         );
 
-        -- Test types (recurrence templates)
+        -- Equipment types (recurrence templates)
+        CREATE TABLE IF NOT EXISTS equipment_types (
+          id                 INTEGER PRIMARY KEY,
+          name               TEXT NOT NULL UNIQUE,
+          interval_weeks     INTEGER NOT NULL,
+          rrule              TEXT NOT NULL,
+          default_lead_weeks INTEGER NOT NULL,
+          active             INTEGER NOT NULL DEFAULT 1
+        );
+
+        -- Test types (recurrence templates) - Legacy table, kept for backward compatibility
         CREATE TABLE IF NOT EXISTS test_types (
           id                 INTEGER PRIMARY KEY,
           name               TEXT NOT NULL UNIQUE,
@@ -66,11 +76,27 @@ def init_schema(conn):
           active             INTEGER NOT NULL DEFAULT 1
         );
 
+        -- Equipment records (equipment instances with scheduling info)
+        CREATE TABLE IF NOT EXISTS equipment_record (
+          id                 INTEGER PRIMARY KEY,
+          client_id          INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+          site_id            INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+          equipment_type_id  INTEGER NOT NULL REFERENCES equipment_types(id),
+          equipment_name     TEXT NOT NULL,
+          anchor_date        TEXT NOT NULL,  -- YYYY-MM-DD
+          due_date           TEXT,           -- YYYY-MM-DD (manual due date, optional)
+          interval_weeks     INTEGER NOT NULL DEFAULT 52,
+          lead_weeks         INTEGER,        -- optional override
+          active             INTEGER NOT NULL DEFAULT 1,
+          notes              TEXT,
+          timezone           TEXT            -- optional override
+        );
+
         -- Schedules (recurring)
         CREATE TABLE IF NOT EXISTS schedules (
           id                   INTEGER PRIMARY KEY,
           site_id              INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-          test_type_id         INTEGER NOT NULL REFERENCES test_types(id),
+          equipment_type_id     INTEGER NOT NULL REFERENCES equipment_types(id),
           anchor_date          TEXT NOT NULL,  -- YYYY-MM-DD
           due_date             TEXT,           -- YYYY-MM-DD (manual due date, optional)
           lead_weeks           INTEGER,        -- optional override
@@ -160,20 +186,22 @@ def init_schema(conn):
     except sqlite3.OperationalError:
         pass  # Column already exists
     
-    # Migrate schedules from test_type_id to equipment_id
+    # Note: equipment_types table is created fresh, no migration needed since database will be recreated
+    
+    # Migrate schedules from test_type_id to equipment_type_id
     try:
-        # Check if equipment_id column exists
-        conn.execute("SELECT equipment_id FROM schedules LIMIT 1")
+        # Check if equipment_type_id column exists
+        conn.execute("SELECT equipment_type_id FROM schedules LIMIT 1")
     except sqlite3.OperationalError:
-        # Add equipment_id column
+        # Add equipment_type_id column if it doesn't exist
         try:
-            conn.execute("ALTER TABLE schedules ADD COLUMN equipment_id INTEGER REFERENCES client_equipments(id)")
+            conn.execute("ALTER TABLE schedules ADD COLUMN equipment_type_id INTEGER REFERENCES equipment_types(id)")
         except sqlite3.OperationalError:
             pass
         
-        # Update existing schedules: copy test_type_id to equipment_id for migration
+        # Update existing schedules: copy test_type_id to equipment_type_id for migration
         try:
-            conn.execute("UPDATE schedules SET equipment_id = test_type_id WHERE equipment_id IS NULL")
+            conn.execute("UPDATE schedules SET equipment_type_id = test_type_id WHERE equipment_type_id IS NULL")
         except sqlite3.OperationalError:
             pass
     

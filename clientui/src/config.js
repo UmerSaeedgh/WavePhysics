@@ -8,4 +8,4 @@
 //export const API_BASE = "http://127.0.0.1:8000";
 
 //For Azure
-export const API_BASE = "https://wavefastapi-hedneehwcqdjgha7.canadacentral-01.azurewebsites.net/"
+//export const API_BASE = "https://wavefastapi-hedneehwcqdjgha7.canadacentral-01.azurewebsites.net/"
