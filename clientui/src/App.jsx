@@ -4379,6 +4379,7 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
     equipment_id: "",
     anchor_date: "",
     due_date: "",
+    interval_weeks: "",
     lead_weeks: "",
     timezone: "",
     equipment_identifier: "",
@@ -4423,10 +4424,31 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
               equipmentIdentifier = String(equipmentToEdit.equipment_identifier);
             }
           }
+          // Get interval_weeks from equipment if available
+          let intervalWeeks = "";
+          if (equipmentToEdit.equipment_id) {
+            // Try to find in already loaded clientEquipments first
+            let equipment = clientEquipments.find(e => e.id === equipmentToEdit.equipment_id);
+            // If not found, try to fetch it
+            if (!equipment && site) {
+              try {
+                const equipmentData = await apiCall(`/equipments/${equipmentToEdit.equipment_id}`);
+                if (equipmentData && equipmentData.interval_weeks) {
+                  intervalWeeks = equipmentData.interval_weeks.toString();
+                }
+              } catch (err) {
+                console.error("Failed to fetch equipment:", err);
+              }
+            } else if (equipment && equipment.interval_weeks) {
+              intervalWeeks = equipment.interval_weeks.toString();
+            }
+          }
+          
           setScheduleForm({
             equipment_id: equipmentToEdit.equipment_id?.toString() || "",
             anchor_date: equipmentToEdit.anchor_date || "",
             due_date: equipmentToEdit.due_date || "",
+            interval_weeks: intervalWeeks,
             lead_weeks: equipmentToEdit.lead_weeks?.toString() || "",
             timezone: equipmentToEdit.timezone || "",
             equipment_identifier: equipmentIdentifier,
@@ -4470,7 +4492,17 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
 
   function handleChange(e) {
     const { name, value } = e.target;
-    setScheduleForm(prev => ({ ...prev, [name]: value }));
+    setScheduleForm(prev => {
+      const updated = { ...prev, [name]: value };
+      // Auto-populate interval_weeks when equipment is selected
+      if (name === "equipment_id" && value) {
+        const selectedEquipment = clientEquipments.find(eq => eq.id === parseInt(value));
+        if (selectedEquipment && selectedEquipment.interval_weeks) {
+          updated.interval_weeks = selectedEquipment.interval_weeks.toString();
+        }
+      }
+      return updated;
+    });
   }
 
   async function handleSubmit(e) {
@@ -4481,6 +4513,7 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
         site_id: parseInt(selectedSiteId),
         equipment_id: scheduleForm.equipment_id ? parseInt(scheduleForm.equipment_id) : null,
         anchor_date: scheduleForm.anchor_date,
+        due_date: scheduleForm.due_date || null,
         lead_weeks: scheduleForm.lead_weeks ? parseInt(scheduleForm.lead_weeks) : null,
         timezone: scheduleForm.timezone || null,
         equipment_identifier: scheduleForm.equipment_identifier || null,
@@ -4557,11 +4590,22 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
         </label>
 
         <label>
-          Equipment
+          Equipment Name
+          <input
+            type="text"
+            name="equipment_identifier"
+            value={scheduleForm.equipment_identifier}
+            onChange={handleChange}
+          />
+        </label>
+
+        <label>
+          Equipment Type *
           <select
             name="equipment_id"
             value={scheduleForm.equipment_id}
             onChange={handleChange}
+            required
           >
             <option value="">Select an equipment</option>
             {clientEquipments.map(equipment => (
@@ -4584,6 +4628,28 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
         </label>
 
         <label>
+          Due Date
+          <input
+            type="date"
+            name="due_date"
+            value={scheduleForm.due_date}
+            onChange={handleChange}
+          />
+        </label>
+
+        <label>
+          Interval (weeks)
+          <input
+            type="number"
+            name="interval_weeks"
+            value={scheduleForm.interval_weeks}
+            onChange={handleChange}
+            min="1"
+            placeholder="e.g., 52"
+          />
+        </label>
+
+        <label>
           Lead Weeks
           <input
             type="number"
@@ -4602,16 +4668,6 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
             value={scheduleForm.timezone}
             onChange={handleChange}
             placeholder="e.g., America/New_York"
-          />
-        </label>
-
-        <label>
-          Equipment Identifier
-          <input
-            type="text"
-            name="equipment_identifier"
-            value={scheduleForm.equipment_identifier}
-            onChange={handleChange}
           />
         </label>
 
