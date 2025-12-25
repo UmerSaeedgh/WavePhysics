@@ -48,8 +48,11 @@ function App() {
   const [dueThisMonth, setDueThisMonth] = useState([]);
   const [overdue, setOverdue] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
-  const [upcomingStartDate, setUpcomingStartDate] = useState("");
-  const [upcomingEndDate, setUpcomingEndDate] = useState("");
+  const [upcomingDate, setUpcomingDate] = useState(() => {
+    // Default to today's date
+    return new Date().toISOString().split('T')[0];
+  });
+  const [upcomingInterval, setUpcomingInterval] = useState(2); // Default to 2 weeks
 
   useEffect(() => {
     fetchClients();
@@ -88,7 +91,7 @@ function App() {
     if (view === "upcoming") {
       fetchUpcoming();
     }
-  }, [view, upcomingStartDate, upcomingEndDate]);
+  }, [view, upcomingDate, upcomingInterval]);
 
   // Fetch data when overdue view is selected
   useEffect(() => {
@@ -290,19 +293,14 @@ function App() {
     try {
       let url = "/equipment-records/upcoming";
       
-      if (upcomingStartDate) {
-        let endDate = upcomingEndDate;
-        // If start date is set but no end date, use start date + 14 days
-        if (!endDate) {
-          const startDate = new Date(upcomingStartDate);
-          startDate.setDate(startDate.getDate() + 14); // Add 14 days
-          endDate = startDate.toISOString().split('T')[0];
-        }
-        url += `?start_date=${upcomingStartDate}&end_date=${endDate}`;
-      } else {
-        // Default to 2 weeks from today
-        url += "?weeks=2";
-      }
+      // Calculate end date from selected date + interval weeks
+      const startDate = upcomingDate || new Date().toISOString().split('T')[0];
+      const start = new Date(startDate);
+      const end = new Date(start);
+      end.setDate(end.getDate() + (upcomingInterval * 7)); // Add interval weeks
+      const endDate = end.toISOString().split('T')[0];
+      
+      url += `?start_date=${startDate}&end_date=${endDate}`;
       
       const data = await apiCall(url).catch(() => []);
       setUpcoming(Array.isArray(data) ? data : []);
@@ -549,7 +547,7 @@ function App() {
 
         {view === "all-equipments" && (
           <AllEquipmentsView
-            apiCall={apiCall}
+            apiCall={apiCall} 
             setError={setError}
             allEquipments={allEquipments}
             setAllEquipments={setAllEquipments}
@@ -583,10 +581,10 @@ function App() {
             setUpcoming={setUpcoming}
             loading={loading}
             setLoading={setLoading}
-            upcomingStartDate={upcomingStartDate}
-            setUpcomingStartDate={setUpcomingStartDate}
-            upcomingEndDate={upcomingEndDate}
-            setUpcomingEndDate={setUpcomingEndDate}
+            upcomingDate={upcomingDate}
+            setUpcomingDate={setUpcomingDate}
+            upcomingInterval={upcomingInterval}
+            setUpcomingInterval={setUpcomingInterval}
             onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment
@@ -713,14 +711,14 @@ function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onAdd
             <button className="primary" onClick={onAddClient}>+ Add New Client</button>
           </div>
         </div>
-
+        
         {showFilters && (
           <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
             <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: "200px" }}>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
                   Search Clients
-                </label>
+              </label>
                 <input
                   type="text"
                   value={searchTerm}
@@ -738,7 +736,7 @@ function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onAdd
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
                   Sort Order
-                </label>
+              </label>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
                   <button
                     type="button"
@@ -764,7 +762,7 @@ function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onAdd
                   >
                     Z-A
                   </button>
-                </div>
+              </div>
               </div>
             </div>
           </div>
@@ -871,8 +869,8 @@ function EditClientPage({ apiCall, setError, clientToEdit, previousView, onBack,
 
       <div className="card">
         <form onSubmit={handleSubmit} style={{ padding: "1rem" }}>
-        <label>
-          Name *
+              <label>
+                Name *
           <input
             type="text"
             name="name"
@@ -880,10 +878,10 @@ function EditClientPage({ apiCall, setError, clientToEdit, previousView, onBack,
             onChange={handleChange}
             required
           />
-        </label>
+              </label>
 
-        <label>
-          Address
+              <label>
+                Address
           <input
             type="text"
             name="address"
@@ -891,9 +889,9 @@ function EditClientPage({ apiCall, setError, clientToEdit, previousView, onBack,
             onChange={handleChange}
             placeholder="Client address"
           />
-        </label>
+              </label>
 
-        <label>
+              <label>
           Billing Info
           <textarea
             name="billing_info"
@@ -902,25 +900,25 @@ function EditClientPage({ apiCall, setError, clientToEdit, previousView, onBack,
             rows={2}
             placeholder="Billing address, payment terms, etc."
           />
-        </label>
+              </label>
 
-        <label>
-          Notes
+              <label>
+                Notes
           <textarea
             name="notes"
             value={form.notes}
             onChange={handleChange}
             rows={3}
           />
-        </label>
+              </label>
 
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem" }}>
           <button type="submit" className="primary" disabled={loading}>
             {loading ? "Saving..." : (clientToEdit ? "Save Changes" : "Create Client")}
           </button>
           <button type="button" className="secondary" onClick={onBack} disabled={loading}>Cancel</button>
-        </div>
-        </form>
+              </div>
+            </form>
       </div>
     </div>
   );
@@ -946,9 +944,9 @@ function EditSitePage({ apiCall, setError, siteToEdit, client, contactLinks, onR
       });
       // Fetch contacts when editing a site
       if (onRefreshContacts) {
-        onRefreshContacts();
+    onRefreshContacts();
       }
-    } else {
+        } else {
       setForm({ name: "", address: "", timezone: "America/Chicago", notes: "" });
     }
   }, [siteToEdit?.id]); // Only depend on siteToEdit.id, not the whole object or onRefreshContacts
@@ -990,49 +988,49 @@ function EditSitePage({ apiCall, setError, siteToEdit, client, contactLinks, onR
       <div style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
         <button className="secondary" onClick={onBack}>
           ← Back to Sites
-        </button>
+            </button>
         <h2 style={{ margin: 0 }}>{siteToEdit ? "Edit Site" : "Add New Site"}</h2>
-      </div>
+        </div>
 
       <div className="card" style={{ marginBottom: "1rem" }}>
         <form onSubmit={handleSubmit} className="form">
-          <label>
-            Name *
+                    <label>
+                      Name *
             <input type="text" name="name" value={form.name} onChange={handleChange} required />
-          </label>
-          <label>
+                    </label>
+                    <label>
             Address
             <input type="text" name="address" value={form.address} onChange={handleChange} placeholder="Site address" />
-          </label>
-          <label>
+                    </label>
+                    <label>
             Timezone
             <input type="text" name="timezone" value={form.timezone} onChange={handleChange} placeholder="America/Chicago" />
-          </label>
-          <label>
-            Notes
+              </label>
+              <label>
+                Notes
             <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} />
-          </label>
+              </label>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem" }}>
             <button type="submit" className="primary" disabled={loading}>
               {loading ? "Saving..." : (siteToEdit ? "Save Changes" : "Create Site")}
             </button>
             <button type="button" className="secondary" onClick={onBack} disabled={loading}>Cancel</button>
+              </div>
+            </form>
           </div>
-        </form>
-      </div>
 
       {siteToEdit && onEditContact && (
-        <div style={{ marginTop: "1rem" }}>
-          <ContactManagementSection
+      <div style={{ marginTop: "1rem" }}>
+        <ContactManagementSection
             site={siteToEdit}
-            client={client}
-            contactLinks={contactLinks}
-            onRefreshContacts={onRefreshContacts}
+          client={client}
+          contactLinks={contactLinks}
+          onRefreshContacts={onRefreshContacts}
             onEditContact={onEditContact}
             apiCall={apiCall}
             setError={setError}
           />
-        </div>
+      </div>
       )}
     </div>
   );
@@ -1177,7 +1175,7 @@ function EditContactPage({ apiCall, setError, contactToEdit, contactContext, con
           ← Back
         </button>
         <h2 style={{ margin: 0 }}>{contactToEdit ? "Edit Contact" : "Add New Contact"}</h2>
-      </div>
+        </div>
 
       <div className="card">
         <div style={{ padding: "0.5rem 1rem", backgroundColor: "#8193A4", color: "#2D3234", fontSize: "0.9rem", marginBottom: "1rem" }}>
@@ -1185,37 +1183,37 @@ function EditContactPage({ apiCall, setError, contactToEdit, contactContext, con
         </div>
 
         <form onSubmit={handleSubmit} className="form" style={{ padding: "1rem" }}>
-          <label>
-            First Name *
+              <label>
+                First Name *
             <input type="text" name="first_name" value={form.first_name} onChange={handleChange} required />
-          </label>
-          <label>
-            Last Name *
+              </label>
+              <label>
+                Last Name *
             <input type="text" name="last_name" value={form.last_name} onChange={handleChange} required />
-          </label>
-          <label>
-            Email
+              </label>
+              <label>
+                Email
             <input type="email" name="email" value={form.email} onChange={handleChange} />
-          </label>
-          <label>
-            Phone
+              </label>
+              <label>
+                Phone
             <input type="tel" name="phone" value={form.phone} onChange={handleChange} />
-          </label>
-          <label>
-            Role
+              </label>
+              <label>
+                Role
             <input type="text" name="role" value={form.role} onChange={handleChange} placeholder="e.g. Manager, Technician" />
-          </label>
-          <label className="checkbox-label">
+              </label>
+              <label className="checkbox-label">
             <input type="checkbox" name="is_primary" checked={form.is_primary} onChange={handleChange} />
-            Primary Contact
-          </label>
+                Primary Contact
+              </label>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem" }}>
             <button type="submit" className="primary" disabled={loading}>
               {loading ? "Saving..." : (contactToEdit ? "Save Changes" : "Create Contact")}
             </button>
             <button type="button" className="secondary" onClick={onBack} disabled={loading}>Cancel</button>
-          </div>
-        </form>
+              </div>
+            </form>
       </div>
     </div>
   );
@@ -2676,7 +2674,7 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
             equipmentElement.style.backgroundColor = '';
             if (onScrollComplete) onScrollComplete();
           }, 2000);
-        } else {
+    } else {
           // Element not found yet, try again after a short delay
           setTimeout(() => {
             const retryElement = equipmentRefs.current[scrollToEquipmentId];
@@ -2927,7 +2925,7 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
             }}>
               + Add New Equipment
             </button>
-          </div>
+        </div>
         </div>
 
         {showFilters && (
@@ -2958,7 +2956,7 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
                   Search by Name
-                </label>
+          </label>
                 <input
                   type="text"
                   value={searchTerm}
@@ -2977,8 +2975,8 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
                   Client
-                </label>
-                <select
+          </label>
+            <select
                   value={selectedClientId}
                   onChange={(e) => {
                     setSelectedClientId(e.target.value);
@@ -2997,15 +2995,15 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                     <option key={client.id} value={client.id.toString()}>
                       {client.name}
                     </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
+              ))}
+            </select>
+      </div>
+
+          <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
                   Site
                 </label>
-                <select
+            <select
                   value={selectedSiteId}
                   onChange={(e) => setSelectedSiteId(e.target.value)}
                   disabled={!selectedClientId}
@@ -3017,15 +3015,15 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                     fontSize: "0.9rem",
                     backgroundColor: !selectedClientId ? "#f0f0f0" : "#fff"
                   }}
-                >
-                  <option value="">All Sites</option>
+            >
+              <option value="">All Sites</option>
                   {sites.map(site => (
                     <option key={site.id} value={site.id.toString()}>
                       {site.name}
                     </option>
-                  ))}
-                </select>
-              </div>
+              ))}
+            </select>
+          </div>
               
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
@@ -3049,7 +3047,7 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                     </option>
                   ))}
                 </select>
-              </div>
+        </div>
               
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
@@ -3118,10 +3116,10 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
             <p className="empty">No equipments found</p>
           ) : filteredAndSortedEquipments.length === 0 ? (
             <p className="empty">No equipments match your filters.</p>
-          ) : (
-            <ul className="list">
+        ) : (
+          <ul className="list">
               {filteredAndSortedEquipments.map(equipment => {
-                return (
+              return (
                   <li 
                     key={equipment.id} 
                     ref={el => equipmentRefs.current[equipment.id] = el}
@@ -3132,19 +3130,19 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                       setShowDetailsModal(true);
                     }}
                   >
-                    <div className="list-main">
-                      <div className="list-title">
+                  <div className="list-main">
+                    <div className="list-title">
                         {equipment.equipment_name || `Equipment ID: ${equipment.id}`}
-                      </div>
-                      <div className="list-subtitle">
+                    </div>
+                    <div className="list-subtitle">
                         {equipment.equipment_type_name && `Type: ${equipment.equipment_type_name} • `}
                         Anchor: {formatDate(equipment.anchor_date)}
                         {equipment.due_date && ` • Due: ${formatDate(equipment.due_date)}`}
                         {equipment.client_name && ` • Client: ${equipment.client_name}`}
                         {equipment.interval_weeks && ` • Interval: ${equipment.interval_weeks} weeks`}
-                      </div>
                     </div>
-                    <div className="list-actions" onClick={(e) => e.stopPropagation()}>
+                  </div>
+                  <div className="list-actions" onClick={(e) => e.stopPropagation()}>
                       <button onClick={() => handleDoneClick(equipment)}>Done</button>
                       <button onClick={() => {
                         if (onNavigateToAddEquipment) {
@@ -3152,12 +3150,12 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                         }
                       }}>Edit</button>
                       <button className="danger" onClick={() => handleDeleteEquipment(equipment.id)}>Delete</button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
         </div>
       </div>
 
@@ -3189,11 +3187,11 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
               <button onClick={() => setShowDetailsModal(false)} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
             </div>
             
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
               {/* Equipment Information */}
-              <div>
+                  <div>
                 <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Equipment Information</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
                   <div><strong>Equipment Name:</strong> {selectedEquipment.equipment_name || "N/A"}</div>
                   <div><strong>Equipment Type:</strong> {selectedEquipment.equipment_type_name || "N/A"}</div>
                   <div><strong>Anchor Date:</strong> {formatDate(selectedEquipment.anchor_date)}</div>
@@ -3203,29 +3201,29 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                   {selectedEquipment.timezone && <div><strong>Timezone:</strong> {selectedEquipment.timezone}</div>}
                   <div><strong>Status:</strong> {selectedEquipment.active ? "Active" : "Inactive"}</div>
                   {selectedEquipment.notes && (
-                    <div style={{ gridColumn: "1 / -1" }}>
-                      <strong>Notes:</strong>
+                        <div style={{ gridColumn: "1 / -1" }}>
+                          <strong>Notes:</strong>
                       <div style={{ marginTop: "0.25rem", whiteSpace: "pre-wrap" }}>{selectedEquipment.notes}</div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
+                  </div>
 
-              {/* Client Information */}
-              <div>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Client Information</h3>
-                <div style={{ fontSize: "0.9rem" }}>
+                  {/* Client Information */}
+                  <div>
+                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Client Information</h3>
+                    <div style={{ fontSize: "0.9rem" }}>
                   <div><strong>Name:</strong> {selectedEquipment.client_name || "N/A"}</div>
-                </div>
-              </div>
+                    </div>
+                  </div>
 
-              {/* Site Information */}
-              <div>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
-                <div style={{ fontSize: "0.9rem" }}>
+                  {/* Site Information */}
+                  <div>
+                    <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
+                    <div style={{ fontSize: "0.9rem" }}>
                   <div><strong>Name:</strong> {selectedEquipment.site_name || "N/A"}</div>
-                </div>
-              </div>
+                    </div>
+                  </div>
 
               {/* Actions */}
               <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
@@ -3251,11 +3249,11 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                 >
                   Close
                 </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+                            </div>
+                            </div>
+                      </div>
+                    </div>
+                  )}
 
       {showDoneModal && doneEquipment && (
         <div style={{
@@ -3281,14 +3279,14 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
               <h2 style={{ margin: 0, color: "#2D3234" }}>Mark as Done</h2>
               <button onClick={handleCancelDone} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
-            </div>
+        </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
                   Interval (weeks)
-                </label>
-                <input
+          </label>
+            <input
                   type="number"
                   value={doneInterval}
                   onChange={(e) => handleIntervalChange(e.target.value)}
@@ -3307,9 +3305,9 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
                   Calculated Due Date
-                </label>
-                <input
-                  type="date"
+          </label>
+            <input
+              type="date"
                   value={calculatedDueDate}
                   onChange={(e) => setCalculatedDueDate(e.target.value)}
                   style={{
@@ -3327,7 +3325,7 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                     "Set base date first"
                   }
                 </div>
-              </div>
+          </div>
 
               <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
                 <button 
@@ -3338,7 +3336,7 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                   Save
                 </button>
                 <button 
-                  className="secondary" 
+                className="secondary"
                   onClick={handleCancelDone}
                   style={{ 
                     color: "#2D3234", 
@@ -3348,36 +3346,31 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                 >
                   Cancel
                 </button>
-              </div>
-            </div>
           </div>
         </div>
+                    </div>
+                    </div>
       )}
     </div>
   );
 }
 
 // Upcoming View
-function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingStartDate, setUpcomingStartDate, upcomingEndDate, setUpcomingEndDate, onNavigateToSchedule }) {
+function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule }) {
   async function fetchUpcoming() {
     setLoading(true);
     setError("");
     try {
       let url = "/equipment-records/upcoming";
       
-      if (upcomingStartDate) {
-        let endDate = upcomingEndDate;
-        // If start date is set but no end date, use start date + 14 days
-        if (!endDate) {
-          const startDate = new Date(upcomingStartDate);
-          startDate.setDate(startDate.getDate() + 14); // Add 14 days
-          endDate = startDate.toISOString().split('T')[0];
-        }
-        url += `?start_date=${upcomingStartDate}&end_date=${endDate}`;
-      } else {
-        // Default to 2 weeks from today
-        url += "?weeks=2";
-      }
+      // Calculate end date from selected date + interval weeks
+      const startDate = upcomingDate || new Date().toISOString().split('T')[0];
+      const start = new Date(startDate);
+      const end = new Date(start);
+      end.setDate(end.getDate() + (upcomingInterval * 7)); // Add interval weeks
+      const endDate = end.toISOString().split('T')[0];
+      
+      url += `?start_date=${startDate}&end_date=${endDate}`;
       
       const data = await apiCall(url).catch(() => []);
       setUpcoming(Array.isArray(data) ? data : []);
@@ -3421,84 +3414,65 @@ function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLo
 
   useEffect(() => {
     fetchUpcoming();
-  }, [upcomingStartDate, upcomingEndDate]);
+  }, [upcomingDate, upcomingInterval]);
 
   if (loading) return <div className="card"><p>Loading...</p></div>;
 
-  return (
+                  return (
     <div>
-      <div className="card">
-        <div className="card-header">
-          <h2>Upcoming</h2>
-          <div>
-            <button className="secondary" onClick={fetchUpcoming}>Refresh</button>
+        <div className="card">
+          <div className="card-header">
+            <h2>Upcoming</h2>
+            <div>
+              <button className="secondary" onClick={fetchUpcoming}>Refresh</button>
+            </div>
           </div>
-        </div>
-        <div style={{ padding: "1rem", borderBottom: "1px solid #ddd" }}>
-          <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-              Start Date
-              <input
-                type="date"
-                value={upcomingStartDate}
-                onChange={(e) => {
-                  const selectedDate = e.target.value;
-                  const today = new Date().toISOString().split('T')[0];
-                  if (selectedDate >= today) {
-                    setUpcomingStartDate(selectedDate);
-                    // If end date is set and is before the new start date, clear it
-                    if (upcomingEndDate && selectedDate > upcomingEndDate) {
-                      setUpcomingEndDate("");
-                    }
-                  } else if (selectedDate === "") {
-                    // Allow clearing the date
-                    setUpcomingStartDate("");
-                  }
+          <div style={{ padding: "1rem", borderBottom: "1px solid #ddd" }}>
+            <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              Date
+                <input
+                  type="date"
+                value={upcomingDate}
+                  onChange={(e) => {
+                  setUpcomingDate(e.target.value);
                 }}
-                min={new Date().toISOString().split('T')[0]}
-                style={{ padding: "0.5rem" }}
-              />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-              End Date (Optional)
-              <input
-                type="date"
-                value={upcomingEndDate}
-                onChange={(e) => {
-                  const selectedDate = e.target.value;
-                  const today = new Date().toISOString().split('T')[0];
-                  const minDate = upcomingStartDate || today;
-                  if (selectedDate >= minDate) {
-                    setUpcomingEndDate(selectedDate);
-                  } else if (selectedDate === "") {
-                    // Allow clearing the date
-                    setUpcomingEndDate("");
-                  }
+                  style={{ padding: "0.5rem" }}
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              Interval (weeks)
+                <input
+                type="number"
+                min="1"
+                value={upcomingInterval}
+                  onChange={(e) => {
+                  const value = parseInt(e.target.value) || 1;
+                  setUpcomingInterval(value);
                 }}
-                min={upcomingStartDate || new Date().toISOString().split('T')[0]}
-                style={{ padding: "0.5rem" }}
-              />
-            </label>
-            {(upcomingStartDate || upcomingEndDate) && (
-              <button
-                className="secondary"
-                onClick={() => {
-                  setUpcomingStartDate("");
-                  setUpcomingEndDate("");
-                }}
-                style={{ marginTop: "1.5rem" }}
-              >
-                Clear Dates
-              </button>
-            )}
+                style={{ padding: "0.5rem", width: "120px" }}
+                />
+              </label>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginTop: "1.5rem" }}>
+              <div style={{ fontSize: "0.875rem", color: "#666" }}>
+                Range: {upcomingDate} to {
+                  (() => {
+                    const start = new Date(upcomingDate);
+                    const end = new Date(start);
+                    end.setDate(end.getDate() + (upcomingInterval * 7));
+                    return end.toISOString().split('T')[0];
+                  })()
+                }
+              </div>
+            </div>
+            </div>
           </div>
-        </div>
-        {upcoming.length === 0 ? (
+          {upcoming.length === 0 ? (
           <p className="empty">No upcoming equipment records</p>
-        ) : (
+          ) : (
           renderEquipmentList(upcoming, "planned")
-        )}
-      </div>
+          )}
+        </div>
     </div>
   );
 }
@@ -3542,8 +3516,8 @@ function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoadi
                 Client: {item.client_name}
                 {item.site_name && ` • Site: ${item.site_name}`}
                 {` • Due: ${formatDate(item.due_date)}`}
-              </div>
             </div>
+          </div>
           </li>
         ))}
       </ul>
@@ -3558,19 +3532,19 @@ function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoadi
 
   return (
     <div>
-      <div className="card">
-        <div className="card-header">
+        <div className="card">
+          <div className="card-header">
           <h2>Overdue</h2>
-          <div>
+            <div>
             <button className="secondary" onClick={fetchOverdue}>Refresh</button>
+            </div>
           </div>
-        </div>
         {overdue.length === 0 ? (
           <p className="empty">No overdue equipment records</p>
-        ) : (
+          ) : (
           renderEquipmentList(overdue, "due")
-        )}
-      </div>
+          )}
+        </div>
     </div>
   );
 }
@@ -3610,7 +3584,7 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
       try {
         const types = await apiCall("/equipment-types?active_only=true");
         setEquipmentTypes(types || []);
-      } catch (err) {
+            } catch (err) {
         setEquipmentTypes([]);
       }
 
@@ -3691,8 +3665,8 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
       }
       if (!equipmentForm.equipment_type_id || !equipmentForm.equipment_name || !equipmentForm.anchor_date) {
         setError("Equipment Type, Equipment Name, and Anchor Date are required");
-        return;
-      }
+      return;
+    }
 
       const payload = {
         client_id: parseInt(selectedClientId),
@@ -3740,44 +3714,44 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
       </div>
 
       <form onSubmit={handleSubmit} style={{ padding: "1rem" }}>
-        <label>
-          Client *
-          <select
-            value={selectedClientId}
-            onChange={(e) => {
-              setSelectedClientId(e.target.value);
+          <label>
+            Client *
+            <select
+              value={selectedClientId}
+              onChange={(e) => {
+                setSelectedClientId(e.target.value);
               setSelectedSiteId("");
-            }}
-            required
-          >
-            <option value="">Select a client</option>
-            {clients.map(client => (
+              }}
+              required
+            >
+              <option value="">Select a client</option>
+              {clients.map(client => (
               <option key={client.id} value={client.id.toString()}>
                 {client.name}
               </option>
-            ))}
-          </select>
-        </label>
+              ))}
+            </select>
+          </label>
 
-        <label>
-          Site *
-          <select
-            value={selectedSiteId}
-            onChange={(e) => setSelectedSiteId(e.target.value)}
-            required
+          <label>
+            Site *
+            <select
+              value={selectedSiteId}
+              onChange={(e) => setSelectedSiteId(e.target.value)}
+              required
             disabled={!selectedClientId}
-          >
+            >
             <option value="">{selectedClientId ? "Select a site" : "Select client first"}</option>
-            {availableSites.map(site => (
+              {availableSites.map(site => (
               <option key={site.id} value={site.id.toString()}>
                 {site.name}
               </option>
-            ))}
-          </select>
-        </label>
+              ))}
+            </select>
+          </label>
 
-        <label>
-          Equipment Type *
+          <label>
+            Equipment Type *
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             <select
               name="equipment_type_id"
@@ -3801,8 +3775,8 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
             >
               + Add New Type
             </button>
-          </div>
-        </label>
+                </div>
+          </label>
 
         {showNewTypeForm && (
           <div style={{ 
@@ -3937,26 +3911,26 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
           />
         </label>
 
-        <label>
-          Anchor Date *
-          <input
-            type="date"
-            name="anchor_date"
+          <label>
+            Anchor Date *
+            <input
+              type="date"
+              name="anchor_date"
             value={equipmentForm.anchor_date}
             onChange={handleChange}
-            required
-          />
-        </label>
+              required
+            />
+          </label>
 
-        <label>
-          Due Date
-          <input
-            type="date"
-            name="due_date"
+          <label>
+            Due Date
+            <input
+              type="date"
+              name="due_date"
             value={equipmentForm.due_date}
             onChange={handleChange}
-          />
-        </label>
+            />
+          </label>
 
         <label>
           Interval (weeks) *
@@ -3971,37 +3945,37 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
           />
         </label>
 
-        <label>
-          Lead Weeks
-          <input
-            type="number"
-            name="lead_weeks"
+          <label>
+            Lead Weeks
+            <input
+              type="number"
+              name="lead_weeks"
             value={equipmentForm.lead_weeks}
             onChange={handleChange}
-            min="0"
-          />
-        </label>
+              min="0"
+            />
+          </label>
 
-        <label>
-          Timezone
-          <input
-            type="text"
-            name="timezone"
+          <label>
+            Timezone
+            <input
+              type="text"
+              name="timezone"
             value={equipmentForm.timezone}
             onChange={handleChange}
             placeholder="e.g., America/New_York"
-          />
-        </label>
+            />
+          </label>
 
-        <label>
-          Notes
-          <textarea
-            name="notes"
+          <label>
+            Notes
+            <textarea
+              name="notes"
             value={equipmentForm.notes}
             onChange={handleChange}
             rows="3"
-          />
-        </label>
+            />
+          </label>
 
         <label className="checkbox-label">
           <input
@@ -4014,12 +3988,12 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
         </label>
 
         <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
-          <button type="submit" className="primary" disabled={loading}>
+            <button type="submit" className="primary" disabled={loading}>
             {loading ? "Saving..." : (equipmentToEdit && equipmentToEdit.id ? "Update" : "Create")}
-          </button>
+            </button>
           <button type="button" onClick={onBack}>Cancel</button>
-        </div>
-      </form>
+          </div>
+        </form>
     </div>
   );
 }
