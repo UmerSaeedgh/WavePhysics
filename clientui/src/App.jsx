@@ -691,6 +691,9 @@ function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onAdd
       }
     });
 
+  // Count active filters (search term and non-default sort order)
+  const activeFilterCount = [searchTerm, sortOrder !== "asc"].filter(Boolean).length;
+
   return (
     <div>
       <div className="card">
@@ -701,7 +704,7 @@ function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onAdd
               className="secondary" 
               onClick={() => setShowFilters(!showFilters)}
             >
-              {showFilters ? "Hide Filters" : "Filter"}
+              {showFilters ? "Hide Filters" : `Filter${activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}`}
             </button>
             <button className="primary" onClick={onAddClient}>+ Add New Client</button>
           </div>
@@ -1256,6 +1259,9 @@ function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRe
       }
     });
 
+  // Count active filters
+  const activeFilterCount = [searchTerm, sortOrder !== "asc"].filter(Boolean).length;
+
   return (
     <div>
       <div style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
@@ -1271,7 +1277,7 @@ function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRe
               className="secondary" 
               onClick={() => setShowFilters(!showFilters)}
             >
-              {showFilters ? "Hide Filters" : "Filter"}
+              {showFilters ? "Hide Filters" : `Filter${activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}`}
             </button>
             <button className="primary" onClick={onAddSite}>+ Add New Site</button>
           </div>
@@ -2630,6 +2636,20 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
   const [doneEquipment, setDoneEquipment] = useState(null);
   const [calculatedDueDate, setCalculatedDueDate] = useState("");
   const [doneInterval, setDoneInterval] = useState("");
+  
+  // Filter states
+  const [showFilters, setShowFilters] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [selectedSiteId, setSelectedSiteId] = useState("");
+  const [selectedEquipmentTypeId, setSelectedEquipmentTypeId] = useState("");
+  const [sortBy, setSortBy] = useState("name"); // "name" or "due_date"
+  const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
+  
+  // Data for dropdowns
+  const [clients, setClients] = useState([]);
+  const [sites, setSites] = useState([]);
+  const [equipmentTypes, setEquipmentTypes] = useState([]);
 
   useEffect(() => {
     if (scrollToEquipmentId && allEquipments.length > 0) {
@@ -2692,7 +2712,109 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
 
   useEffect(() => {
     fetchAllEquipments();
+    fetchClients();
+    fetchEquipmentTypes();
   }, []);
+
+  // Fetch clients and equipment types for filters
+  async function fetchClients() {
+    try {
+      const data = await apiCall("/clients");
+      setClients(data || []);
+    } catch (err) {
+      setClients([]);
+    }
+  }
+
+  async function fetchEquipmentTypes() {
+    try {
+      const data = await apiCall("/equipment-types?active_only=true");
+      setEquipmentTypes(data || []);
+    } catch (err) {
+      setEquipmentTypes([]);
+    }
+  }
+
+  // Fetch sites when client is selected
+  useEffect(() => {
+    if (selectedClientId) {
+      fetchSitesForClient(selectedClientId);
+    } else {
+      setSites([]);
+      setSelectedSiteId("");
+    }
+  }, [selectedClientId]);
+
+  async function fetchSitesForClient(clientId) {
+    try {
+      const data = await apiCall(`/sites?client_id=${clientId}`);
+      setSites(data || []);
+    } catch (err) {
+      setSites([]);
+    }
+  }
+
+  // Filter and sort equipments
+  const filteredAndSortedEquipments = allEquipments
+    .filter(equipment => {
+      // Search by name
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
+        if (!equipment.equipment_name?.toLowerCase().includes(searchLower)) {
+          return false;
+        }
+      }
+      
+      // Filter by client
+      if (selectedClientId) {
+        if (equipment.client_id !== parseInt(selectedClientId)) {
+          return false;
+        }
+      }
+      
+      // Filter by site
+      if (selectedSiteId) {
+        if (equipment.site_id !== parseInt(selectedSiteId)) {
+          return false;
+        }
+      }
+      
+      // Filter by equipment type
+      if (selectedEquipmentTypeId) {
+        if (equipment.equipment_type_id !== parseInt(selectedEquipmentTypeId)) {
+          return false;
+        }
+      }
+      
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "name") {
+        const nameA = (a.equipment_name || "").toLowerCase();
+        const nameB = (b.equipment_name || "").toLowerCase();
+        if (sortOrder === "asc") {
+          return nameA.localeCompare(nameB);
+        } else {
+          return nameB.localeCompare(nameA);
+        }
+      } else if (sortBy === "due_date") {
+        // Handle items without due dates - put them at the end
+        if (!a.due_date && !b.due_date) return 0;
+        if (!a.due_date) return 1; // a goes to end
+        if (!b.due_date) return -1; // b goes to end
+        
+        const dateA = new Date(a.due_date).getTime();
+        const dateB = new Date(b.due_date).getTime();
+        if (sortOrder === "asc") {
+          // Ascending = earliest date first (oldest to newest)
+          return dateA - dateB;
+        } else {
+          // Descending = latest date first (newest to oldest)
+          return dateB - dateA;
+        }
+      }
+      return 0;
+    });
 
   async function handleDeleteEquipment(equipmentId) {
     if (!window.confirm("Delete this equipment record?")) return;
@@ -2774,32 +2896,228 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
     setDoneInterval("");
   }
 
+  // Count active filters
+  const activeFilterCount = [
+    searchTerm,
+    selectedClientId,
+    selectedSiteId,
+    selectedEquipmentTypeId
+  ].filter(Boolean).length;
+
   return (
     <div>
       <div className="card">
         <div className="card-header">
-          <h2>All Equipments</h2>
-          <button className="primary" onClick={() => {
-            if (onNavigateToAddEquipment) {
-              onNavigateToAddEquipment(null);
-            }
-          }}>
-            + Add New Equipment
-          </button>
+          <h2>All Equipments ({filteredAndSortedEquipments.length})</h2>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button 
+              className="secondary" 
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              {showFilters ? "Hide Filters" : `Filter${activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}`}
+            </button>
+            <button className="primary" onClick={() => {
+              if (onNavigateToAddEquipment) {
+                onNavigateToAddEquipment(null);
+              }
+            }}>
+              + Add New Equipment
+            </button>
+          </div>
         </div>
+
+        {showFilters && (
+          <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <h3 style={{ margin: 0, fontSize: "1rem", color: "#2D3234" }}>Filters</h3>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setSearchTerm("");
+                  setSelectedClientId("");
+                  setSelectedSiteId("");
+                  setSelectedEquipmentTypeId("");
+                  setSortBy("name");
+                  setSortOrder("asc");
+                }}
+                style={{ 
+                  padding: "0.5rem 1rem",
+                  fontSize: "0.85rem",
+                  whiteSpace: "nowrap"
+                }}
+              >
+                Reset Filters
+              </button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                  Search by Name
+                </label>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search equipment name..."
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.9rem"
+                  }}
+                />
+              </div>
+              
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                  Client
+                </label>
+                <select
+                  value={selectedClientId}
+                  onChange={(e) => {
+                    setSelectedClientId(e.target.value);
+                    setSelectedSiteId("");
+                  }}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.9rem"
+                  }}
+                >
+                  <option value="">All Clients</option>
+                  {clients.map(client => (
+                    <option key={client.id} value={client.id.toString()}>
+                      {client.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                  Site
+                </label>
+                <select
+                  value={selectedSiteId}
+                  onChange={(e) => setSelectedSiteId(e.target.value)}
+                  disabled={!selectedClientId}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.9rem",
+                    backgroundColor: !selectedClientId ? "#f0f0f0" : "#fff"
+                  }}
+                >
+                  <option value="">All Sites</option>
+                  {sites.map(site => (
+                    <option key={site.id} value={site.id.toString()}>
+                      {site.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                  Equipment Type
+                </label>
+                <select
+                  value={selectedEquipmentTypeId}
+                  onChange={(e) => setSelectedEquipmentTypeId(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.9rem"
+                  }}
+                >
+                  <option value="">All Types</option>
+                  {equipmentTypes.map(type => (
+                    <option key={type.id} value={type.id.toString()}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                  Sort By
+                </label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.9rem"
+                  }}
+                >
+                  <option value="name">Name</option>
+                  <option value="due_date">Due Date</option>
+                </select>
+              </div>
+              
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                  Sort Order
+                </label>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button
+                    type="button"
+                    className={sortOrder === "asc" ? "primary" : "secondary"}
+                    onClick={() => setSortOrder("asc")}
+                    style={{ 
+                      padding: "0.5rem 1rem",
+                      fontSize: "0.85rem",
+                      whiteSpace: "nowrap",
+                      flex: 1
+                    }}
+                  >
+                    {sortBy === "name" ? "A-Z" : "Ascending"}
+                  </button>
+                  <button
+                    type="button"
+                    className={sortOrder === "desc" ? "primary" : "secondary"}
+                    onClick={() => setSortOrder("desc")}
+                    style={{ 
+                      padding: "0.5rem 1rem",
+                      fontSize: "0.85rem",
+                      whiteSpace: "nowrap",
+                      flex: 1
+                    }}
+                  >
+                    {sortBy === "name" ? "Z-A" : "Descending"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ padding: "1rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-            <h3 style={{ margin: 0 }}>All Equipments ({allEquipments.length})</h3>
+            <h3 style={{ margin: 0 }}>All Equipments ({filteredAndSortedEquipments.length})</h3>
             <button className="secondary" onClick={fetchAllEquipments}>Refresh</button>
           </div>
           {loading ? (
             <p>Loading...</p>
           ) : allEquipments.length === 0 ? (
             <p className="empty">No equipments found</p>
+          ) : filteredAndSortedEquipments.length === 0 ? (
+            <p className="empty">No equipments match your filters.</p>
           ) : (
             <ul className="list">
-              {allEquipments.map(equipment => {
+              {filteredAndSortedEquipments.map(equipment => {
                 return (
                   <li 
                     key={equipment.id} 
