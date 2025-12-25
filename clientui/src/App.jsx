@@ -24,7 +24,7 @@ function formatDate(dateString) {
 }
 
 function App() {
-  const [view, setView] = useState("clients"); // "clients", "client-sites", "site-details", "all-equipments", "upcoming", "overdue", "admin", "add-equipment", "edit-client", "edit-site", "edit-contact"
+  const [view, setView] = useState("clients"); // "clients", "client-sites", "all-equipments", "upcoming", "overdue", "admin", "add-equipment", "edit-client", "edit-site", "edit-contact"
   const [equipmentToEdit, setEquipmentToEdit] = useState(null); // Equipment record to edit when navigating to add-equipment page
   const [clientToEdit, setClientToEdit] = useState(null); // Client to edit when navigating to edit-client page
   const [siteToEdit, setSiteToEdit] = useState(null); // Site to edit when navigating to edit-site page
@@ -451,9 +451,12 @@ function App() {
             clientEquipments={clientEquipments}
             onRefreshSites={() => fetchSites(selectedClient.id)}
             onRefreshEquipments={() => fetchClientEquipments(selectedClient.id)}
-            onSiteClick={(site) => {
-              setSelectedSite(site);
-              setView("site-details");
+            onSiteClick={async (site) => {
+              setSiteToEdit(site);
+              setPreviousView("client-sites");
+              setView("edit-site");
+              // Fetch contacts for the site
+              await fetchSiteContacts(site.id);
             }}
             onAddSite={() => {
               setSiteToEdit(null);
@@ -519,7 +522,7 @@ function App() {
               }
             }}
             onSuccess={async () => {
-              const returnView = previousView || "site-details";
+              const returnView = previousView || "edit-site";
               const context = contactContext; // Save context before clearing
               setContactToEdit(null);
               setContactContext(null);
@@ -533,32 +536,10 @@ function App() {
             onBack={() => {
               setContactToEdit(null);
               setContactContext(null);
-              const returnView = previousView || "site-details";
+              const returnView = previousView || "edit-site";
               setPreviousView(null);
               setView(returnView);
             }}
-          />
-        )}
-
-        {view === "site-details" && selectedSite && selectedClient && (
-          <SiteDetailsView
-            client={selectedClient}
-            site={selectedSite}
-            clientEquipments={clientEquipments}
-            contactLinks={contactLinks}
-            onRefreshEquipments={() => fetchClientEquipments(selectedClient.id)}
-            onRefreshContacts={() => fetchSiteContacts(selectedSite.id)}
-            onBack={() => {
-              setView("client-sites");
-              setSelectedSite(null);
-            }}
-            onNavigateToAddEquipment={(equipment) => {
-              setEquipmentToEdit(equipment);
-              setPreviousView("site-details");
-              setView("add-equipment");
-            }}
-            apiCall={apiCall}
-            setError={setError}
           />
         )}
 
@@ -655,9 +636,9 @@ function App() {
               setEquipmentToEdit(null);
               setPreviousView(null);
               setView(returnView);
-              // Refresh data if coming from site-details
-              if (returnView === "site-details" && selectedSite) {
-                // SiteDetailsView will refresh its own data
+              // Refresh data if coming from edit-site
+              if (returnView === "edit-site" && siteToEdit) {
+                await fetchSiteContacts(siteToEdit.id);
               }
             }}
           />
@@ -1278,128 +1259,12 @@ function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRe
                   </div>
                 </div>
                 <div className="list-actions" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => onEditSite(site)}>Edit</button>
                   <button className="danger" onClick={() => handleDelete(site.id)}>Delete</button>
                 </div>
               </li>
             ))}
           </ul>
         )}
-      </div>
-    </div>
-  );
-}
-
-// Site Details View - Shows equipment records and contacts for a site
-function SiteDetailsView({ client, site, clientEquipments, contactLinks, onRefreshEquipments, onRefreshContacts, onBack, onNavigateToAddEquipment, apiCall, setError }) {
-  const [siteEquipmentRecords, setSiteEquipmentRecords] = useState([]);
-  const [loading, setLoading] = useState(false);
-  async function fetchSiteEquipmentRecords() {
-    setLoading(true);
-    setError("");
-    try {
-      // Fetch all equipment records for the client, then filter by site
-      const allRecords = await apiCall(`/equipment-records?client_id=${client.id}`);
-      const filtered = Array.isArray(allRecords) 
-        ? allRecords.filter(record => record.site_id === site.id)
-        : [];
-      setSiteEquipmentRecords(filtered);
-    } catch (err) {
-      setError(err.message || "Failed to load equipment records");
-      setSiteEquipmentRecords([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    fetchSiteEquipmentRecords();
-    onRefreshEquipments();
-    onRefreshContacts();
-  }, [site.id, client.id]);
-
-  async function handleDeleteEquipmentRecord(recordId) {
-    if (!window.confirm("Delete this equipment record?")) return;
-    try {
-      await apiCall(`/equipment-records/${recordId}`, { method: "DELETE" });
-      await fetchSiteEquipmentRecords();
-    } catch (err) {
-      // error already set
-    }
-  }
-
-  return (
-    <div>
-      <div style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
-        <button className="secondary" onClick={onBack}>← Back to Sites</button>
-        <h2 style={{ margin: 0 }}>{site.name} - Details</h2>
-      </div>
-
-      <div className="card" style={{ marginBottom: "1rem" }}>
-        <div className="card-header">
-          <h3>Equipment Records ({siteEquipmentRecords.length})</h3>
-          <button className="primary" onClick={() => {
-            if (onNavigateToAddEquipment && client && site) {
-              onNavigateToAddEquipment({ 
-                client_id: client.id, 
-                site_id: site.id,
-                client: client,
-                site: site
-              });
-            }
-          }} style={{ marginTop: 0 }}>+ Add New Equipment</button>
-        </div>
-
-        {loading ? (
-          <p className="empty">Loading equipment records...</p>
-        ) : siteEquipmentRecords.length === 0 ? (
-          <p className="empty">No equipment records yet. Click "Add New Equipment" to get started.</p>
-        ) : (
-          <div style={{ maxHeight: "420px", overflowY: "auto", overflowX: "hidden" }}>
-            <ul className="list">
-              {siteEquipmentRecords.map(record => (
-                <li key={record.id} className="list-item">
-                  <div className="list-main">
-                    <div className="list-title">
-                      {record.equipment_name || "Unnamed Equipment"}
-                    </div>
-                    <div className="list-subtitle">
-                      {record.equipment_type_name && `Type: ${record.equipment_type_name} • `}
-                      {record.anchor_date && `Anchor: ${formatDate(record.anchor_date)}`}
-                      {record.due_date && ` • Due: ${formatDate(record.due_date)}`}
-                      {record.interval_weeks && ` • Interval: ${record.interval_weeks} weeks`}
-                    </div>
-                  </div>
-                  <div className="list-actions" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => {
-                      if (onNavigateToAddEquipment) {
-                        onNavigateToAddEquipment(record);
-                      }
-                    }}>Edit</button>
-                    <button className="danger" onClick={() => handleDeleteEquipmentRecord(record.id)}>Delete</button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-
-      <div style={{ marginTop: "1rem" }}>
-        <ContactManagementSection
-          site={site}
-          client={client}
-          contactLinks={contactLinks}
-          onRefreshContacts={onRefreshContacts}
-          onEditContact={(link) => {
-            setContactToEdit(link);
-            setContactContext({ site: site, client: client });
-            setPreviousView("site-details");
-            setView("edit-contact");
-          }}
-          apiCall={apiCall}
-          setError={setError}
-        />
       </div>
     </div>
   );
