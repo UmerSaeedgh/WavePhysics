@@ -23,8 +23,90 @@ function formatDate(dateString) {
   }
 }
 
+// Login View Component
+function LoginView({ onLogin, error }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loginError, setLoginError] = useState(error || "");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setLoginError("");
+    try {
+      await onLogin(username, password);
+    } catch (err) {
+      setLoginError(err.message || "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="app" style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", backgroundColor: "#f5f5f5" }}>
+      <div className="card" style={{ width: "100%", maxWidth: "400px", padding: "2rem" }}>
+        <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+          <img 
+            src={wavePhysicsLogo} 
+            alt="WAVE PHYSICS" 
+            style={{ height: "60px", maxWidth: "250px", objectFit: "contain", marginBottom: "1rem" }}
+          />
+          <h2>Login</h2>
+        </div>
+        {loginError && (
+          <div className="error-banner" style={{ marginBottom: "1rem" }}>
+            {loginError}
+          </div>
+        )}
+        <form onSubmit={handleSubmit}>
+          <label>
+            Username
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              autoFocus
+              style={{ width: "100%", padding: "0.75rem", marginTop: "0.5rem" }}
+            />
+          </label>
+          <label style={{ marginTop: "1rem" }}>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              style={{ width: "100%", padding: "0.75rem", marginTop: "0.5rem" }}
+            />
+          </label>
+          <button
+            type="submit"
+            className="primary"
+            disabled={loading}
+            style={{ width: "100%", marginTop: "1.5rem", padding: "0.75rem" }}
+          >
+            {loading ? "Logging in..." : "Login"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function App() {
-  const [view, setView] = useState("clients"); // "clients", "client-sites", "all-equipments", "upcoming", "overdue", "admin", "add-equipment", "edit-client", "edit-site", "edit-contact"
+  // Authentication state
+  const [authToken, setAuthToken] = useState(() => {
+    return localStorage.getItem("authToken") || null;
+  });
+  const [currentUser, setCurrentUser] = useState(() => {
+    const stored = localStorage.getItem("currentUser");
+    return stored ? JSON.parse(stored) : null;
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState(!!authToken);
+
+  const [view, setView] = useState("clients"); // "clients", "client-sites", "all-equipments", "upcoming", "overdue", "admin", "user", "add-equipment", "edit-client", "edit-site", "edit-contact"
   const [equipmentToEdit, setEquipmentToEdit] = useState(null); // Equipment record to edit when navigating to add-equipment page
   const [clientToEdit, setClientToEdit] = useState(null); // Client to edit when navigating to edit-client page
   const [siteToEdit, setSiteToEdit] = useState(null); // Site to edit when navigating to edit-site page
@@ -125,11 +207,66 @@ function App() {
     }
   }
 
+  // Authentication functions
+  async function handleLogin(username, password) {
+    try {
+      const response = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: "Login failed" }));
+        throw new Error(errorData.detail || "Invalid username or password");
+      }
+
+      const data = await response.json();
+      setAuthToken(data.token);
+      setCurrentUser(data.user);
+      setIsAuthenticated(true);
+      localStorage.setItem("authToken", data.token);
+      localStorage.setItem("currentUser", JSON.stringify(data.user));
+      setError("");
+      return data;
+    } catch (err) {
+      setError(err.message || "Login failed");
+      throw err;
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      if (authToken) {
+        await apiCall("/auth/logout", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+      }
+    } catch (err) {
+      console.error("Logout error:", err);
+    } finally {
+      setAuthToken(null);
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      localStorage.removeItem("authToken");
+      localStorage.removeItem("currentUser");
+      setView("clients");
+      // Refresh the page to clear all state and show login page
+      window.location.reload();
+    }
+  }
+
   // API Functions
   async function apiCall(endpoint, options = {}) {
     try {
+      const headers = { "Content-Type": "application/json", ...options.headers };
+      if (authToken) {
+        headers["Authorization"] = `Bearer ${authToken}`;
+      }
+      
       const res = await fetch(`${API_BASE}${endpoint}`, {
-        headers: { "Content-Type": "application/json", ...options.headers },
+        headers,
         ...options,
       });
       
@@ -139,6 +276,11 @@ function App() {
       }
       
       if (!res.ok) {
+        // Handle 401 Unauthorized - token expired or invalid
+        if (res.status === 401) {
+          handleLogout();
+          throw new Error("Session expired. Please login again.");
+        }
         const text = await res.text();
         const errorMsg = text || `HTTP ${res.status}: ${res.statusText}`;
         throw new Error(errorMsg);
@@ -313,6 +455,11 @@ function App() {
     }
   }
 
+  // Login Component
+  if (!isAuthenticated) {
+    return <LoginView onLogin={handleLogin} error={error} />;
+  }
+
   return (
     <div className="app">
       <header className="topbar">
@@ -356,7 +503,8 @@ function App() {
             </>
           )}
         </nav>
-        <nav className="tabs" style={{ marginTop: "0" }}>
+        <nav className="tabs" style={{ marginTop: "0", display: "flex", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
           <button
             className={view === "clients" ? "active" : ""}
             onClick={() => {
@@ -365,32 +513,33 @@ function App() {
               setSelectedSite(null);
             }}
           >
-            Clients ({clients.length})
+              Clients ({clients.length})
           </button>
           <button
-            className={view === "all-equipments" ? "active" : ""}
-            onClick={() => setView("all-equipments")}
+              className={view === "all-equipments" ? "active" : ""}
+              onClick={() => setView("all-equipments")}
           >
-            All Equipments ({allEquipments.length})
+              All Equipments ({allEquipments.length})
           </button>
           <button
-            className={view === "upcoming" ? "active" : ""}
-            onClick={() => setView("upcoming")}
+              className={view === "upcoming" ? "active" : ""}
+              onClick={() => setView("upcoming")}
           >
-            Upcoming ({upcoming.length})
+              Upcoming ({upcoming.length})
           </button>
-          <button
-            className={view === "overdue" ? "active" : ""}
-            onClick={() => setView("overdue")}
-          >
-            Overdue ({overdue.length})
-          </button>
-          <button
-            className={view === "admin" ? "active" : ""}
-            onClick={() => setView("admin")}
-          >
-            Admin
-          </button>
+            <button
+              className={view === "overdue" ? "active" : ""}
+              onClick={() => setView("overdue")}
+            >
+              Overdue ({overdue.length})
+            </button>
+            <button
+              className={view === "user" ? "active" : ""}
+              onClick={() => setView("user")}
+            >
+              User
+            </button>
+          </div>
         </nav>
       </header>
 
@@ -646,11 +795,184 @@ function App() {
           />
         )}
 
-        {view === "admin" && (
-          <AdminTab apiCall={apiCall} setError={setError} />
+        {view === "user" && (
+          <UserView 
+            apiCall={apiCall} 
+            setError={setError} 
+            currentUser={currentUser}
+            onLogout={handleLogout}
+          />
         )}
 
       </main>
+    </div>
+  );
+}
+
+// User View Component
+function UserView({ apiCall, setError, currentUser, onLogout }) {
+  const [userTab, setUserTab] = useState("settings"); // "settings" or "admin"
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changing, setChanging] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+
+  async function handleChangePassword(e) {
+    e.preventDefault();
+    setError("");
+    setSuccessMessage("");
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setError("All fields are required");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError("New passwords do not match");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError("New password must be at least 6 characters long");
+      return;
+    }
+
+    setChanging(true);
+    try {
+      await apiCall("/auth/change-password", {
+        method: "PUT",
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
+      setSuccessMessage("Password changed successfully!");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      setError(err.message || "Failed to change password");
+    } finally {
+      setChanging(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-header">
+          <h2>User Settings</h2>
+        </div>
+        
+        <nav className="tabs" style={{ marginBottom: "1rem", padding: "0 1rem", paddingTop: "1rem" }}>
+          <button
+            className={userTab === "settings" ? "active" : ""}
+            onClick={() => setUserTab("settings")}
+          >
+            Settings
+          </button>
+          {currentUser?.is_admin && (
+            <button
+              className={userTab === "admin" ? "active" : ""}
+              onClick={() => setUserTab("admin")}
+            >
+              Admin
+            </button>
+          )}
+        </nav>
+        
+        {userTab === "settings" && (
+          <div style={{ padding: "1rem" }}>
+            <div style={{ marginBottom: "2rem" }}>
+              <h3>User Information</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                <div>
+                  <strong>Username:</strong> {currentUser?.username}
+                </div>
+                <div>
+                  <strong>Role:</strong> {currentUser?.is_admin ? "Admin" : "User"}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ borderTop: "1px solid #8193A4", paddingTop: "2rem" }}>
+              <h3>Change Password</h3>
+              {successMessage && (
+                <div style={{ 
+                  background: "rgba(215, 229, 216, 0.3)", 
+                  border: "1px solid #8193A4", 
+                  color: "#2D3234", 
+                  padding: "0.75rem 1rem", 
+                  borderRadius: "0.5rem", 
+                  marginBottom: "1rem" 
+                }}>
+                  {successMessage}
+                </div>
+              )}
+              <form onSubmit={handleChangePassword} style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "400px" }}>
+                <label>
+                  Current Password
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    required
+                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                  />
+                </label>
+                <label>
+                  New Password
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                  />
+                </label>
+                <label>
+                  Confirm New Password
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="primary"
+                  disabled={changing}
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  {changing ? "Changing..." : "Change Password"}
+                </button>
+              </form>
+            </div>
+
+            <div style={{ borderTop: "1px solid #8193A4", paddingTop: "2rem", marginTop: "2rem" }}>
+              <h3>Logout</h3>
+              <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
+                Sign out of your account
+              </p>
+              <button
+                onClick={onLogout}
+                className="secondary"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        )}
+
+        {userTab === "admin" && currentUser?.is_admin && (
+          <AdminTab apiCall={apiCall} setError={setError} currentUser={currentUser} />
+        )}
+      </div>
     </div>
   );
 }
@@ -4001,8 +4323,11 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
 // Deprecated QuickViewsTab removed - functionality moved to separate views (AllEquipmentsView, UpcomingView, OverdueView)
 
 // Admin Tab
-function AdminTab({ apiCall, setError }) {
-  const [adminTab, setAdminTab] = useState("utilities"); // "utilities" or "equipments"
+function AdminTab({ apiCall, setError, currentUser }) {
+  const [adminTab, setAdminTab] = useState("utilities");
+  const [users, setUsers] = useState([]);
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [newUser, setNewUser] = useState({ username: "", password: "", is_admin: false }); // "utilities" or "equipments"
   const [uploading, setUploading] = useState(false);
   const [uploadingTemporary, setUploadingTemporary] = useState(false);
   const fileInputRef = useRef(null);
@@ -4139,6 +4464,55 @@ function AdminTab({ apiCall, setError }) {
     }
   }
 
+  // User management functions
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  async function fetchUsers() {
+    setLoadingUsers(true);
+    try {
+      const data = await apiCall("/users");
+      setUsers(data || []);
+    } catch (err) {
+      setError(err.message || "Failed to fetch users");
+    } finally {
+      setLoadingUsers(false);
+    }
+  }
+
+  useEffect(() => {
+    if (adminTab === "users" && currentUser?.is_admin) {
+      fetchUsers();
+    }
+  }, [adminTab, currentUser]);
+
+  async function handleCreateUser() {
+    if (!newUser.username || !newUser.password) {
+      setError("Username and password are required");
+      return;
+    }
+    try {
+      await apiCall("/users", {
+        method: "POST",
+        body: JSON.stringify(newUser),
+      });
+      setNewUser({ username: "", password: "", is_admin: false });
+      setShowAddUser(false);
+      await fetchUsers();
+    } catch (err) {
+      setError(err.message || "Failed to create user");
+    }
+  }
+
+  async function handleDeleteUser(userId) {
+    if (!window.confirm("Are you sure you want to delete this user?")) return;
+    try {
+      await apiCall(`/users/${userId}`, { method: "DELETE" });
+      await fetchUsers();
+    } catch (err) {
+      setError(err.message || "Failed to delete user");
+    }
+  }
+
   return (
     <div className="admin-tab">
       <nav className="tabs" style={{ marginBottom: "1rem" }}>
@@ -4154,6 +4528,14 @@ function AdminTab({ apiCall, setError }) {
         >
           Equipments
         </button>
+        {currentUser?.is_admin && (
+          <button
+            className={adminTab === "users" ? "active" : ""}
+            onClick={() => setAdminTab("users")}
+          >
+            Users
+          </button>
+        )}
       </nav>
 
       {adminTab === "utilities" && (
@@ -4247,6 +4629,95 @@ function AdminTab({ apiCall, setError }) {
           <div style={{ padding: "2rem" }}>
             <p className="empty">This section is coming soon.</p>
           </div>
+        </div>
+      )}
+
+      {adminTab === "users" && currentUser?.is_admin && (
+      <div className="card">
+        <div className="card-header">
+            <h2>User Management</h2>
+            <button
+              className="primary"
+              onClick={() => setShowAddUser(!showAddUser)}
+            >
+              {showAddUser ? "Cancel" : "+ Add User"}
+            </button>
+      </div>
+
+          {showAddUser && (
+            <div style={{ padding: "1rem", borderBottom: "1px solid #ddd" }}>
+              <h3>Add New User</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <label>
+                  Username
+                  <input
+                    type="text"
+                    value={newUser.username}
+                    onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                    required
+                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                  />
+                </label>
+                <label>
+                  Password
+                  <input
+                    type="password"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    required
+                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                  />
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={newUser.is_admin}
+                    onChange={(e) => setNewUser({ ...newUser, is_admin: e.target.checked })}
+                  />
+                  Admin User
+                </label>
+                <button
+                  className="primary"
+                  onClick={handleCreateUser}
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  Create User
+                </button>
+        </div>
+            </div>
+          )}
+
+          <div style={{ padding: "1rem" }}>
+            {loadingUsers ? (
+              <p>Loading users...</p>
+            ) : users.length === 0 ? (
+              <p className="empty">No users found</p>
+            ) : (
+              <ul className="list">
+                {users.map((user) => (
+                  <li key={user.id} className="list-item">
+                    <div className="list-main">
+                      <div className="list-title">
+                        {user.username} {user.is_admin && <span style={{ color: "#8193A4", fontSize: "0.875rem" }}>(Admin)</span>}
+                      </div>
+                      <div className="list-subtitle">
+                        Created: {new Date(user.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    {user.id !== currentUser.id && (
+                      <button
+                        className="secondary"
+                        onClick={() => handleDeleteUser(user.id)}
+                        style={{ marginLeft: "auto" }}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+        )}
+      </div>
         </div>
       )}
     </div>

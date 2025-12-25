@@ -8,7 +8,11 @@ from fastapi.responses import Response
 import sqlite3
 import pandas as pd
 import io
-from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File
+import hashlib
+import secrets
+from datetime import datetime, timedelta
+from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from sql import connect_db, init_schema
@@ -31,6 +35,59 @@ def get_db():
     finally:
         conn.close()
 
+security = HTTPBearer()
+
+# Simple token storage (in production, use Redis or database)
+active_tokens = {}  # token -> {user_id, username, is_admin, expires_at}
+
+def hash_password(password: str) -> str:
+    """Simple password hashing using SHA256 + salt (for production, use bcrypt)"""
+    salt = secrets.token_hex(16)
+    return f"{salt}:{hashlib.sha256((salt + password).encode()).hexdigest()}"
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify password against hash"""
+    try:
+        salt, stored_hash = password_hash.split(":", 1)
+        computed_hash = hashlib.sha256((salt + password).encode()).hexdigest()
+        return computed_hash == stored_hash
+    except:
+        return False
+
+def create_token(user_id: int, username: str, is_admin: bool) -> str:
+    """Create a session token"""
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now() + timedelta(days=7)  # 7 day expiry
+    active_tokens[token] = {
+        "user_id": user_id,
+        "username": username,
+        "is_admin": bool(is_admin),
+        "expires_at": expires_at
+    }
+    return token
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: sqlite3.Connection = Depends(get_db)):
+    """Get current authenticated user from token"""
+    token = credentials.credentials
+    
+    if token not in active_tokens:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    token_data = active_tokens[token]
+    
+    # Check if token expired
+    if datetime.now() > token_data["expires_at"]:
+        del active_tokens[token]
+        raise HTTPException(status_code=401, detail="Token expired")
+    
+    return token_data
+
+def get_current_admin_user(current_user: dict = Depends(get_current_user)):
+    """Ensure current user is admin"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
 
 @app.on_event("startup")
 def on_startup():
@@ -38,6 +95,16 @@ def on_startup():
     conn = connect_db()
     try:
         init_schema(conn)
+        # Create default admin user if no users exist
+        user_count = conn.execute("SELECT COUNT(*) as count FROM users").fetchone()['count']
+        if user_count == 0:
+            admin_password_hash = hash_password("admin")
+            conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
+                ("admin", admin_password_hash, 1)
+            )
+            conn.commit()
+            print("Created default admin user: username='admin', password='admin'")
     finally:
         conn.close()
 
@@ -45,6 +112,177 @@ def on_startup():
 @app.get("/")
 def root():
     return {"message": "Service Schedule Manager API", "docs": "/docs", "status": "running"}
+
+
+# Authentication Models
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginResponse(BaseModel):
+    token: str
+    user: dict
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    is_admin: bool = False
+
+class UserRead(BaseModel):
+    id: int
+    username: str
+    is_admin: bool
+    created_at: str
+
+# Authentication Endpoints
+@app.post("/auth/login", response_model=LoginResponse)
+def login(payload: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
+    """Login and get authentication token"""
+    user = db.execute(
+        "SELECT id, username, password_hash, is_admin FROM users WHERE username = ?",
+        (payload.username,)
+    ).fetchone()
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    if not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    token = create_token(user["id"], user["username"], user["is_admin"])
+    
+    return LoginResponse(
+        token=token,
+        user={
+            "id": user["id"],
+            "username": user["username"],
+            "is_admin": bool(user["is_admin"])
+        }
+    )
+
+@app.post("/auth/logout")
+def logout(current_user: dict = Depends(get_current_user)):
+    """Logout and invalidate token"""
+    # In a real implementation, you'd need to pass the token to invalidate it
+    # For now, tokens expire automatically
+    return {"message": "Logged out successfully"}
+
+@app.get("/auth/me")
+def get_current_user_info(current_user: dict = Depends(get_current_user)):
+    """Get current authenticated user info"""
+    return {
+        "id": current_user["user_id"],
+        "username": current_user["username"],
+        "is_admin": current_user["is_admin"]
+    }
+
+# User Management Endpoints (Admin only)
+@app.get("/users", response_model=List[UserRead])
+def list_users(current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """List all users (admin only)"""
+    rows = db.execute(
+        "SELECT id, username, is_admin, created_at FROM users ORDER BY created_at DESC"
+    ).fetchall()
+    return [UserRead(**dict(row)) for row in rows]
+
+@app.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+def create_user(payload: UserCreate, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Create a new user (admin only)"""
+    password_hash = hash_password(payload.password)
+    try:
+        cur = db.execute(
+            "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
+            (payload.username, password_hash, 1 if payload.is_admin else 0)
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    row = db.execute(
+        "SELECT id, username, is_admin, created_at FROM users WHERE id = ?",
+        (cur.lastrowid,)
+    ).fetchone()
+    return UserRead(**dict(row))
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: int, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Delete a user (admin only)"""
+    # Prevent deleting yourself
+    if user_id == current_user["user_id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    
+    result = db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    db.commit()
+    
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {"message": "User deleted successfully"}
+
+# Change password endpoint
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.put("/auth/change-password")
+def change_password(payload: ChangePasswordRequest, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    """Change current user's password"""
+    user = db.execute(
+        "SELECT id, password_hash FROM users WHERE id = ?",
+        (current_user["user_id"],)
+    ).fetchone()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Verify current password
+    if not verify_password(payload.current_password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    
+    # Update password
+    new_password_hash = hash_password(payload.new_password)
+    db.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (new_password_hash, current_user["user_id"])
+    )
+    db.commit()
+    
+    # Invalidate all tokens for this user (force re-login)
+    global active_tokens
+    active_tokens = {token: data for token, data in active_tokens.items() if data["user_id"] != current_user["user_id"]}
+    
+    return {"message": "Password changed successfully. Please login again."}
+
+# Emergency admin password reset endpoint (for development/testing only)
+# WARNING: Remove or secure this endpoint in production!
+class ResetPasswordRequest(BaseModel):
+    username: str
+    new_password: str
+
+@app.post("/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: sqlite3.Connection = Depends(get_db)):
+    """Reset password for a user (development only - remove in production!)"""
+    user = db.execute(
+        "SELECT id, username FROM users WHERE username = ?",
+        (payload.username,)
+    ).fetchone()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Update password
+    new_password_hash = hash_password(payload.new_password)
+    db.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (new_password_hash, user["id"])
+    )
+    db.commit()
+    
+    # Invalidate all tokens for this user
+    global active_tokens
+    active_tokens = {token: data for token, data in active_tokens.items() if data["user_id"] != user["id"]}
+    
+    return {"message": f"Password reset successfully for user: {payload.username}"}
 
 
 class ClientCreate(BaseModel):

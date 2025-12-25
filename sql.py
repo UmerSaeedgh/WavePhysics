@@ -2,6 +2,8 @@ from pathlib import Path
 import os
 import sqlite3
 import datetime as dt
+import hashlib
+import secrets
 
 
 DB_PATH = Path(os.getenv("DATABASE_PATH", "data/WaveClients.db"))
@@ -151,6 +153,15 @@ def init_schema(conn):
           active             INTEGER NOT NULL DEFAULT 1,
           is_custom          INTEGER NOT NULL DEFAULT 0,  -- 0 = default, 1 = custom
           UNIQUE(client_id, name)
+        );
+
+        -- Users
+        CREATE TABLE IF NOT EXISTS users (
+          id           INTEGER PRIMARY KEY,
+          username     TEXT NOT NULL UNIQUE,
+          password_hash TEXT NOT NULL,
+          is_admin     INTEGER NOT NULL DEFAULT 0,
+          created_at   TEXT NOT NULL DEFAULT (datetime('now'))
         );
         """
     )
