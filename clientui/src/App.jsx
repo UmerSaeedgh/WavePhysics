@@ -54,6 +54,10 @@ function App() {
   useEffect(() => {
     fetchClients();
     fetchEquipmentTypes();
+    // Fetch counts silently (without showing loading state)
+    fetchAllEquipments(true);
+    fetchUpcoming(true);
+    fetchOverdue(true);
   }, []);
 
   // Fetch sites when a client is selected
@@ -93,19 +97,19 @@ function App() {
     }
   }, [view]);
 
-  async function fetchOverdue() {
-    setLoading(true);
-    setError("");
+  async function fetchOverdue(silent = false) {
+    if (!silent) setLoading(true);
+    if (!silent) setError("");
     try {
       const data = await apiCall("/equipment-records/overdue").catch(() => []);
       setOverdue(Array.isArray(data) ? data : []);
     } catch (err) {
       const errorMessage = err.message || "Failed to load data";
-      setError(errorMessage);
-      console.error("Error fetching data:", err);
+      if (!silent) setError(errorMessage);
+      if (!silent) console.error("Error fetching data:", err);
       setOverdue([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
@@ -262,27 +266,27 @@ function App() {
   }
 
 
-  async function fetchAllEquipments() {
-    setLoading(true);
-    setError(""); // Clear any previous errors before fetching
+  async function fetchAllEquipments(silent = false) {
+    if (!silent) setLoading(true);
+    if (!silent) setError(""); // Clear any previous errors before fetching
     try {
       const data = await apiCall("/equipment-records");
       setAllEquipments(data || []);
     } catch (err) {
       // Only set error if it's a real error, not just empty response
       const errorMsg = err.message || "Failed to fetch equipments";
-      if (!errorMsg.includes("404") && !errorMsg.includes("No equipments")) {
+      if (!silent && !errorMsg.includes("404") && !errorMsg.includes("No equipments")) {
         setError(errorMsg);
       }
       setAllEquipments([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
-  async function fetchUpcoming() {
-    setLoading(true);
-    setError("");
+  async function fetchUpcoming(silent = false) {
+    if (!silent) setLoading(true);
+    if (!silent) setError("");
     try {
       let url = "/equipment-records/upcoming";
       
@@ -304,10 +308,10 @@ function App() {
       setUpcoming(Array.isArray(data) ? data : []);
     } catch (err) {
       const errorMessage = err.message || "Failed to load upcoming data";
-      setError(errorMessage);
-      console.error("Error fetching upcoming data:", err);
+      if (!silent) setError(errorMessage);
+      if (!silent) console.error("Error fetching upcoming data:", err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
@@ -363,25 +367,25 @@ function App() {
               setSelectedSite(null);
             }}
           >
-            Clients
+            Clients ({clients.length})
           </button>
           <button
             className={view === "all-equipments" ? "active" : ""}
             onClick={() => setView("all-equipments")}
           >
-            All Equipments
+            All Equipments ({allEquipments.length})
           </button>
           <button
             className={view === "upcoming" ? "active" : ""}
             onClick={() => setView("upcoming")}
           >
-            Upcoming
+            Upcoming ({upcoming.length})
           </button>
           <button
             className={view === "overdue" ? "active" : ""}
             onClick={() => setView("overdue")}
           >
-            Overdue
+            Overdue ({overdue.length})
           </button>
           <button
             className={view === "admin" ? "active" : ""}
@@ -3105,8 +3109,7 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
         )}
 
         <div style={{ padding: "1rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-            <h3 style={{ margin: 0 }}>All Equipments ({filteredAndSortedEquipments.length})</h3>
+          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: "1rem" }}>
             <button className="secondary" onClick={fetchAllEquipments}>Refresh</button>
           </div>
           {loading ? (
