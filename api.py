@@ -1088,13 +1088,8 @@ def get_upcoming_equipment_records(
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-               WHERE 1=1"""
-    
-    # For non-admin users, only show active equipment
-    if not current_user.get("is_admin"):
-        query += " AND er.active = 1"
-    
-    query += """ AND (er.due_date IS NOT NULL AND er.due_date >= ? AND er.due_date <= ?)
+               WHERE er.active = 1 
+                 AND (er.due_date IS NOT NULL AND er.due_date >= ? AND er.due_date <= ?)
                ORDER BY er.due_date"""
     
     cur = db.execute(query, (start_date_obj.isoformat(), end_date_obj.isoformat()))
@@ -1124,13 +1119,8 @@ def get_overdue_equipment_records(
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-               WHERE 1=1"""
-    
-    # For non-admin users, only show active equipment
-    if not current_user.get("is_admin"):
-        query += " AND er.active = 1"
-    
-    query += """ AND er.due_date IS NOT NULL 
+               WHERE er.active = 1 
+                 AND er.due_date IS NOT NULL 
                  AND er.due_date < ?
                ORDER BY er.due_date"""
     
@@ -1188,6 +1178,14 @@ def create_equipment_record(payload: EquipmentRecordCreate, db: sqlite3.Connecti
     if equipment_type_row is None:
         raise HTTPException(status_code=404, detail="Equipment type not found")
     
+    # Check for duplicate equipment name in the same site
+    existing = db.execute(
+        "SELECT id FROM equipment_record WHERE site_id = ? AND equipment_name = ?",
+        (payload.site_id, payload.equipment_name)
+    ).fetchone()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Equipment with name '{payload.equipment_name}' already exists in this site")
+    
     try:
         cur = db.execute(
             "INSERT INTO equipment_record (client_id, site_id, equipment_type_id, equipment_name, anchor_date, due_date, interval_weeks, lead_weeks, active, notes, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1202,10 +1200,11 @@ def create_equipment_record(payload: EquipmentRecordCreate, db: sqlite3.Connecti
 
 @app.put("/equipment-records/{equipment_record_id}", response_model=EquipmentRecordRead)
 def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUpdate, db: sqlite3.Connection = Depends(get_db)):
-    row = db.execute("SELECT id FROM equipment_record WHERE id = ?", (equipment_record_id,)).fetchone()
-    if row is None:
+    # Get current equipment record to check site_id and equipment_name
+    current_record = db.execute("SELECT site_id, equipment_name, client_id FROM equipment_record WHERE id = ?", (equipment_record_id,)).fetchone()
+    if current_record is None:
         raise HTTPException(status_code=404, detail="Equipment record not found")
-
+    
     # Verify equipment type if being updated
     if payload.equipment_type_id is not None:
         equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (payload.equipment_type_id,)).fetchone()
@@ -1217,10 +1216,20 @@ def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUp
         site_row = db.execute("SELECT id, client_id FROM sites WHERE id = ?", (payload.site_id,)).fetchone()
         if site_row is None:
             raise HTTPException(status_code=404, detail="Site not found")
-        # Get current record to check client_id
-        current_record = db.execute("SELECT client_id FROM equipment_record WHERE id = ?", (equipment_record_id,)).fetchone()
-        if current_record and site_row['client_id'] != current_record['client_id']:
+        if site_row['client_id'] != current_record['client_id']:
             raise HTTPException(status_code=400, detail="Site does not belong to the same client")
+    
+    # Check for duplicate equipment name in the same site (if name or site is being updated)
+    site_id_to_check = payload.site_id if payload.site_id is not None else current_record['site_id']
+    equipment_name_to_check = payload.equipment_name if payload.equipment_name is not None else current_record['equipment_name']
+    
+    if payload.equipment_name is not None or payload.site_id is not None:
+        existing = db.execute(
+            "SELECT id FROM equipment_record WHERE site_id = ? AND equipment_name = ? AND id != ?",
+            (site_id_to_check, equipment_name_to_check, equipment_record_id)
+        ).fetchone()
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Equipment with name '{equipment_name_to_check}' already exists in this site")
 
     fields = []
     values = []

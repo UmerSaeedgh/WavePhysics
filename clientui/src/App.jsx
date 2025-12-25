@@ -743,6 +743,7 @@ function App() {
             setLoading={setLoading}
             scrollToEquipmentId={scrollToEquipmentId}
             onScrollComplete={() => setScrollToEquipmentId(null)}
+            currentUser={currentUser}
             onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment
@@ -3483,33 +3484,46 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
         ) : (
           <ul className="list">
               {filteredAndSortedEquipments.map(equipment => {
-                const isInactive = !equipment.active;
-                const itemStyle = isInactive && currentUser?.is_admin ? {
-                  opacity: 0.6,
-                  backgroundColor: "#f5f5f5",
-                  borderLeft: "3px solid #8193A4"
-                } : {};
+                // Check if equipment is inactive - backend returns boolean
+                const isActive = equipment.active === true || equipment.active === 1 || equipment.active === "1";
+                // Show inactive styling if equipment is inactive AND user is admin
+                const isAdmin = Boolean(currentUser && (currentUser.is_admin === true || currentUser.is_admin === 1));
+                const isInactive = !isActive && isAdmin;
+                
               return (
                   <li 
                     key={equipment.id} 
                     ref={el => equipmentRefs.current[equipment.id] = el}
-                    className="list-item"
-                    style={{ cursor: "pointer", ...itemStyle }}
+                    className={isInactive ? "list-item inactive-equipment" : "list-item"}
+                    style={isInactive ? {
+                      cursor: "pointer",
+                      backgroundColor: "#d3d3d3",
+                      border: "3px solid #d32f2f",
+                      borderLeft: "8px solid #d32f2f",
+                      opacity: 0.8
+                    } : { cursor: "pointer" }}
                     onClick={() => {
                       setSelectedEquipment(equipment);
                       setShowDetailsModal(true);
                     }}
                   >
                   <div className="list-main">
-                    <div className="list-title">
+                    <div className="list-title" style={isInactive ? { color: "#666", textDecoration: "line-through" } : {}}>
                         {equipment.equipment_name || `Equipment ID: ${equipment.id}`}
-                        {isInactive && currentUser?.is_admin && (
-                          <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#8193A4", fontStyle: "italic" }}>
-                            (Inactive)
+                        {isInactive && (
+                          <span style={{ 
+                            marginLeft: "0.5rem", 
+                            fontSize: "0.9rem", 
+                            color: "#d32f2f", 
+                            fontWeight: "bold",
+                            textDecoration: "none",
+                            fontStyle: "italic"
+                          }}>
+                            (inactive)
                           </span>
                         )}
                     </div>
-                    <div className="list-subtitle">
+                    <div className="list-subtitle" style={isInactive ? { color: "#666" } : {}}>
                         {equipment.equipment_type_name && `Type: ${equipment.equipment_type_name} • `}
                         Anchor: {formatDate(equipment.anchor_date)}
                         {equipment.due_date && ` • Due: ${formatDate(equipment.due_date)}`}

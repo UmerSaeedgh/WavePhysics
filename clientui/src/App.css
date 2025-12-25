@@ -317,6 +317,30 @@ button:disabled {
   border-left: 3px solid #10b981;
 }
 
+.list-item.inactive-equipment {
+  background-color: #d3d3d3 !important;
+  border: 2px solid #d32f2f !important;
+  border-left: 6px solid #d32f2f !important;
+  opacity: 0.85;
+}
+
+.list-item.inactive-equipment .list-title {
+  color: #666 !important;
+  text-decoration: line-through !important;
+}
+
+.list-item.inactive-equipment .list-subtitle {
+  color: #888 !important;
+}
+
+/* More specific selector to ensure styles apply */
+ul.list li.list-item.inactive-equipment {
+  background-color: #d3d3d3 !important;
+  border: 2px solid #d32f2f !important;
+  border-left: 6px solid #d32f2f !important;
+  opacity: 0.85 !important;
+}
+
 .list-main {
   flex: 1;
   min-width: 0;
