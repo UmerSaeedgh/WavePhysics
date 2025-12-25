@@ -36,6 +36,7 @@ def get_db():
         conn.close()
 
 security = HTTPBearer()
+security_optional = HTTPBearer(auto_error=False)
 
 # Simple token storage (in production, use Redis or database)
 active_tokens = {}  # token -> {user_id, username, is_admin, expires_at}
@@ -82,9 +83,28 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     
     return token_data
 
+def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional), db: sqlite3.Connection = Depends(get_db)):
+    """Get current authenticated user from token (optional - returns None if not authenticated)"""
+    if credentials is None:
+        return None
+    
+    token = credentials.credentials
+    
+    if token not in active_tokens:
+        return None
+    
+    token_data = active_tokens[token]
+    
+    # Check if token expired
+    if datetime.now() > token_data["expires_at"]:
+        del active_tokens[token]
+        return None
+    
+    return token_data
+
 def get_current_admin_user(current_user: dict = Depends(get_current_user)):
     """Ensure current user is admin"""
-    if not current_user.get("is_admin"):
+    if not current_user or not current_user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
 
@@ -970,10 +990,30 @@ class EquipmentRecordRead(BaseModel):
     equipment_type_name: Optional[str] = None
 
 
+def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional), db: sqlite3.Connection = Depends(get_db)):
+    """Get current authenticated user from token (optional - returns None if not authenticated)"""
+    if credentials is None:
+        return None
+    
+    token = credentials.credentials
+    
+    if token not in active_tokens:
+        return None
+    
+    token_data = active_tokens[token]
+    
+    # Check if token expired
+    if datetime.now() > token_data["expires_at"]:
+        del active_tokens[token]
+        return None
+    
+    return token_data
+
 @app.get("/equipment-records", response_model=List[EquipmentRecordRead])
 def list_equipment_records(
     client_id: Optional[int] = Query(None, description="Filter by client"),
-    active_only: bool = Query(False, description="Filter to active only"),
+    active_only: Optional[bool] = Query(None, description="Filter to active only"),
+    current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
@@ -992,6 +1032,15 @@ def list_equipment_records(
     if client_id:
         query += " AND er.client_id = ?"
         params.append(client_id)
+    
+    # For non-admin users, always filter to active only
+    # For admin users, respect the active_only parameter (default to showing all)
+    if active_only is None:
+        # If not specified, filter by user role
+        if not current_user.get("is_admin"):
+            active_only = True
+        else:
+            active_only = False
     
     if active_only:
         query += " AND er.active = 1"
@@ -1013,6 +1062,7 @@ def get_upcoming_equipment_records(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     weeks: Optional[int] = Query(None, description="Number of weeks from today"),
+    current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
     today = dt.date.today()
@@ -1038,8 +1088,13 @@ def get_upcoming_equipment_records(
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-               WHERE er.active = 1 
-                 AND (er.due_date IS NOT NULL AND er.due_date >= ? AND er.due_date <= ?)
+               WHERE 1=1"""
+    
+    # For non-admin users, only show active equipment
+    if not current_user.get("is_admin"):
+        query += " AND er.active = 1"
+    
+    query += """ AND (er.due_date IS NOT NULL AND er.due_date >= ? AND er.due_date <= ?)
                ORDER BY er.due_date"""
     
     cur = db.execute(query, (start_date_obj.isoformat(), end_date_obj.isoformat()))
@@ -1053,7 +1108,10 @@ def get_upcoming_equipment_records(
 
 
 @app.get("/equipment-records/overdue", response_model=List[EquipmentRecordRead])
-def get_overdue_equipment_records(db: sqlite3.Connection = Depends(get_db)):
+def get_overdue_equipment_records(
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
     today = dt.date.today()
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
@@ -1066,8 +1124,13 @@ def get_overdue_equipment_records(db: sqlite3.Connection = Depends(get_db)):
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-               WHERE er.active = 1 
-                 AND er.due_date IS NOT NULL 
+               WHERE 1=1"""
+    
+    # For non-admin users, only show active equipment
+    if not current_user.get("is_admin"):
+        query += " AND er.active = 1"
+    
+    query += """ AND er.due_date IS NOT NULL 
                  AND er.due_date < ?
                ORDER BY er.due_date"""
     

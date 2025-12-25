@@ -137,13 +137,15 @@ function App() {
   const [upcomingInterval, setUpcomingInterval] = useState(2); // Default to 2 weeks
 
   useEffect(() => {
-    fetchClients();
-    fetchEquipmentTypes();
-    // Fetch counts silently (without showing loading state)
-    fetchAllEquipments(true);
-    fetchUpcoming(true);
-    fetchOverdue(true);
-  }, []);
+    if (isAuthenticated && authToken) {
+      fetchClients();
+      fetchEquipmentTypes();
+      // Fetch counts silently (without showing loading state)
+      fetchAllEquipments(true);
+      fetchUpcoming(true);
+      fetchOverdue(true);
+    }
+  }, [isAuthenticated, authToken]);
 
   // Fetch sites when a client is selected
   useEffect(() => {
@@ -222,12 +224,48 @@ function App() {
       }
 
       const data = await response.json();
-      setAuthToken(data.token);
+      const token = data.token;
+      setAuthToken(token);
       setCurrentUser(data.user);
       setIsAuthenticated(true);
-      localStorage.setItem("authToken", data.token);
+      localStorage.setItem("authToken", token);
       localStorage.setItem("currentUser", JSON.stringify(data.user));
       setError("");
+      // Fetch data immediately after login using the token directly
+      // Pass token to apiCall to avoid closure issue with state
+      try {
+        // Calculate upcoming date range (default to today + 2 weeks)
+        const today = new Date().toISOString().split('T')[0];
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + (2 * 7)); // 2 weeks
+        const endDateStr = endDate.toISOString().split('T')[0];
+        
+        const [clientsData, typesData, equipmentsData, upcomingData, overdueData] = await Promise.all([
+          apiCall("/clients", {}, token),
+          apiCall("/equipment-types?active_only=true", {}, token),
+          apiCall("/equipment-records", {}, token),
+          apiCall(`/equipment-records/upcoming?start_date=${today}&end_date=${endDateStr}`, {}, token),
+          apiCall("/equipment-records/overdue", {}, token)
+        ]);
+        if (Array.isArray(clientsData)) {
+          setClients(clientsData);
+        }
+        if (Array.isArray(typesData)) {
+          setEquipmentTypes(typesData);
+        }
+        if (Array.isArray(equipmentsData)) {
+          setAllEquipments(equipmentsData);
+        }
+        if (Array.isArray(upcomingData)) {
+          setUpcoming(upcomingData);
+        }
+        if (Array.isArray(overdueData)) {
+          setOverdue(overdueData);
+        }
+      } catch (fetchErr) {
+        console.error("Error fetching initial data after login:", fetchErr);
+        // Don't throw - login was successful, data will load via useEffect
+      }
       return data;
     } catch (err) {
       setError(err.message || "Login failed");
@@ -258,11 +296,12 @@ function App() {
   }
 
   // API Functions
-  async function apiCall(endpoint, options = {}) {
+  async function apiCall(endpoint, options = {}, tokenOverride = null) {
     try {
       const headers = { "Content-Type": "application/json", ...options.headers };
-      if (authToken) {
-        headers["Authorization"] = `Bearer ${authToken}`;
+      const tokenToUse = tokenOverride || authToken;
+      if (tokenToUse) {
+        headers["Authorization"] = `Bearer ${tokenToUse}`;
       }
       
       const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -734,6 +773,7 @@ function App() {
             setUpcomingDate={setUpcomingDate}
             upcomingInterval={upcomingInterval}
             setUpcomingInterval={setUpcomingInterval}
+            currentUser={currentUser}
             onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment
@@ -755,6 +795,7 @@ function App() {
             setOverdue={setOverdue}
             loading={loading}
             setLoading={setLoading}
+            currentUser={currentUser}
             onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment
@@ -776,6 +817,7 @@ function App() {
             sites={sites}
             equipmentToEdit={equipmentToEdit}
             previousView={previousView}
+            currentUser={currentUser}
             onBack={() => {
               const returnView = previousView || "all-equipments";
               setEquipmentToEdit(null);
@@ -2952,7 +2994,7 @@ function EquipmentTypesTab({ equipmentTypes, onRefresh, apiCall, setError }) {
 // Work Orders Tab - REMOVED
 
 // All Equipments View
-function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment }) {
+function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment, currentUser }) {
   const equipmentRefs = useRef({});
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -3441,12 +3483,18 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
         ) : (
           <ul className="list">
               {filteredAndSortedEquipments.map(equipment => {
+                const isInactive = !equipment.active;
+                const itemStyle = isInactive && currentUser?.is_admin ? {
+                  opacity: 0.6,
+                  backgroundColor: "#f5f5f5",
+                  borderLeft: "3px solid #8193A4"
+                } : {};
               return (
                   <li 
                     key={equipment.id} 
                     ref={el => equipmentRefs.current[equipment.id] = el}
                     className="list-item"
-                    style={{ cursor: "pointer" }}
+                    style={{ cursor: "pointer", ...itemStyle }}
                     onClick={() => {
                       setSelectedEquipment(equipment);
                       setShowDetailsModal(true);
@@ -3455,6 +3503,11 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                   <div className="list-main">
                     <div className="list-title">
                         {equipment.equipment_name || `Equipment ID: ${equipment.id}`}
+                        {isInactive && currentUser?.is_admin && (
+                          <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#8193A4", fontStyle: "italic" }}>
+                            (Inactive)
+                          </span>
+                        )}
                     </div>
                     <div className="list-subtitle">
                         {equipment.equipment_type_name && `Type: ${equipment.equipment_type_name} • `}
@@ -3678,7 +3731,7 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
 }
 
 // Upcoming View
-function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule }) {
+function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser }) {
   async function fetchUpcoming() {
     setLoading(true);
     setError("");
@@ -3708,28 +3761,43 @@ function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLo
   function renderEquipmentList(items, className = "") {
     return (
       <ul className="list">
-        {items.map(item => (
-          <li 
-            key={item.id} 
-            className={`list-item ${className}`}
-            style={{ cursor: "pointer" }}
-            onClick={() => {
-              if (onNavigateToSchedule && item.id) {
-                onNavigateToSchedule(item.id, null);
-              }
-            }}
-          >
-            <div className="list-main">
-              <div className="list-title">{item.equipment_name || 'Unknown'}</div>
-              <div className="list-subtitle">
-                {item.equipment_type_name && `Type: ${item.equipment_type_name} • `}
-                Client: {item.client_name}
-                {item.site_name && ` • Site: ${item.site_name}`}
-                {` • Due: ${formatDate(item.due_date)}`}
+        {items.map(item => {
+          const isInactive = !item.active;
+          const itemStyle = isInactive && currentUser?.is_admin ? {
+            opacity: 0.6,
+            backgroundColor: "#f5f5f5",
+            borderLeft: "3px solid #8193A4"
+          } : {};
+          return (
+            <li 
+              key={item.id} 
+              className={`list-item ${className}`}
+              style={{ cursor: "pointer", ...itemStyle }}
+              onClick={() => {
+                if (onNavigateToSchedule && item.id) {
+                  onNavigateToSchedule(item.id, null);
+                }
+              }}
+            >
+              <div className="list-main">
+                <div className="list-title">
+                  {item.equipment_name || 'Unknown'}
+                  {isInactive && currentUser?.is_admin && (
+                    <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#8193A4", fontStyle: "italic" }}>
+                      (Inactive)
+                    </span>
+                  )}
+                </div>
+                <div className="list-subtitle">
+                  {item.equipment_type_name && `Type: ${item.equipment_type_name} • `}
+                  Client: {item.client_name}
+                  {item.site_name && ` • Site: ${item.site_name}`}
+                  {` • Due: ${formatDate(item.due_date)}`}
+                </div>
               </div>
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     );
   }
@@ -3800,7 +3868,7 @@ function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLo
 }
 
 // Overdue View
-function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoading, onNavigateToSchedule }) {
+function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoading, onNavigateToSchedule, currentUser }) {
   async function fetchOverdue() {
     setLoading(true);
     setError("");
@@ -3820,28 +3888,43 @@ function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoadi
   function renderEquipmentList(items, className = "") {
     return (
       <ul className="list">
-        {items.map(item => (
-          <li 
-            key={item.id} 
-            className={`list-item ${className}`}
-            style={{ cursor: "pointer" }}
-            onClick={() => {
-              if (onNavigateToSchedule && item.id) {
-                onNavigateToSchedule(item.id, null);
-              }
-            }}
-          >
-            <div className="list-main">
-              <div className="list-title">{item.equipment_name || 'Unknown'}</div>
-              <div className="list-subtitle">
-                {item.equipment_type_name && `Type: ${item.equipment_type_name} • `}
-                Client: {item.client_name}
-                {item.site_name && ` • Site: ${item.site_name}`}
-                {` • Due: ${formatDate(item.due_date)}`}
-            </div>
-          </div>
-          </li>
-        ))}
+        {items.map(item => {
+          const isInactive = !item.active;
+          const itemStyle = isInactive && currentUser?.is_admin ? {
+            opacity: 0.6,
+            backgroundColor: "#f5f5f5",
+            borderLeft: "3px solid #8193A4"
+          } : {};
+          return (
+            <li 
+              key={item.id} 
+              className={`list-item ${className}`}
+              style={{ cursor: "pointer", ...itemStyle }}
+              onClick={() => {
+                if (onNavigateToSchedule && item.id) {
+                  onNavigateToSchedule(item.id, null);
+                }
+              }}
+            >
+              <div className="list-main">
+                <div className="list-title">
+                  {item.equipment_name || 'Unknown'}
+                  {isInactive && currentUser?.is_admin && (
+                    <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#8193A4", fontStyle: "italic" }}>
+                      (Inactive)
+                    </span>
+                  )}
+                </div>
+                <div className="list-subtitle">
+                  {item.equipment_type_name && `Type: ${item.equipment_type_name} • `}
+                  Client: {item.client_name}
+                  {item.site_name && ` • Site: ${item.site_name}`}
+                  {` • Due: ${formatDate(item.due_date)}`}
+                </div>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     );
   }
@@ -3874,7 +3957,7 @@ function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoadi
 // Deprecated QuickViewsTab removed - functionality moved to separate views (AllEquipmentsView, UpcomingView, OverdueView)
 
 // Add Equipment Page
-function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, previousView, onBack, onSuccess }) {
+function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, previousView, onBack, onSuccess, currentUser }) {
   const [selectedClientId, setSelectedClientId] = useState("");
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [availableSites, setAvailableSites] = useState([]);
@@ -4001,7 +4084,7 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
         lead_weeks: equipmentForm.lead_weeks ? parseInt(equipmentForm.lead_weeks) : null,
         timezone: equipmentForm.timezone || null,
         notes: equipmentForm.notes || null,
-        active: equipmentForm.active,
+        active: currentUser?.is_admin ? equipmentForm.active : true, // Non-admin users always create active equipment
       };
 
       if (equipmentToEdit && equipmentToEdit.id) {
@@ -4299,15 +4382,17 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
             />
           </label>
 
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            name="active"
-            checked={equipmentForm.active}
-            onChange={handleChange}
-          />
-          Active
-        </label>
+        {currentUser?.is_admin && (
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              name="active"
+              checked={equipmentForm.active}
+              onChange={handleChange}
+            />
+            Active
+          </label>
+        )}
 
         <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
             <button type="submit" className="primary" disabled={loading}>
