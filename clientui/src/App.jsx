@@ -674,6 +674,9 @@ function App() {
 
 // Clients List View - Main entry point
 function ClientsListView({ clients, onRefresh, onClientClick, onAddClient, onEditClient, apiCall, setError }) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
+  const [showFilters, setShowFilters] = useState(false);
 
   async function handleDelete(clientId) {
     if (!window.confirm("Delete this client? All associated sites will be deleted.")) return;
@@ -685,19 +688,107 @@ function ClientsListView({ clients, onRefresh, onClientClick, onAddClient, onEdi
     }
   }
 
+  // Filter and sort clients
+  const filteredAndSortedClients = clients
+    .filter(client => {
+      if (!searchTerm) return true;
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        client.name?.toLowerCase().includes(searchLower) ||
+        client.address?.toLowerCase().includes(searchLower) ||
+        client.billing_info?.toLowerCase().includes(searchLower) ||
+        client.notes?.toLowerCase().includes(searchLower)
+      );
+    })
+    .sort((a, b) => {
+      const nameA = (a.name || "").toLowerCase();
+      const nameB = (b.name || "").toLowerCase();
+      if (sortOrder === "asc") {
+        return nameA.localeCompare(nameB);
+      } else {
+        return nameB.localeCompare(nameA);
+      }
+    });
+
   return (
     <div>
       <div className="card">
         <div className="card-header">
-          <h2>Clients ({clients.length})</h2>
-          <button className="primary" onClick={onAddClient}>+ Add New Client</button>
+          <h2>Clients ({filteredAndSortedClients.length})</h2>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button 
+              className="secondary" 
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              {showFilters ? "Hide Filters" : "Filter"}
+            </button>
+            <button className="primary" onClick={onAddClient}>+ Add New Client</button>
+          </div>
         </div>
+
+        {showFilters && (
+          <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
+            <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: "200px" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                  Search Clients
+                </label>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by name, address, billing info, or notes..."
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.9rem"
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                  Sort Order
+                </label>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button
+                    type="button"
+                    className={sortOrder === "asc" ? "primary" : "secondary"}
+                    onClick={() => setSortOrder("asc")}
+                    style={{ 
+                      padding: "0.5rem 1rem",
+                      fontSize: "0.85rem",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    A-Z
+                  </button>
+                  <button
+                    type="button"
+                    className={sortOrder === "desc" ? "primary" : "secondary"}
+                    onClick={() => setSortOrder("desc")}
+                    style={{ 
+                      padding: "0.5rem 1rem",
+                      fontSize: "0.85rem",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    Z-A
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {clients.length === 0 ? (
           <p className="empty">No clients yet. Click "Add New Client" to get started.</p>
+        ) : filteredAndSortedClients.length === 0 ? (
+          <p className="empty">No clients match your search.</p>
         ) : (
           <ul className="list">
-            {clients.map(client => (
+            {filteredAndSortedClients.map(client => (
               <li key={client.id} className="list-item">
                 <div className="list-main">
                   <div className="list-title">{client.name}</div>
