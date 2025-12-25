@@ -3217,6 +3217,14 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
   const [availableSites, setAvailableSites] = useState([]);
   const [equipmentTypes, setEquipmentTypes] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showNewTypeForm, setShowNewTypeForm] = useState(false);
+  const [newTypeForm, setNewTypeForm] = useState({
+    name: "",
+    interval_weeks: "52",
+    rrule: "FREQ=WEEKLY;INTERVAL=52",
+    default_lead_weeks: "4",
+    active: true,
+  });
   const [equipmentForm, setEquipmentForm] = useState({
     equipment_type_id: "",
     equipment_name: "",
@@ -3403,20 +3411,152 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
 
         <label>
           Equipment Type *
-          <select
-            name="equipment_type_id"
-            value={equipmentForm.equipment_type_id}
-            onChange={handleChange}
-            required
-          >
-            <option value="">Select an equipment type</option>
-            {equipmentTypes.map(type => (
-              <option key={type.id} value={type.id.toString()}>
-                {type.name}
-              </option>
-            ))}
-          </select>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <select
+              name="equipment_type_id"
+              value={equipmentForm.equipment_type_id}
+              onChange={handleChange}
+              required
+              style={{ flex: 1 }}
+            >
+              <option value="">Select an equipment type</option>
+              {equipmentTypes.map(type => (
+                <option key={type.id} value={type.id.toString()}>
+                  {type.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setShowNewTypeForm(true)}
+              style={{ whiteSpace: "nowrap" }}
+            >
+              + Add New Type
+            </button>
+          </div>
         </label>
+
+        {showNewTypeForm && (
+          <div style={{ 
+            padding: "1rem", 
+            backgroundColor: "#8193A4", 
+            borderRadius: "0.5rem", 
+            marginTop: "0.5rem",
+            border: "1px solid #2D3234"
+          }}>
+            <h4 style={{ marginTop: 0, marginBottom: "1rem", color: "#2D3234" }}>Add New Equipment Type</h4>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <label style={{ color: "#2D3234" }}>
+                Name *
+                <input
+                  type="text"
+                  value={newTypeForm.name}
+                  onChange={(e) => setNewTypeForm(prev => ({ ...prev, name: e.target.value }))}
+                  required
+                  placeholder="Equipment type name"
+                  style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                />
+              </label>
+              <label style={{ color: "#2D3234" }}>
+                Interval (weeks) *
+                <input
+                  type="number"
+                  value={newTypeForm.interval_weeks}
+                  onChange={(e) => {
+                    const interval = e.target.value;
+                    setNewTypeForm(prev => ({ 
+                      ...prev, 
+                      interval_weeks: interval,
+                      rrule: `FREQ=WEEKLY;INTERVAL=${interval || 52}`
+                    }));
+                  }}
+                  required
+                  min="1"
+                  style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                />
+              </label>
+              <label style={{ color: "#2D3234" }}>
+                Default Lead Weeks *
+                <input
+                  type="number"
+                  value={newTypeForm.default_lead_weeks}
+                  onChange={(e) => setNewTypeForm(prev => ({ ...prev, default_lead_weeks: e.target.value }))}
+                  required
+                  min="0"
+                  style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                />
+              </label>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={async () => {
+                    if (!newTypeForm.name.trim()) {
+                      setError("Equipment type name is required");
+                      return;
+                    }
+                    try {
+                      const newType = await apiCall("/equipment-types", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          name: newTypeForm.name,
+                          interval_weeks: parseInt(newTypeForm.interval_weeks) || 52,
+                          rrule: newTypeForm.rrule || `FREQ=WEEKLY;INTERVAL=${parseInt(newTypeForm.interval_weeks) || 52}`,
+                          default_lead_weeks: parseInt(newTypeForm.default_lead_weeks) || 4,
+                          active: newTypeForm.active,
+                        }),
+                      });
+                      // Refresh equipment types list
+                      const types = await apiCall("/equipment-types?active_only=true");
+                      setEquipmentTypes(types || []);
+                      // Select the newly created type
+                      setEquipmentForm(prev => ({
+                        ...prev,
+                        equipment_type_id: newType.id.toString(),
+                        interval_weeks: newType.interval_weeks.toString(),
+                      }));
+                      // Reset and hide form
+                      setNewTypeForm({
+                        name: "",
+                        interval_weeks: "52",
+                        rrule: "FREQ=WEEKLY;INTERVAL=52",
+                        default_lead_weeks: "4",
+                        active: true,
+                      });
+                      setShowNewTypeForm(false);
+                    } catch (err) {
+                      // error already set
+                    }
+                  }}
+                >
+                  Create
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setShowNewTypeForm(false);
+                    setNewTypeForm({
+                      name: "",
+                      interval_weeks: "52",
+                      rrule: "FREQ=WEEKLY;INTERVAL=52",
+                      default_lead_weeks: "4",
+                      active: true,
+                    });
+                  }}
+                  style={{ 
+                    color: "#2D3234", 
+                    border: "1px solid #2D3234",
+                    background: "transparent"
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <label>
           Equipment Name *
