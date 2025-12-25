@@ -3500,8 +3500,9 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                       setShowDetailsModal(true);
                     }}
                   >
-                  <div className="list-main">
-                    <div className="list-title" style={isInactive ? { color: "#666", textDecoration: "line-through" } : {}}>
+                  <div className="list-main" style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem" }}>
+                      <div className="list-title" style={isInactive ? { color: "#666", textDecoration: "line-through" } : {}}>
                         {equipment.equipment_name || `Equipment ID: ${equipment.id}`}
                         {isInactive && (
                           <span style={{ 
@@ -3515,12 +3516,23 @@ function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments,
                             (inactive)
                           </span>
                         )}
+                      </div>
+                      {(equipment.client_name || equipment.site_name) && (
+                        <div style={{ 
+                          fontSize: "0.9375rem", 
+                          fontWeight: 500, 
+                          color: "var(--primary)",
+                          textAlign: "right",
+                          whiteSpace: "nowrap"
+                        }}>
+                          {equipment.client_name}{equipment.site_name && ` • ${equipment.site_name}`}
+                        </div>
+                      )}
                     </div>
                     <div className="list-subtitle" style={isInactive ? { color: "#666" } : {}}>
                         {equipment.equipment_type_name && `Type: ${equipment.equipment_type_name} • `}
                         Anchor: {formatDate(equipment.anchor_date)}
                         {equipment.due_date && ` • Due: ${formatDate(equipment.due_date)}`}
-                        {equipment.client_name && ` • Client: ${equipment.client_name}`}
                         {equipment.interval_weeks && ` • Interval: ${equipment.interval_weeks} weeks`}
                     </div>
                   </div>
@@ -4413,7 +4425,7 @@ function AdminTab({ apiCall, setError, currentUser }) {
   const [adminTab, setAdminTab] = useState("utilities");
   const [users, setUsers] = useState([]);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [newUser, setNewUser] = useState({ username: "", password: "", is_admin: false }); // "utilities" or "equipments"
+  const [newUser, setNewUser] = useState({ username: "", password: "", is_admin: false });
   const [uploading, setUploading] = useState(false);
   const [uploadingTemporary, setUploadingTemporary] = useState(false);
   const fileInputRef = useRef(null);
@@ -4608,12 +4620,6 @@ function AdminTab({ apiCall, setError, currentUser }) {
         >
           Utilities
         </button>
-        <button
-          className={adminTab === "equipments" ? "active" : ""}
-          onClick={() => setAdminTab("equipments")}
-        >
-          Equipments
-        </button>
         {currentUser?.is_admin && (
           <button
             className={adminTab === "users" ? "active" : ""}
@@ -4707,17 +4713,6 @@ function AdminTab({ apiCall, setError, currentUser }) {
         </div>
       )}
 
-      {adminTab === "equipments" && (
-        <div className="card">
-          <div className="card-header">
-            <h2>Equipments</h2>
-          </div>
-          <div style={{ padding: "2rem" }}>
-            <p className="empty">This section is coming soon.</p>
-          </div>
-        </div>
-      )}
-
       {adminTab === "users" && currentUser?.is_admin && (
       <div className="card">
         <div className="card-header">
@@ -4787,7 +4782,7 @@ function AdminTab({ apiCall, setError, currentUser }) {
                         {user.username} {user.is_admin && <span style={{ color: "#8193A4", fontSize: "0.875rem" }}>(Admin)</span>}
                       </div>
                       <div className="list-subtitle">
-                        Created: {new Date(user.created_at).toLocaleDateString()}
+                        Created: {formatDate(user.created_at)}
                       </div>
                     </div>
                     {user.id !== currentUser.id && (

@@ -116,6 +116,32 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+.card .tabs {
+  background: rgba(129, 147, 164, 0.1);
+  padding: 0.25rem;
+  border-radius: 0.75rem;
+}
+
+.card .tabs button {
+  color: var(--text-dark);
+  background: transparent;
+  opacity: 0.7;
+}
+
+.card .tabs button:hover {
+  color: var(--text-dark);
+  background: rgba(255, 255, 255, 0.8);
+  opacity: 1;
+}
+
+.card .tabs button.active {
+  color: var(--text-dark);
+  background: var(--white);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  opacity: 1;
+}
+
 .main-content {
   flex: 1;
   padding: 2rem;
