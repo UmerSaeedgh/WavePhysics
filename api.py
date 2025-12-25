@@ -38,8 +38,7 @@ def get_db():
 security = HTTPBearer()
 security_optional = HTTPBearer(auto_error=False)
 
-# Simple token storage (in production, use Redis or database)
-active_tokens = {}  # token -> {user_id, username, is_admin, expires_at}
+# Token storage moved to database for multi-instance support on Azure
 
 def hash_password(password: str) -> str:
     """Simple password hashing using SHA256 + salt (for production, use bcrypt)"""
@@ -55,33 +54,47 @@ def verify_password(password: str, password_hash: str) -> bool:
     except:
         return False
 
-def create_token(user_id: int, username: str, is_admin: bool) -> str:
-    """Create a session token"""
+def create_token(user_id: int, username: str, is_admin: bool, db: sqlite3.Connection) -> str:
+    """Create a session token and store in database"""
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now() + timedelta(days=7)  # 7 day expiry
-    active_tokens[token] = {
-        "user_id": user_id,
-        "username": username,
-        "is_admin": bool(is_admin),
-        "expires_at": expires_at
-    }
+    
+    # Store token in database
+    db.execute(
+        "INSERT INTO auth_tokens (token, user_id, username, is_admin, expires_at) VALUES (?, ?, ?, ?, ?)",
+        (token, user_id, username, 1 if is_admin else 0, expires_at.isoformat())
+    )
+    db.commit()
+    
     return token
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: sqlite3.Connection = Depends(get_db)):
-    """Get current authenticated user from token"""
+    """Get current authenticated user from token stored in database"""
     token = credentials.credentials
     
-    if token not in active_tokens:
+    # Get token from database
+    row = db.execute(
+        "SELECT user_id, username, is_admin, expires_at FROM auth_tokens WHERE token = ?",
+        (token,)
+    ).fetchone()
+    
+    if not row:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     
-    token_data = active_tokens[token]
-    
     # Check if token expired
-    if datetime.now() > token_data["expires_at"]:
-        del active_tokens[token]
+    expires_at = datetime.fromisoformat(row["expires_at"])
+    if datetime.now() > expires_at:
+        # Delete expired token
+        db.execute("DELETE FROM auth_tokens WHERE token = ?", (token,))
+        db.commit()
         raise HTTPException(status_code=401, detail="Token expired")
     
-    return token_data
+    return {
+        "user_id": row["user_id"],
+        "username": row["username"],
+        "is_admin": bool(row["is_admin"]),
+        "expires_at": expires_at
+    }
 
 def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional), db: sqlite3.Connection = Depends(get_db)):
     """Get current authenticated user from token (optional - returns None if not authenticated)"""
@@ -90,17 +103,29 @@ def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials
     
     token = credentials.credentials
     
-    if token not in active_tokens:
-        return None
+    # Get token from database
+    row = db.execute(
+        "SELECT user_id, username, is_admin, expires_at FROM auth_tokens WHERE token = ?",
+        (token,)
+    ).fetchone()
     
-    token_data = active_tokens[token]
+    if not row:
+        return None
     
     # Check if token expired
-    if datetime.now() > token_data["expires_at"]:
-        del active_tokens[token]
+    expires_at = datetime.fromisoformat(row["expires_at"])
+    if datetime.now() > expires_at:
+        # Delete expired token
+        db.execute("DELETE FROM auth_tokens WHERE token = ?", (token,))
+        db.commit()
         return None
     
-    return token_data
+    return {
+        "user_id": row["user_id"],
+        "username": row["username"],
+        "is_admin": bool(row["is_admin"]),
+        "expires_at": expires_at
+    }
 
 def get_current_admin_user(current_user: dict = Depends(get_current_user)):
     """Ensure current user is admin"""
@@ -169,7 +194,7 @@ def login(payload: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
     if not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     
-    token = create_token(user["id"], user["username"], user["is_admin"])
+    token = create_token(user["id"], user["username"], user["is_admin"], db)
     
     return LoginResponse(
         token=token,
@@ -181,10 +206,11 @@ def login(payload: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
     )
 
 @app.post("/auth/logout")
-def logout(current_user: dict = Depends(get_current_user)):
+def logout(current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
     """Logout and invalidate token"""
-    # In a real implementation, you'd need to pass the token to invalidate it
-    # For now, tokens expire automatically
+    # Delete all tokens for this user
+    db.execute("DELETE FROM auth_tokens WHERE user_id = ?", (current_user["user_id"],))
+    db.commit()
     return {"message": "Logged out successfully"}
 
 @app.get("/auth/me")
@@ -268,8 +294,8 @@ def change_password(payload: ChangePasswordRequest, current_user: dict = Depends
     db.commit()
     
     # Invalidate all tokens for this user (force re-login)
-    global active_tokens
-    active_tokens = {token: data for token, data in active_tokens.items() if data["user_id"] != current_user["user_id"]}
+    db.execute("DELETE FROM auth_tokens WHERE user_id = ?", (current_user["user_id"],))
+    db.commit()
     
     return {"message": "Password changed successfully. Please login again."}
 
@@ -299,8 +325,8 @@ def reset_password(payload: ResetPasswordRequest, db: sqlite3.Connection = Depen
     db.commit()
     
     # Invalidate all tokens for this user
-    global active_tokens
-    active_tokens = {token: data for token, data in active_tokens.items() if data["user_id"] != user["id"]}
+    db.execute("DELETE FROM auth_tokens WHERE user_id = ?", (user["id"],))
+    db.commit()
     
     return {"message": f"Password reset successfully for user: {payload.username}"}
 
@@ -989,25 +1015,6 @@ class EquipmentRecordRead(BaseModel):
     site_name: Optional[str] = None
     equipment_type_name: Optional[str] = None
 
-
-def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional), db: sqlite3.Connection = Depends(get_db)):
-    """Get current authenticated user from token (optional - returns None if not authenticated)"""
-    if credentials is None:
-        return None
-    
-    token = credentials.credentials
-    
-    if token not in active_tokens:
-        return None
-    
-    token_data = active_tokens[token]
-    
-    # Check if token expired
-    if datetime.now() > token_data["expires_at"]:
-        del active_tokens[token]
-        return None
-    
-    return token_data
 
 @app.get("/equipment-records", response_model=List[EquipmentRecordRead])
 def list_equipment_records(

@@ -105,6 +105,7 @@ function App() {
     return stored ? JSON.parse(stored) : null;
   });
   const [isAuthenticated, setIsAuthenticated] = useState(!!authToken);
+  const [loginTime, setLoginTime] = useState(null); // Track when user logged in
 
   const [view, setView] = useState("clients"); // "clients", "client-sites", "all-equipments", "upcoming", "overdue", "admin", "user", "add-equipment", "edit-client", "edit-site", "edit-contact"
   const [equipmentToEdit, setEquipmentToEdit] = useState(null); // Equipment record to edit when navigating to add-equipment page
@@ -228,6 +229,7 @@ function App() {
       setAuthToken(token);
       setCurrentUser(data.user);
       setIsAuthenticated(true);
+      setLoginTime(Date.now()); // Record login time to prevent immediate logout
       localStorage.setItem("authToken", token);
       localStorage.setItem("currentUser", JSON.stringify(data.user));
       setError("");
@@ -240,13 +242,16 @@ function App() {
         endDate.setDate(endDate.getDate() + (2 * 7)); // 2 weeks
         const endDateStr = endDate.toISOString().split('T')[0];
         
-        const [clientsData, typesData, equipmentsData, upcomingData, overdueData] = await Promise.all([
-          apiCall("/clients", {}, token),
-          apiCall("/equipment-types?active_only=true", {}, token),
-          apiCall("/equipment-records", {}, token),
-          apiCall(`/equipment-records/upcoming?start_date=${today}&end_date=${endDateStr}`, {}, token),
-          apiCall("/equipment-records/overdue", {}, token)
-        ]);
+        // Fetch data with error handling - don't fail login if data fetch fails
+        const fetchPromises = [
+          apiCall("/clients", {}, token).catch(err => { console.error("Failed to fetch clients:", err); return []; }),
+          apiCall("/equipment-types?active_only=true", {}, token).catch(err => { console.error("Failed to fetch equipment types:", err); return []; }),
+          apiCall("/equipment-records", {}, token).catch(err => { console.error("Failed to fetch equipment records:", err); return []; }),
+          apiCall(`/equipment-records/upcoming?start_date=${today}&end_date=${endDateStr}`, {}, token).catch(err => { console.error("Failed to fetch upcoming:", err); return []; }),
+          apiCall("/equipment-records/overdue", {}, token).catch(err => { console.error("Failed to fetch overdue:", err); return []; })
+        ];
+        
+        const [clientsData, typesData, equipmentsData, upcomingData, overdueData] = await Promise.all(fetchPromises);
         if (Array.isArray(clientsData)) {
           setClients(clientsData);
         }
@@ -316,9 +321,32 @@ function App() {
       
       if (!res.ok) {
         // Handle 401 Unauthorized - token expired or invalid
-        if (res.status === 401) {
-          handleLogout();
-          throw new Error("Session expired. Please login again.");
+        // Only logout if we have a token AND it's not during initial data fetch after login
+        if (res.status === 401 && tokenToUse) {
+          // Don't logout immediately after login (within 10 seconds) to prevent race conditions
+          const timeSinceLogin = loginTime ? Date.now() - loginTime : Infinity;
+          const isRecentlyLoggedIn = timeSinceLogin < 10000; // 10 seconds
+          
+          // Don't logout if:
+          // 1. We're in the middle of login process
+          // 2. It's an initial data fetch endpoint
+          // 3. User just logged in (within 10 seconds)
+          const isAuthEndpoint = endpoint.includes("/auth/");
+          const isInitialDataLoad = endpoint.includes("/clients") || 
+                                    endpoint.includes("/equipment-types") || 
+                                    endpoint.includes("/equipment-records");
+          
+          if (!isAuthEndpoint && !isInitialDataLoad && !isRecentlyLoggedIn) {
+            // Only logout for non-auth, non-initial-load endpoints, and not right after login
+            handleLogout();
+            throw new Error("Session expired. Please login again.");
+          } else {
+            // For auth endpoints, initial data fetch, or right after login, just throw error
+            const text = await res.text();
+            const errorMsg = text || `HTTP ${res.status}: ${res.statusText}`;
+            console.warn("API call failed (not logging out):", endpoint, errorMsg);
+            throw new Error(errorMsg);
+          }
         }
         const text = await res.text();
         const errorMsg = text || `HTTP ${res.status}: ${res.statusText}`;

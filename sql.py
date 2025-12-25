@@ -163,6 +163,16 @@ def init_schema(conn):
           is_admin     INTEGER NOT NULL DEFAULT 0,
           created_at   TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        -- Auth Tokens (for session management)
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+          token        TEXT PRIMARY KEY,
+          user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          username     TEXT NOT NULL,
+          is_admin     INTEGER NOT NULL DEFAULT 0,
+          expires_at   TEXT NOT NULL,
+          created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         """
     )
     
