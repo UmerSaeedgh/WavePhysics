@@ -45,14 +45,17 @@ function LoginView({ onLogin, error }) {
 
   return (
     <div className="app" style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", backgroundColor: "#f5f5f5" }}>
-      <div className="card" style={{ width: "100%", maxWidth: "400px", padding: "2rem" }}>
-        <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-          <img 
-            src={wavePhysicsLogo} 
-            alt="WAVE PHYSICS" 
-            style={{ height: "60px", maxWidth: "250px", objectFit: "contain", marginBottom: "1rem" }}
-          />
-          <h2>Login</h2>
+      <div className="card" style={{ width: "100%", maxWidth: "420px", padding: "3rem 2.5rem" }}>
+        <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
+          <div style={{ marginBottom: "2rem", display: "flex", justifyContent: "center" }}>
+            <img 
+              src={wavePhysicsLogo} 
+              alt="WAVE PHYSICS" 
+              style={{ height: "56px", maxWidth: "240px", objectFit: "contain", filter: "drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))" }}
+            />
+          </div>
+          <h2 style={{ margin: "0 0 0.5rem 0", fontSize: "1.875rem", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.025em" }}>Welcome back</h2>
+          <p style={{ margin: 0, fontSize: "0.9375rem", color: "#64748b", fontWeight: 400 }}>Sign in to continue to your account</p>
         </div>
         {loginError && (
           <div className="error-banner" style={{ marginBottom: "1rem" }}>
@@ -538,38 +541,6 @@ function App() {
             style={{ height: "50px", maxWidth: "200px", objectFit: "contain" }}
           />
         </div>
-        <nav className="breadcrumb" style={{ padding: "0.5rem 1rem", backgroundColor: "#8193A4", color: "#2D3234", borderRadius: "0.5rem" }}>
-          <button
-            onClick={() => {
-              setView("clients");
-              setSelectedClient(null);
-              setSelectedSite(null);
-            }}
-            style={{ background: "none", border: "none", color: "#2D3234", cursor: "pointer", marginRight: "0.5rem", fontWeight: "600" }}
-          >
-            Clients
-          </button>
-          {selectedClient && (
-            <>
-              <span style={{ margin: "0 0.5rem", color: "#2D3234" }}>/</span>
-          <button
-                onClick={() => {
-                  setView("client-sites");
-                  setSelectedSite(null);
-                }}
-                style={{ background: "none", border: "none", color: "#2D3234", cursor: "pointer", marginRight: "0.5rem", fontWeight: "600" }}
-              >
-                {selectedClient.name}
-          </button>
-            </>
-          )}
-          {selectedSite && (
-            <>
-              <span style={{ margin: "0 0.5rem", color: "#2D3234" }}>/</span>
-              <span style={{ color: "#2D3234" }}>{selectedSite.name}</span>
-            </>
-          )}
-        </nav>
         <nav className="tabs" style={{ marginTop: "0", display: "flex", alignItems: "center" }}>
           <div style={{ display: "flex", gap: "0.5rem" }}>
           <button
@@ -1842,7 +1813,6 @@ function ContactManagementSection({ site, client, contactLinks, onRefreshContact
   );
 }
 
-// Clients Tab (Legacy - kept for reference)
 function ClientsTab({ clients, clientEquipments, onRefresh, onFetchClientEquipments, apiCall, setError }) {
   const [selectedClient, setSelectedClient] = useState(null);
   const [selectedClientContacts, setSelectedClientContacts] = useState(null);
@@ -2827,7 +2797,6 @@ function ContactsTab({
   );
 }
 
-// Equipments Tab (Legacy Test Types)
 function EquipmentTypesTab({ equipmentTypes, onRefresh, apiCall, setError }) {
   const [selectedType, setSelectedType] = useState(null);
   const [form, setForm] = useState({
@@ -3017,10 +2986,6 @@ function EquipmentTypesTab({ equipmentTypes, onRefresh, apiCall, setError }) {
     </div>
   );
 }
-
-// Schedules Tab - REMOVED
-
-// Work Orders Tab - REMOVED
 
 // All Equipments View
 function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment, currentUser }) {
@@ -3996,9 +3961,6 @@ function OverdueView({ apiCall, setError, overdue, setOverdue, loading, setLoadi
   );
 }
 
-// Deprecated QuickViewsTab removed - functionality moved to separate views (AllEquipmentsView, UpcomingView, OverdueView)
-
-// Add Equipment Page
 function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, previousView, onBack, onSuccess, currentUser }) {
   const [selectedClientId, setSelectedClientId] = useState("");
   const [selectedSiteId, setSelectedSiteId] = useState("");
@@ -4447,9 +4409,6 @@ function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, 
   );
 }
 
-// Deprecated QuickViewsTab removed - functionality moved to separate views (AllEquipmentsView, UpcomingView, OverdueView)
-
-// Admin Tab
 function AdminTab({ apiCall, setError, currentUser }) {
   const [adminTab, setAdminTab] = useState("utilities");
   const [users, setUsers] = useState([]);
@@ -4850,7 +4809,5 @@ function AdminTab({ apiCall, setError, currentUser }) {
     </div>
   );
 }
-
-// Reports Tab - REMOVED
 
 export default App;
