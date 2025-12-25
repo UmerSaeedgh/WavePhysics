@@ -404,16 +404,16 @@ function App() {
             clients={clients}
             onRefresh={fetchClients}
             onClientClick={(client) => {
+              setClientToEdit(client);
+              setPreviousView("clients");
+              setView("edit-client");
+            }}
+            onViewSites={(client) => {
               setSelectedClient(client);
               setView("client-sites");
             }}
             onAddClient={() => {
               setClientToEdit(null);
-              setPreviousView("clients");
-              setView("edit-client");
-            }}
-            onEditClient={(client) => {
-              setClientToEdit(client);
               setPreviousView("clients");
               setView("edit-client");
             }}
@@ -654,7 +654,7 @@ function App() {
 }
 
 // Clients List View - Main entry point
-function ClientsListView({ clients, onRefresh, onClientClick, onAddClient, onEditClient, apiCall, setError }) {
+function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onAddClient, apiCall, setError }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
   const [showFilters, setShowFilters] = useState(false);
@@ -770,8 +770,8 @@ function ClientsListView({ clients, onRefresh, onClientClick, onAddClient, onEdi
         ) : (
           <ul className="list">
             {filteredAndSortedClients.map(client => (
-              <li key={client.id} className="list-item">
-                <div className="list-main">
+              <li key={client.id} className="list-item" style={{ cursor: "pointer" }}>
+                <div className="list-main" onClick={() => onClientClick(client)}>
                   <div className="list-title">{client.name}</div>
                   <div className="list-subtitle">
                     {client.address && `${client.address} • `}
@@ -779,9 +779,8 @@ function ClientsListView({ clients, onRefresh, onClientClick, onAddClient, onEdi
                     {client.notes}
                   </div>
                 </div>
-                <div className="list-actions">
-                  <button onClick={() => onClientClick(client)}>Sites</button>
-                  <button onClick={() => onEditClient(client)}>Edit</button>
+                <div className="list-actions" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => onViewSites(client)}>Sites</button>
                   <button className="danger" onClick={() => handleDelete(client.id)}>Delete</button>
                 </div>
               </li>
