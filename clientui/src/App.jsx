@@ -524,6 +524,8 @@ function App() {
             }}
             apiCall={apiCall}
             setError={setError}
+            currentUser={currentUser}
+            allEquipments={allEquipments}
           />
         )}
 
@@ -581,6 +583,8 @@ function App() {
             }}
             apiCall={apiCall}
             setError={setError}
+            currentUser={currentUser}
+            allEquipments={allEquipments}
           />
         )}
 

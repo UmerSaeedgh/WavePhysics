@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onAddClient, apiCall, setError }) {
+export default function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onAddClient, apiCall, setError, currentUser, allEquipments }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOrder, setSortOrder] = useState("asc");
   const [showFilters, setShowFilters] = useState(false);
@@ -37,6 +37,14 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
     });
 
   const activeFilterCount = [searchTerm, sortOrder !== "asc"].filter(Boolean).length;
+
+  // Check if client has equipment
+  function clientHasEquipment(clientId) {
+    return allEquipments && allEquipments.some(eq => eq.client_id === clientId);
+  }
+
+  // Check if user is admin
+  const isAdmin = currentUser && (currentUser.is_admin === true || currentUser.is_admin === 1);
 
   return (
     <div>
@@ -128,7 +136,9 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
                 </div>
                 <div className="list-actions" onClick={(e) => e.stopPropagation()}>
                   <button onClick={() => onViewSites(client)}>Sites</button>
-                  <button className="danger" onClick={() => handleDelete(client.id)}>Delete</button>
+                  {isAdmin && !clientHasEquipment(client.id) && (
+                    <button className="danger" onClick={() => handleDelete(client.id)}>Delete</button>
+                  )}
                 </div>
               </li>
             ))}
