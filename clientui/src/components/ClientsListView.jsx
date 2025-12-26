@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onAddClient, apiCall, setError, currentUser, allEquipments }) {
+export default function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onAddClient, apiCall, setError, currentUser, allEquipments, sites, onRefreshAllCounts }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOrder, setSortOrder] = useState("asc");
   const [showFilters, setShowFilters] = useState(false);
@@ -10,6 +10,10 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
     try {
       await apiCall(`/clients/${clientId}`, { method: "DELETE" });
       await onRefresh();
+      // Refresh all counts
+      if (onRefreshAllCounts) {
+        onRefreshAllCounts();
+      }
     } catch (err) {
       // error already set
     }
@@ -41,6 +45,25 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
   // Check if client has equipment
   function clientHasEquipment(clientId) {
     return allEquipments && allEquipments.some(eq => eq.client_id === clientId);
+  }
+
+  // Count sites for a client
+  function countSitesForClient(clientId) {
+    if (!sites || !Array.isArray(sites) || sites.length === 0) return 0;
+    // Handle both number and string client_id
+    const clientIdNum = typeof clientId === 'number' ? clientId : parseInt(clientId);
+    if (isNaN(clientIdNum)) return 0;
+    const count = sites.filter(site => {
+      if (!site || site.client_id === undefined || site.client_id === null) return false;
+      const siteClientId = typeof site.client_id === 'number' ? site.client_id : parseInt(site.client_id);
+      return !isNaN(siteClientId) && siteClientId === clientIdNum;
+    }).length;
+    return count;
+  }
+
+  // Count equipments for a client
+  function countEquipmentsForClient(clientId) {
+    return allEquipments ? allEquipments.filter(eq => eq.client_id === clientId).length : 0;
   }
 
   // Check if user is admin
@@ -127,7 +150,12 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
             {filteredAndSortedClients.map(client => (
               <li key={client.id} className="list-item" style={{ cursor: "pointer" }}>
                 <div className="list-main" onClick={() => onClientClick(client)}>
-                  <div className="list-title">{client.name}</div>
+                  <div className="list-title">
+                    {client.name}
+                    <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "#8193A4", fontWeight: "normal" }}>
+                      ({countSitesForClient(client.id)} sites, {countEquipmentsForClient(client.id)} equipments)
+                    </span>
+                  </div>
                   <div className="list-subtitle">
                     {client.address && `${client.address} • `}
                     {client.billing_info && `Billing: ${client.billing_info} • `}

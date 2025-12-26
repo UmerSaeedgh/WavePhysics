@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { formatDate } from "../utils/formatDate";
 
-export default function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment, currentUser, onRefreshCompletions }) {
+export default function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment, currentUser, onRefreshCompletions, onRefreshAllCounts }) {
   const equipmentRefs = useRef({});
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -176,6 +176,10 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     try {
       await apiCall(`/equipment-records/${equipmentId}`, { method: "DELETE" });
       await fetchAllEquipments();
+      // Refresh all counts
+      if (onRefreshAllCounts) {
+        onRefreshAllCounts();
+      }
     } catch (err) {
       // error already set
     }
@@ -548,11 +552,6 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                     </div>
                     <div className="list-actions" onClick={(e) => e.stopPropagation()}>
                       <button onClick={() => handleDoneClick(equipment)}>Done</button>
-                      <button onClick={() => {
-                        if (onNavigateToAddEquipment) {
-                          onNavigateToAddEquipment(equipment);
-                        }
-                      }}>Edit</button>
                       <button className="danger" onClick={() => handleDeleteEquipment(equipment.id)}>Delete</button>
                     </div>
                   </li>

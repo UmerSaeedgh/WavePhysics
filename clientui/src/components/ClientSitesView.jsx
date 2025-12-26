@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-export default function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRefreshEquipments, onSiteClick, onBack, onAddSite, onEditSite, apiCall, setError, currentUser, allEquipments }) {
+export default function ClientSitesView({ client, sites, clientEquipments, onRefreshSites, onRefreshEquipments, onSiteClick, onBack, onAddSite, onEditSite, apiCall, setError, currentUser, allEquipments, onRefreshAllCounts }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOrder, setSortOrder] = useState("asc");
   const [showFilters, setShowFilters] = useState(false);
@@ -15,6 +15,10 @@ export default function ClientSitesView({ client, sites, clientEquipments, onRef
     try {
       await apiCall(`/sites/${siteId}`, { method: "DELETE" });
       await onRefreshSites();
+      // Refresh all counts
+      if (onRefreshAllCounts) {
+        onRefreshAllCounts();
+      }
     } catch (err) {
       // error already set
     }
@@ -45,6 +49,11 @@ export default function ClientSitesView({ client, sites, clientEquipments, onRef
   // Check if site has equipment
   function siteHasEquipment(siteId) {
     return allEquipments && allEquipments.some(eq => eq.site_id === siteId);
+  }
+
+  // Count equipments for a site
+  function countEquipmentsForSite(siteId) {
+    return allEquipments ? allEquipments.filter(eq => eq.site_id === siteId).length : 0;
   }
 
   // Check if user is admin
@@ -136,7 +145,12 @@ export default function ClientSitesView({ client, sites, clientEquipments, onRef
             {filteredAndSortedSites.map(site => (
               <li key={site.id} className="list-item" style={{ cursor: "pointer" }}>
                 <div className="list-main" onClick={() => onSiteClick(site)}>
-                  <div className="list-title">{site.name}</div>
+                  <div className="list-title">
+                    {site.name}
+                    <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "#8193A4", fontWeight: "normal" }}>
+                      ({countEquipmentsForSite(site.id)} equipments)
+                    </span>
+                  </div>
                   <div className="list-subtitle">
                     {site.address && `${site.address} • `}
                     {site.timezone}

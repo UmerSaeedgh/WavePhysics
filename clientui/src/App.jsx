@@ -61,10 +61,12 @@ function App() {
     if (isAuthenticated && authToken) {
       fetchClients();
       fetchEquipmentTypes();
+      fetchSites(null, true); // Fetch all sites for client counts (silent)
       // Fetch counts silently (without showing loading state)
       fetchAllEquipments(true);
       fetchUpcoming(true);
       fetchOverdue(true);
+      fetchCompletions(true);
     }
   }, [isAuthenticated, authToken]);
 
@@ -75,6 +77,13 @@ function App() {
       fetchClientEquipments(selectedClient.id);
     }
   }, [selectedClient]);
+
+  // Fetch all sites when viewing clients list (for counts)
+  useEffect(() => {
+    if (view === "clients" && !selectedClient) {
+      fetchSites(null, true); // Fetch all sites silently for counts
+    }
+  }, [view]);
 
   // Fetch site details when a site is selected
   useEffect(() => {
@@ -208,13 +217,19 @@ function App() {
     }
   }
 
-  async function handleLogout() {
+  async function handleLogout(skipApiCall = false) {
     try {
-      if (authToken) {
-        await apiCall("/auth/logout", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${authToken}` },
-        });
+      // Skip API call if session is already expired or if explicitly requested
+      if (!skipApiCall && authToken) {
+        try {
+          await apiCall("/auth/logout", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${authToken}` },
+          });
+        } catch (err) {
+          // If logout API call fails (e.g., session already expired), continue with local logout
+          console.warn("Logout API call failed, proceeding with local logout:", err);
+        }
       }
     } catch (err) {
       console.error("Logout error:", err);
@@ -251,35 +266,25 @@ function App() {
       
       if (!res.ok) {
         // Handle 401 Unauthorized - token expired or invalid
-        // Only logout if we have a token AND it's not during initial data fetch after login
         if (res.status === 401 && tokenToUse) {
-          // Don't logout immediately after login (within 10 seconds) to prevent race conditions
-          const timeSinceLogin = loginTime ? Date.now() - loginTime : Infinity;
-          const isRecentlyLoggedIn = timeSinceLogin < 10000; // 10 seconds
+          // Don't logout if this is the login endpoint itself (invalid credentials)
+          const isLoginEndpoint = endpoint.includes("/auth/login");
           
-          // Don't logout if:
-          // 1. We're in the middle of login process
-          // 2. It's an initial data fetch endpoint
-          // 3. User just logged in (within 10 seconds)
-          const isAuthEndpoint = endpoint.includes("/auth/");
-          const isInitialDataLoad = endpoint.includes("/clients") || 
-                                    endpoint.includes("/equipment-types") || 
-                                    endpoint.includes("/equipment-records");
-          
-          if (!isAuthEndpoint && !isInitialDataLoad && !isRecentlyLoggedIn) {
-            // Only logout for non-auth, non-initial-load endpoints, and not right after login
-            handleLogout();
+          if (!isLoginEndpoint) {
+            // Session expired - automatically log out (skip API call to avoid another 401)
+            console.warn("Session expired. Logging out automatically.");
+            handleLogout(true); // Skip API call since session is already expired
             throw new Error("Session expired. Please login again.");
-          } else {
-            // For auth endpoints, initial data fetch, or right after login, just throw error
-            const text = await res.text();
-            const errorMsg = text || `HTTP ${res.status}: ${res.statusText}`;
-            console.warn("API call failed (not logging out):", endpoint, errorMsg);
-            throw new Error(errorMsg);
           }
         }
         const text = await res.text();
-        const errorMsg = text || `HTTP ${res.status}: ${res.statusText}`;
+        let errorMsg;
+        try {
+          const json = JSON.parse(text);
+          errorMsg = json.detail || json.message || text || `HTTP ${res.status}: ${res.statusText}`;
+        } catch {
+          errorMsg = text || `HTTP ${res.status}: ${res.statusText}`;
+        }
         throw new Error(errorMsg);
       }
       
@@ -320,8 +325,8 @@ function App() {
     }
   }
 
-  async function fetchSites(clientId = null) {
-    setLoading(true);
+  async function fetchSites(clientId = null, silent = false) {
+    if (!silent) setLoading(true);
     try {
       // Ensure clientId is a valid number or null
       const validClientId = clientId && typeof clientId === 'number' ? clientId : 
@@ -331,8 +336,9 @@ function App() {
       setSites(data);
     } catch (err) {
       // error already set
+      setSites([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
@@ -452,6 +458,23 @@ function App() {
     }
   }
 
+  // Refresh all counts silently after database changes
+  async function refreshAllCounts() {
+    try {
+      await Promise.all([
+        fetchClients().catch(() => {}),
+        fetchSites(null, true).catch(() => {}),
+        fetchAllEquipments(true).catch(() => {}),
+        fetchUpcoming(true).catch(() => {}),
+        fetchOverdue(true).catch(() => {}),
+        fetchCompletions(true).catch(() => {})
+      ]);
+    } catch (err) {
+      // Silently fail - counts will update on next manual refresh
+      console.error("Error refreshing counts:", err);
+    }
+  }
+
   // Login Component
   if (!isAuthenticated) {
     return <LoginView onLogin={handleLogin} error={error} />;
@@ -537,6 +560,8 @@ function App() {
             setError={setError}
             currentUser={currentUser}
             allEquipments={allEquipments}
+            sites={sites}
+            onRefreshAllCounts={refreshAllCounts}
           />
         )}
 
@@ -558,6 +583,7 @@ function App() {
               setPreviousView(null);
               setView(returnView);
               await fetchClients();
+              await refreshAllCounts(); // Refresh all counts after client change
             }}
           />
         )}
@@ -567,7 +593,11 @@ function App() {
             client={selectedClient}
             sites={sites}
             clientEquipments={clientEquipments}
-            onRefreshSites={() => fetchSites(selectedClient.id)}
+            onRefreshSites={async () => {
+              await fetchSites(selectedClient.id);
+              await refreshAllCounts(); // Refresh all counts after site refresh
+            }}
+            onRefreshAllCounts={refreshAllCounts}
             onRefreshEquipments={() => fetchClientEquipments(selectedClient.id)}
             onSiteClick={async (site) => {
               setSiteToEdit(site);
@@ -621,6 +651,7 @@ function App() {
               setSiteToEdit(null);
               setView("client-sites");
               await fetchSites(selectedClient.id);
+              await refreshAllCounts(); // Refresh all counts after site change
             }}
             onBack={() => {
               setSiteToEdit(null);
@@ -745,6 +776,7 @@ function App() {
               if (returnView === "edit-site" && siteToEdit) {
                 await fetchSiteContacts(siteToEdit.id);
               }
+              await refreshAllCounts(); // Refresh all counts after equipment change
             }}
           />
         )}
