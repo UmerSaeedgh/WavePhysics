@@ -173,6 +173,16 @@ def init_schema(conn):
           expires_at   TEXT NOT NULL,
           created_at   TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        -- Equipment Completion Records (tracks when equipment is marked as done)
+        CREATE TABLE IF NOT EXISTS equipment_completions (
+          id                 INTEGER PRIMARY KEY,
+          equipment_record_id INTEGER NOT NULL REFERENCES equipment_record(id) ON DELETE CASCADE,
+          completed_at        TEXT NOT NULL DEFAULT (datetime('now')),
+          due_date            TEXT NOT NULL,
+          interval_weeks      INTEGER,
+          completed_by_user   TEXT
+        );
         """
     )
     
@@ -242,5 +252,23 @@ def init_schema(conn):
         conn.execute("DROP INDEX IF EXISTS sqlite_autoindex_schedules_1")
     except sqlite3.OperationalError:
         pass
+    
+    # Migrate equipment_completions table if it doesn't exist
+    try:
+        conn.execute("SELECT id FROM equipment_completions LIMIT 1")
+    except sqlite3.OperationalError:
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS equipment_completions (
+                  id                 INTEGER PRIMARY KEY,
+                  equipment_record_id INTEGER NOT NULL REFERENCES equipment_record(id) ON DELETE CASCADE,
+                  completed_at        TEXT NOT NULL DEFAULT (datetime('now')),
+                  due_date            TEXT NOT NULL,
+                  interval_weeks      INTEGER,
+                  completed_by_user   TEXT
+                )
+            """)
+        except sqlite3.OperationalError:
+            pass
     
     conn.commit()

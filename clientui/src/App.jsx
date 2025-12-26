@@ -12,6 +12,7 @@ import AllEquipmentsView from "./components/AllEquipmentsView";
 import UpcomingView from "./components/UpcomingView";
 import AddEquipmentPage from "./components/AddEquipmentPage";
 import UserView from "./components/UserView";
+import CompletedView from "./components/CompletedView";
 
 function App() {
   // Authentication state
@@ -25,7 +26,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!authToken);
   const [loginTime, setLoginTime] = useState(null); // Track when user logged in
 
-  const [view, setView] = useState("clients"); // "clients", "client-sites", "all-equipments", "upcoming", "overdue", "admin", "user", "add-equipment", "edit-client", "edit-site", "edit-contact"
+  const [view, setView] = useState("clients"); // "clients", "client-sites", "all-equipments", "upcoming", "overdue", "completed", "admin", "user", "add-equipment", "edit-client", "edit-site", "edit-contact"
   const [equipmentToEdit, setEquipmentToEdit] = useState(null); // Equipment record to edit when navigating to add-equipment page
   const [clientToEdit, setClientToEdit] = useState(null); // Client to edit when navigating to edit-client page
   const [siteToEdit, setSiteToEdit] = useState(null); // Site to edit when navigating to edit-site page
@@ -49,6 +50,7 @@ function App() {
   const [dueThisMonth, setDueThisMonth] = useState([]);
   const [overdue, setOverdue] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
+  const [completions, setCompletions] = useState([]);
   const [upcomingDate, setUpcomingDate] = useState(() => {
     // Default to today's date
     return new Date().toISOString().split('T')[0];
@@ -119,6 +121,22 @@ function App() {
       setContactLinks(data || []);
     } catch (err) {
       setContactLinks([]);
+    }
+  }
+
+  async function fetchCompletions(silent = false) {
+    if (!silent) setLoading(true);
+    if (!silent) setError("");
+    try {
+      const data = await apiCall("/equipment-completions").catch(() => []);
+      setCompletions(Array.isArray(data) ? data : []);
+    } catch (err) {
+      const errorMessage = err.message || "Failed to load completion data";
+      if (!silent) setError(errorMessage);
+      if (!silent) console.error("Error fetching completions:", err);
+      setCompletions([]);
+    } finally {
+      if (!silent) setLoading(false);
     }
   }
 
@@ -475,6 +493,12 @@ function App() {
               Upcoming ({overdue.length + upcoming.length})
           </button>
             <button
+              className={view === "completed" ? "active" : ""}
+              onClick={() => setView("completed")}
+            >
+              Completed ({completions.length})
+            </button>
+            <button
               className={view === "user" ? "active" : ""}
               onClick={() => setView("user")}
             >
@@ -650,6 +674,7 @@ function App() {
             scrollToEquipmentId={scrollToEquipmentId}
             onScrollComplete={() => setScrollToEquipmentId(null)}
             currentUser={currentUser}
+            onRefreshCompletions={() => fetchCompletions(true)}
             onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment
@@ -721,6 +746,19 @@ function App() {
                 await fetchSiteContacts(siteToEdit.id);
               }
             }}
+          />
+        )}
+
+        {view === "completed" && (
+          <CompletedView
+            apiCall={apiCall}
+            setError={setError}
+            loading={loading}
+            setLoading={setLoading}
+            currentUser={currentUser}
+            completions={completions}
+            setCompletions={setCompletions}
+            onRefresh={() => fetchCompletions()}
           />
         )}
 

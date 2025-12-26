@@ -1297,6 +1297,108 @@ def delete_equipment_record(equipment_record_id: int, db: sqlite3.Connection = D
     return
 
 
+# ========== EQUIPMENT COMPLETIONS ==========
+
+class EquipmentCompletionCreate(BaseModel):
+    equipment_record_id: int
+    due_date: str
+    interval_weeks: Optional[int] = None
+    completed_by_user: Optional[str] = None
+
+
+class EquipmentCompletionRead(BaseModel):
+    id: int
+    equipment_record_id: int
+    completed_at: str
+    due_date: str
+    interval_weeks: Optional[int] = None
+    completed_by_user: Optional[str] = None
+    equipment_name: Optional[str] = None
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
+    site_id: Optional[int] = None
+    site_name: Optional[str] = None
+    equipment_type_id: Optional[int] = None
+    equipment_type_name: Optional[str] = None
+
+
+@app.post("/equipment-completions", response_model=EquipmentCompletionRead, status_code=status.HTTP_201_CREATED)
+def create_equipment_completion(payload: EquipmentCompletionCreate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    # Verify equipment record exists
+    equipment_row = db.execute("SELECT id FROM equipment_record WHERE id = ?", (payload.equipment_record_id,)).fetchone()
+    if equipment_row is None:
+        raise HTTPException(status_code=404, detail="Equipment record not found")
+    
+    # Get username from current_user
+    username = current_user.get("username", "unknown")
+    
+    cur = db.execute(
+        "INSERT INTO equipment_completions (equipment_record_id, due_date, interval_weeks, completed_by_user) VALUES (?, ?, ?, ?)",
+        (payload.equipment_record_id, payload.due_date, payload.interval_weeks, username)
+    )
+    db.commit()
+    
+    # Fetch the completion with joined equipment data
+    row = db.execute("""
+        SELECT ec.id, ec.equipment_record_id, ec.completed_at, ec.due_date, ec.interval_weeks, ec.completed_by_user,
+               er.equipment_name, er.client_id, er.site_id, er.equipment_type_id,
+               c.name as client_name,
+               s.name as site_name,
+               et.name as equipment_type_name
+        FROM equipment_completions ec
+        JOIN equipment_record er ON ec.equipment_record_id = er.id
+        LEFT JOIN clients c ON er.client_id = c.id
+        LEFT JOIN sites s ON er.site_id = s.id
+        LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+        WHERE ec.id = ?
+    """, (cur.lastrowid,)).fetchone()
+    
+    return EquipmentCompletionRead(**dict(row))
+
+
+@app.get("/equipment-completions", response_model=List[EquipmentCompletionRead])
+def list_equipment_completions(
+    equipment_record_id: Optional[int] = Query(None, description="Filter by equipment record"),
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    query = """
+        SELECT ec.id, ec.equipment_record_id, ec.completed_at, ec.due_date, ec.interval_weeks, ec.completed_by_user,
+               er.equipment_name, er.client_id, er.site_id, er.equipment_type_id,
+               c.name as client_name,
+               s.name as site_name,
+               et.name as equipment_type_name
+        FROM equipment_completions ec
+        JOIN equipment_record er ON ec.equipment_record_id = er.id
+        LEFT JOIN clients c ON er.client_id = c.id
+        LEFT JOIN sites s ON er.site_id = s.id
+        LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+        WHERE 1=1
+    """
+    params = []
+    
+    if equipment_record_id:
+        query += " AND ec.equipment_record_id = ?"
+        params.append(equipment_record_id)
+    
+    query += " ORDER BY ec.completed_at DESC"
+    
+    cur = db.execute(query, params)
+    rows = cur.fetchall()
+    return [EquipmentCompletionRead(**dict(row)) for row in rows]
+
+
+@app.delete("/equipment-completions/{completion_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_equipment_completion(completion_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    cur = db.execute("DELETE FROM equipment_completions WHERE id = ?", (completion_id,))
+    db.commit()
+    
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Completion record not found")
+    
+    return
+
+
 # ========== CLIENT EQUIPMENTS ==========
 
 # Default equipment list

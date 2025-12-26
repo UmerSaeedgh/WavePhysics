@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { formatDate } from "../utils/formatDate";
 
-export default function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment, currentUser }) {
+export default function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment, currentUser, onRefreshCompletions }) {
   const equipmentRefs = useRef({});
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -230,10 +230,28 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
       if (doneInterval && parseInt(doneInterval) !== doneEquipment.interval_weeks) {
         updatePayload.interval_weeks = parseInt(doneInterval);
       }
+      
+      // Update the equipment record
       await apiCall(`/equipment-records/${doneEquipment.id}`, {
         method: "PUT",
         body: JSON.stringify(updatePayload)
       });
+      
+      // Create a completion record
+      await apiCall("/equipment-completions", {
+        method: "POST",
+        body: JSON.stringify({
+          equipment_record_id: doneEquipment.id,
+          due_date: calculatedDueDate,
+          interval_weeks: doneInterval ? parseInt(doneInterval) : doneEquipment.interval_weeks
+        })
+      });
+      
+      // Refresh completions count in navigation
+      if (onRefreshCompletions) {
+        onRefreshCompletions();
+      }
+      
       await fetchAllEquipments();
       setShowDoneModal(false);
       setDoneEquipment(null);
