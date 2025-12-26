@@ -10,7 +10,6 @@ import EditSitePage from "./components/EditSitePage";
 import EditContactPage from "./components/EditContactPage";
 import AllEquipmentsView from "./components/AllEquipmentsView";
 import UpcomingView from "./components/UpcomingView";
-import OverdueView from "./components/OverdueView";
 import AddEquipmentPage from "./components/AddEquipmentPage";
 import UserView from "./components/UserView";
 
@@ -97,12 +96,6 @@ function App() {
     }
   }, [view, upcomingDate, upcomingInterval]);
 
-  // Fetch data when overdue view is selected
-  useEffect(() => {
-    if (view === "overdue") {
-      fetchOverdue();
-    }
-  }, [view]);
 
   async function fetchOverdue(silent = false) {
     if (!silent) setLoading(true);
@@ -479,14 +472,8 @@ function App() {
               className={view === "upcoming" ? "active" : ""}
               onClick={() => setView("upcoming")}
           >
-              Upcoming ({upcoming.length})
+              Upcoming ({overdue.length + upcoming.length})
           </button>
-            <button
-              className={view === "overdue" ? "active" : ""}
-              onClick={() => setView("overdue")}
-            >
-              Overdue ({overdue.length})
-            </button>
             <button
               className={view === "user" ? "active" : ""}
               onClick={() => setView("user")}
@@ -694,28 +681,8 @@ function App() {
             upcomingInterval={upcomingInterval}
             setUpcomingInterval={setUpcomingInterval}
             currentUser={currentUser}
-            onNavigateToSchedule={async (equipmentRecordId, siteId) => {
-              try {
-                // Navigate to all-equipments view and scroll to the equipment
-                setScrollToEquipmentId(equipmentRecordId);
-                setView("all-equipments");
-                // AllEquipmentsView will fetch the data when it mounts
-              } catch (err) {
-                setError("Failed to navigate to equipment: " + (err.message || "Unknown error"));
-              }
-            }}
-          />
-        )}
-
-        {view === "overdue" && (
-          <OverdueView
-            apiCall={apiCall}
-            setError={setError}
             overdue={overdue}
             setOverdue={setOverdue}
-            loading={loading}
-            setLoading={setLoading}
-            currentUser={currentUser}
             onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment

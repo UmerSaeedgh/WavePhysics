@@ -121,7 +121,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     .filter(equipment => {
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
-        if (!equipment.equipment_name?.toLowerCase().includes(searchLower)) {
+        if (!equipment.equipment_name?.toLowerCase().startsWith(searchLower)) {
           return false;
         }
       }
@@ -181,6 +181,11 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     }
   }
 
+  function getTodayDate() {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  }
+
   function calculateDueDate(baseDate, intervalWeeks) {
     if (!baseDate || !intervalWeeks) return "";
     const date = new Date(baseDate);
@@ -194,10 +199,10 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     const initialInterval = equipment.interval_weeks?.toString() || "";
     setDoneInterval(initialInterval);
     
-    if (equipment.due_date && equipment.interval_weeks) {
-      setCalculatedDueDate(calculateDueDate(equipment.due_date, equipment.interval_weeks));
-    } else if (equipment.anchor_date && equipment.interval_weeks) {
-      setCalculatedDueDate(calculateDueDate(equipment.anchor_date, equipment.interval_weeks));
+    // Use today's date as the base date
+    const today = getTodayDate();
+    if (initialInterval) {
+      setCalculatedDueDate(calculateDueDate(today, initialInterval));
     } else {
       setCalculatedDueDate("");
     }
@@ -206,11 +211,10 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
 
   function handleIntervalChange(newInterval) {
     setDoneInterval(newInterval);
-    if (doneEquipment) {
-      const baseDate = doneEquipment.due_date || doneEquipment.anchor_date;
-      if (baseDate && newInterval) {
-        setCalculatedDueDate(calculateDueDate(baseDate, newInterval));
-      }
+    // Use today's date as the base date
+    const today = getTodayDate();
+    if (newInterval) {
+      setCalculatedDueDate(calculateDueDate(today, newInterval));
     }
   }
 
@@ -685,22 +689,32 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   Calculated Due Date
                 </label>
                 <input
-                  type="date"
+                  type="text"
                   value={calculatedDueDate}
-                  onChange={(e) => setCalculatedDueDate(e.target.value)}
+                  onChange={(e) => {
+                    // Only allow yyyy-mm-dd format
+                    const value = e.target.value;
+                    // Allow empty or valid yyyy-mm-dd pattern
+                    if (value === "" || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                      setCalculatedDueDate(value);
+                    }
+                  }}
+                  placeholder="yyyy-mm-dd"
+                  pattern="\d{4}-\d{2}-\d{2}"
                   style={{
                     width: "100%",
                     padding: "0.5rem",
                     border: "1px solid #8193A4",
                     borderRadius: "0.25rem",
                     backgroundColor: "#fff",
-                    color: "#2D3234"
+                    color: "#2D3234",
+                    fontFamily: "monospace"
                   }}
                 />
                 <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
-                  {(doneEquipment.due_date || doneEquipment.anchor_date) ? 
-                    `${formatDate(doneEquipment.due_date || doneEquipment.anchor_date)} + ${doneInterval || 0} weeks` :
-                    "Set base date first"
+                  {doneInterval ? 
+                    `Today (${getTodayDate()}) + ${doneInterval} weeks = ${calculatedDueDate || "calculating..."}` :
+                    "Enter interval weeks to calculate due date"
                   }
                 </div>
               </div>
