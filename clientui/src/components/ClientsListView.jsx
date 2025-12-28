@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onAddClient, apiCall, setError, currentUser, allEquipments, sites, onRefreshAllCounts }) {
+export default function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onEditClient, onAddClient, apiCall, setError, currentUser, allEquipments, sites, onRefreshAllCounts }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOrder, setSortOrder] = useState("asc");
   const [showFilters, setShowFilters] = useState(false);
@@ -163,7 +163,11 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
                   </div>
                 </div>
                 <div className="list-actions" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => onViewSites(client)}>Sites</button>
+                  <button onClick={() => {
+                    if (onEditClient) {
+                      onEditClient(client);
+                    }
+                  }}>Edit</button>
                   {isAdmin && !clientHasEquipment(client.id) && (
                     <button className="danger" onClick={() => handleDelete(client.id)}>Delete</button>
                   )}

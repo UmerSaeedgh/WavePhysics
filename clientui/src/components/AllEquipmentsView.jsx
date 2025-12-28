@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { formatDate } from "../utils/formatDate";
 
-export default function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment, currentUser, onRefreshCompletions, onRefreshAllCounts }) {
+export default function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment, currentUser, onRefreshCompletions, onRefreshAllCounts, initialClientId, initialSiteId }) {
   const equipmentRefs = useRef({});
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -12,8 +12,8 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
   
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedClientId, setSelectedClientId] = useState("");
-  const [selectedSiteId, setSelectedSiteId] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState(initialClientId || "");
+  const [selectedSiteId, setSelectedSiteId] = useState(initialSiteId || "");
   const [selectedEquipmentTypeId, setSelectedEquipmentTypeId] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [sortOrder, setSortOrder] = useState("asc");
@@ -80,6 +80,20 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     fetchClients();
     fetchEquipmentTypes();
   }, []);
+
+  // Update filters when initial props change (e.g., when navigating from ClientSitesView)
+  useEffect(() => {
+    if (initialClientId !== undefined) {
+      setSelectedClientId(initialClientId || "");
+    }
+    if (initialSiteId !== undefined) {
+      setSelectedSiteId(initialSiteId || "");
+    }
+    // Show filters if initial values are provided
+    if (initialClientId || initialSiteId) {
+      setShowFilters(true);
+    }
+  }, [initialClientId, initialSiteId]);
 
   async function fetchClients() {
     try {

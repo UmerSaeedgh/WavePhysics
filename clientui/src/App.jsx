@@ -36,6 +36,8 @@ function App() {
   const [selectedClient, setSelectedClient] = useState(null);
   const [selectedSite, setSelectedSite] = useState(null);
   const [scrollToEquipmentId, setScrollToEquipmentId] = useState(null); // Equipment record ID to scroll to in all-equipments view
+  const [allEquipmentsInitialClientId, setAllEquipmentsInitialClientId] = useState(null); // Initial client filter for all-equipments view
+  const [allEquipmentsInitialSiteId, setAllEquipmentsInitialSiteId] = useState(null); // Initial site filter for all-equipments view
   const [clients, setClients] = useState([]);
   const [sites, setSites] = useState([]);
   const [contacts, setContacts] = useState([]);
@@ -73,6 +75,8 @@ function App() {
   // Fetch sites when a client is selected
   useEffect(() => {
     if (selectedClient) {
+      // Clear sites first to avoid showing stale data from previous client
+      setSites([]);
       fetchSites(selectedClient.id);
       fetchClientEquipments(selectedClient.id);
     }
@@ -504,8 +508,13 @@ function App() {
               Clients ({clients.length})
           </button>
           <button
-              className={view === "all-equipments" ? "active" : ""}
-              onClick={() => setView("all-equipments")}
+            className={view === "all-equipments" ? "active" : ""}
+            onClick={() => {
+              // Clear filters when navigating from navigation bar
+              setAllEquipmentsInitialClientId(null);
+              setAllEquipmentsInitialSiteId(null);
+              setView("all-equipments");
+            }}
           >
               All Equipments ({allEquipments.length})
           </button>
@@ -543,6 +552,12 @@ function App() {
             clients={clients}
             onRefresh={fetchClients}
             onClientClick={(client) => {
+              // Clicking on client shows its sites
+              setSelectedClient(client);
+              setView("client-sites");
+            }}
+            onEditClient={(client) => {
+              // Edit button opens edit client page
               setClientToEdit(client);
               setPreviousView("clients");
               setView("edit-client");
@@ -599,12 +614,11 @@ function App() {
             }}
             onRefreshAllCounts={refreshAllCounts}
             onRefreshEquipments={() => fetchClientEquipments(selectedClient.id)}
-            onSiteClick={async (site) => {
-              setSiteToEdit(site);
-              setPreviousView("client-sites");
-              setView("edit-site");
-              // Fetch contacts for the site
-              await fetchSiteContacts(site.id);
+            onSiteClick={(site) => {
+              // Navigate to all-equipments view with client and site filters applied
+              setAllEquipmentsInitialClientId(selectedClient.id.toString());
+              setAllEquipmentsInitialSiteId(site.id.toString());
+              setView("all-equipments");
             }}
             onAddSite={() => {
               setSiteToEdit(null);
@@ -706,6 +720,8 @@ function App() {
             onScrollComplete={() => setScrollToEquipmentId(null)}
             currentUser={currentUser}
             onRefreshCompletions={() => fetchCompletions(true)}
+            initialClientId={allEquipmentsInitialClientId}
+            initialSiteId={allEquipmentsInitialSiteId}
             onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment

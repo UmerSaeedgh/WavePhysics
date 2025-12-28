@@ -6,9 +6,11 @@ export default function ClientSitesView({ client, sites, clientEquipments, onRef
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
-    onRefreshSites();
-    onRefreshEquipments();
-  }, []);
+    if (client && client.id) {
+      onRefreshSites();
+      onRefreshEquipments();
+    }
+  }, [client?.id]);
 
   async function handleDelete(siteId) {
     if (!window.confirm("Delete this site?")) return;
@@ -26,6 +28,11 @@ export default function ClientSitesView({ client, sites, clientEquipments, onRef
 
   const filteredAndSortedSites = sites
     .filter(site => {
+      // First, ensure site belongs to current client
+      if (client && client.id && site.client_id !== client.id) {
+        return false;
+      }
+      // Then apply search filter
       if (!searchTerm) return true;
       const searchLower = searchTerm.toLowerCase();
       return (
@@ -157,6 +164,11 @@ export default function ClientSitesView({ client, sites, clientEquipments, onRef
                   </div>
                 </div>
                 <div className="list-actions" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => {
+                    if (onEditSite) {
+                      onEditSite(site);
+                    }
+                  }}>Edit</button>
                   {isAdmin && !siteHasEquipment(site.id) && (
                     <button className="danger" onClick={() => handleDelete(site.id)}>Delete</button>
                   )}
