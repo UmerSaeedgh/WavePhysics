@@ -1,9 +1,10 @@
 import { useState } from "react";
 
-export default function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onEditClient, onAddClient, apiCall, setError, currentUser, allEquipments, sites, onRefreshAllCounts }) {
+export default function ClientsListView({ clients, onRefresh, onClientClick, onViewSites, onEditClient, onAddClient, apiCall, setError, currentUser, allEquipments, sites, onRefreshAllCounts, businesses, isSuperAdmin }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOrder, setSortOrder] = useState("asc");
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedBusinessId, setSelectedBusinessId] = useState("");
 
   async function handleDelete(clientId) {
     if (!window.confirm("Delete this client? All associated sites will be deleted.")) return;
@@ -19,7 +20,7 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
     }
   }
 
-  const filteredAndSortedClients = clients
+  const filteredAndSortedClients = (Array.isArray(clients) ? clients : [])
     .filter(client => {
       if (!searchTerm) return true;
       const searchLower = searchTerm.toLowerCase();
@@ -40,7 +41,7 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
       }
     });
 
-  const activeFilterCount = [searchTerm, sortOrder !== "asc"].filter(Boolean).length;
+  const activeFilterCount = [searchTerm, sortOrder !== "asc", selectedBusinessId].filter(Boolean).length;
 
   // Check if client has equipment
   function clientHasEquipment(clientId) {
@@ -88,6 +89,37 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
         {showFilters && (
           <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
             <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+              {isSuperAdmin && businesses && businesses.length > 0 && (
+                <div style={{ minWidth: "200px" }}>
+                  <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                    Filter by Business
+                  </label>
+                  <select
+                    value={selectedBusinessId}
+                    onChange={async (e) => {
+                      const newBusinessId = e.target.value;
+                      setSelectedBusinessId(newBusinessId);
+                      // Refetch clients with business filter
+                      await onRefresh(newBusinessId ? parseInt(newBusinessId) : null);
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem",
+                      border: "1px solid #8193A4",
+                      borderRadius: "0.25rem",
+                      backgroundColor: "#fff",
+                      color: "#2D3234"
+                    }}
+                  >
+                    <option value="">All Businesses</option>
+                    {businesses.map(business => (
+                      <option key={business.id} value={business.id.toString()}>
+                        {business.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div style={{ flex: 1, minWidth: "200px" }}>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
                   Search Clients

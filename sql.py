@@ -18,13 +18,22 @@ def connect_db():
 def init_schema(conn):
     conn.executescript(
         """
+        -- Businesses (multi-tenant support)
+        CREATE TABLE IF NOT EXISTS businesses (
+          id           INTEGER PRIMARY KEY,
+          name         TEXT NOT NULL UNIQUE,
+          created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
         -- Clients
         CREATE TABLE IF NOT EXISTS clients (
           id           INTEGER PRIMARY KEY,
-          name         TEXT NOT NULL UNIQUE,
+          business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+          name         TEXT NOT NULL,
           address      TEXT,
           billing_info TEXT,
-          notes        TEXT
+          notes        TEXT,
+          UNIQUE(business_id, name)
         );
 
         -- Sites
@@ -61,11 +70,13 @@ def init_schema(conn):
         -- Equipment types (recurrence templates)
         CREATE TABLE IF NOT EXISTS equipment_types (
           id                 INTEGER PRIMARY KEY,
-          name               TEXT NOT NULL UNIQUE,
+          business_id        INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+          name               TEXT NOT NULL,
           interval_weeks     INTEGER NOT NULL,
           rrule              TEXT NOT NULL,
           default_lead_weeks INTEGER NOT NULL,
-          active             INTEGER NOT NULL DEFAULT 1
+          active             INTEGER NOT NULL DEFAULT 1,
+          UNIQUE(business_id, name)
         );
 
         -- Test types (recurrence templates) - Legacy table, kept for backward compatibility
@@ -157,11 +168,13 @@ def init_schema(conn):
 
         -- Users
         CREATE TABLE IF NOT EXISTS users (
-          id           INTEGER PRIMARY KEY,
-          username     TEXT NOT NULL UNIQUE,
-          password_hash TEXT NOT NULL,
-          is_admin     INTEGER NOT NULL DEFAULT 0,
-          created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+          id             INTEGER PRIMARY KEY,
+          username       TEXT NOT NULL UNIQUE,
+          password_hash  TEXT NOT NULL,
+          is_admin       INTEGER NOT NULL DEFAULT 0,
+          is_super_admin INTEGER NOT NULL DEFAULT 0,
+          business_id    INTEGER REFERENCES businesses(id) ON DELETE SET NULL,
+          created_at     TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
         -- Auth Tokens (for session management)
@@ -170,6 +183,8 @@ def init_schema(conn):
           user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           username     TEXT NOT NULL,
           is_admin     INTEGER NOT NULL DEFAULT 0,
+          is_super_admin INTEGER NOT NULL DEFAULT 0,
+          business_id  INTEGER REFERENCES businesses(id) ON DELETE SET NULL,
           expires_at   TEXT NOT NULL,
           created_at   TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -270,5 +285,58 @@ def init_schema(conn):
             """)
         except sqlite3.OperationalError:
             pass
+    
+    # Migration: Add businesses table and business_id columns
+    try:
+        conn.execute("SELECT id FROM businesses LIMIT 1")
+    except sqlite3.OperationalError:
+        # Create businesses table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS businesses (
+              id           INTEGER PRIMARY KEY,
+              name         TEXT NOT NULL UNIQUE,
+              created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        # Create a default business for existing data
+        conn.execute("INSERT INTO businesses (name) VALUES ('Default Business')")
+        default_business_id = conn.lastrowid
+        
+        # Add business_id columns to existing tables
+        for table, column in [
+            ("clients", "business_id"),
+            ("equipment_types", "business_id"),
+            ("users", "business_id"),
+            ("users", "is_super_admin"),
+            ("auth_tokens", "business_id"),
+            ("auth_tokens", "is_super_admin")
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER")
+                if column == "business_id" and table in ("clients", "equipment_types"):
+                    # Set default business for existing records
+                    conn.execute(f"UPDATE {table} SET business_id = ? WHERE business_id IS NULL", (default_business_id,))
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+        
+        # Update unique constraints for clients and equipment_types
+        # Note: SQLite doesn't support dropping UNIQUE constraints easily, so we'll handle this in application logic
+        conn.commit()
+    
+    # Migration: Update unique constraints if needed (for clients and equipment_types)
+    # We'll rely on application-level checks since SQLite doesn't easily support constraint changes
+    
+    # Migration: Add soft delete columns (deleted_at, deleted_by) to relevant tables
+    soft_delete_tables = ["clients", "sites", "equipment_record", "equipment_types"]
+    for table in soft_delete_tables:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN deleted_at TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN deleted_by TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
     
     conn.commit()

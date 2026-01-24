@@ -54,15 +54,15 @@ def verify_password(password: str, password_hash: str) -> bool:
     except:
         return False
 
-def create_token(user_id: int, username: str, is_admin: bool, db: sqlite3.Connection) -> str:
+def create_token(user_id: int, username: str, is_admin: bool, is_super_admin: bool, business_id: Optional[int], db: sqlite3.Connection) -> str:
     """Create a session token and store in database"""
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now() + timedelta(days=7)  # 7 day expiry
     
     # Store token in database
     db.execute(
-        "INSERT INTO auth_tokens (token, user_id, username, is_admin, expires_at) VALUES (?, ?, ?, ?, ?)",
-        (token, user_id, username, 1 if is_admin else 0, expires_at.isoformat())
+        "INSERT INTO auth_tokens (token, user_id, username, is_admin, is_super_admin, business_id, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (token, user_id, username, 1 if is_admin else 0, 1 if is_super_admin else 0, business_id, expires_at.isoformat())
     )
     db.commit()
     
@@ -74,7 +74,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     
     # Get token from database
     row = db.execute(
-        "SELECT user_id, username, is_admin, expires_at FROM auth_tokens WHERE token = ?",
+        "SELECT user_id, username, is_admin, is_super_admin, business_id, expires_at FROM auth_tokens WHERE token = ?",
         (token,)
     ).fetchone()
     
@@ -89,10 +89,13 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         db.commit()
         raise HTTPException(status_code=401, detail="Token expired")
     
+    row_dict = dict(row)
     return {
-        "user_id": row["user_id"],
-        "username": row["username"],
-        "is_admin": bool(row["is_admin"]),
+        "user_id": row_dict["user_id"],
+        "username": row_dict["username"],
+        "is_admin": bool(row_dict.get("is_admin", 0)),
+        "is_super_admin": bool(row_dict.get("is_super_admin", 0)),
+        "business_id": row_dict.get("business_id"),
         "expires_at": expires_at
     }
 
@@ -105,7 +108,7 @@ def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials
     
     # Get token from database
     row = db.execute(
-        "SELECT user_id, username, is_admin, expires_at FROM auth_tokens WHERE token = ?",
+        "SELECT user_id, username, is_admin, is_super_admin, business_id, expires_at FROM auth_tokens WHERE token = ?",
         (token,)
     ).fetchone()
     
@@ -120,10 +123,13 @@ def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials
         db.commit()
         return None
     
+    row_dict = dict(row)
     return {
-        "user_id": row["user_id"],
-        "username": row["username"],
-        "is_admin": bool(row["is_admin"]),
+        "user_id": row_dict["user_id"],
+        "username": row_dict["username"],
+        "is_admin": bool(row_dict.get("is_admin", 0)),
+        "is_super_admin": bool(row_dict.get("is_super_admin", 0)),
+        "business_id": row_dict.get("business_id"),
         "expires_at": expires_at
     }
 
@@ -133,6 +139,23 @@ def get_current_admin_user(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
 
+def get_current_super_admin_user(current_user: dict = Depends(get_current_user)):
+    """Ensure current user is super admin"""
+    if not current_user or not current_user.get("is_super_admin"):
+        raise HTTPException(status_code=403, detail="Super admin access required")
+    return current_user
+
+def get_business_id(current_user: dict) -> Optional[int]:
+    """Get business_id from current user context. Super admins can have None (they select business)"""
+    if current_user.get("is_super_admin"):
+        # Super admin can access any business, but must have business_id in token for filtering
+        return current_user.get("business_id")
+    # Regular users must have a business_id
+    business_id = current_user.get("business_id")
+    if not business_id:
+        raise HTTPException(status_code=403, detail="No business context available")
+    return business_id
+
 
 @app.on_event("startup")
 def on_startup():
@@ -140,16 +163,22 @@ def on_startup():
     conn = connect_db()
     try:
         init_schema(conn)
-        # Create default admin user if no users exist
+        # Create default super admin user if no users exist
         user_count = conn.execute("SELECT COUNT(*) as count FROM users").fetchone()['count']
         if user_count == 0:
-            admin_password_hash = hash_password("admin")
+            # Create default business
+            cur = conn.execute("INSERT INTO businesses (name) VALUES ('Default Business')")
+            default_business_id = cur.lastrowid
+            
+            # Create super admin user
+            super_admin_password_hash = hash_password("superadmin")
             conn.execute(
-                "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
-                ("admin", admin_password_hash, 1)
+                "INSERT INTO users (username, password_hash, is_admin, is_super_admin, business_id) VALUES (?, ?, ?, ?, ?)",
+                ("superadmin", super_admin_password_hash, 1, 1, default_business_id)
             )
             conn.commit()
-            print("Created default admin user: username='admin', password='admin'")
+            print("Created default super admin user: username='superadmin', password='superadmin'")
+            print("Created default business: 'Default Business'")
     finally:
         conn.close()
 
@@ -172,6 +201,7 @@ class UserCreate(BaseModel):
     username: str
     password: str
     is_admin: bool = False
+    business_id: Optional[int] = None  # For super admin to specify business
 
 class UserRead(BaseModel):
     id: int
@@ -184,7 +214,7 @@ class UserRead(BaseModel):
 def login(payload: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
     """Login and get authentication token"""
     user = db.execute(
-        "SELECT id, username, password_hash, is_admin FROM users WHERE username = ?",
+        "SELECT id, username, password_hash, is_admin, is_super_admin, business_id FROM users WHERE username = ?",
         (payload.username,)
     ).fetchone()
     
@@ -194,14 +224,27 @@ def login(payload: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
     if not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     
-    token = create_token(user["id"], user["username"], user["is_admin"], db)
+    # For super admin, business_id can be None initially (they'll select it)
+    # For regular users, use their assigned business_id
+    business_id = None if user["is_super_admin"] else user["business_id"]
+    
+    token = create_token(
+        user["id"], 
+        user["username"], 
+        bool(user["is_admin"]), 
+        bool(user["is_super_admin"]),
+        business_id,
+        db
+    )
     
     return LoginResponse(
         token=token,
         user={
             "id": user["id"],
             "username": user["username"],
-            "is_admin": bool(user["is_admin"])
+            "is_admin": bool(user["is_admin"]),
+            "is_super_admin": bool(user["is_super_admin"]),
+            "business_id": business_id
         }
     )
 
@@ -219,8 +262,207 @@ def get_current_user_info(current_user: dict = Depends(get_current_user)):
     return {
         "id": current_user["user_id"],
         "username": current_user["username"],
-        "is_admin": current_user["is_admin"]
+        "is_admin": current_user["is_admin"],
+        "is_super_admin": current_user.get("is_super_admin", False),
+        "business_id": current_user.get("business_id")
     }
+
+class SwitchBusinessRequest(BaseModel):
+    business_id: Optional[int] = None
+
+@app.post("/auth/switch-business")
+def switch_business(payload: SwitchBusinessRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    """Switch business context for super admin (updates token). Set business_id to None to view all businesses."""
+    if not current_user.get("is_super_admin"):
+        raise HTTPException(status_code=403, detail="Super admin access required")
+    
+    # If business_id is provided, verify it exists
+    if payload.business_id is not None:
+        business = db.execute("SELECT id FROM businesses WHERE id = ?", (payload.business_id,)).fetchone()
+        if not business:
+            raise HTTPException(status_code=404, detail="Business not found")
+    
+    # Update the current token with new business_id (can be None for "all businesses")
+    token = credentials.credentials
+    db.execute(
+        "UPDATE auth_tokens SET business_id = ? WHERE token = ?",
+        (payload.business_id, token)
+    )
+    db.commit()
+    
+    return {"message": "Business context switched", "business_id": payload.business_id}
+
+# Business Management Endpoints (Super Admin only)
+class BusinessCreate(BaseModel):
+    name: str
+
+class BusinessRead(BaseModel):
+    id: int
+    name: str
+    created_at: str
+
+@app.get("/businesses", response_model=List[BusinessRead])
+def list_businesses(current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """List all businesses (super admin only)"""
+    rows = db.execute(
+        "SELECT id, name, created_at FROM businesses ORDER BY created_at DESC"
+    ).fetchall()
+    return [BusinessRead(**dict(row)) for row in rows]
+
+@app.post("/businesses", response_model=BusinessRead, status_code=status.HTTP_201_CREATED)
+def create_business(payload: BusinessCreate, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Create a new business (super admin only)"""
+    try:
+        cur = db.execute(
+            "INSERT INTO businesses (name) VALUES (?)",
+            (payload.name,)
+        )
+        db.commit()
+        row = db.execute("SELECT id, name, created_at FROM businesses WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return BusinessRead(**dict(row))
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Business name already exists")
+
+@app.put("/businesses/{business_id}", response_model=BusinessRead)
+def update_business(business_id: int, payload: BusinessCreate, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Update a business (super admin only)"""
+    business = db.execute("SELECT id FROM businesses WHERE id = ?", (business_id,)).fetchone()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    try:
+        db.execute(
+            "UPDATE businesses SET name = ? WHERE id = ?",
+            (payload.name, business_id)
+        )
+        db.commit()
+        row = db.execute("SELECT id, name, created_at FROM businesses WHERE id = ?", (business_id,)).fetchone()
+        return BusinessRead(**dict(row))
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Business name already exists")
+
+# Deleted Records View for Super Admin
+class DeletedRecordRead(BaseModel):
+    id: int
+    name: str
+    deleted_at: str
+    deleted_by: str
+    type: str  # "client", "site", "equipment_record", "equipment_type"
+    business_id: Optional[int] = None
+    additional_info: Optional[dict] = None
+
+@app.get("/deleted-records", response_model=List[DeletedRecordRead])
+def list_deleted_records(
+    record_type: Optional[str] = Query(None, description="Filter by type: client, site, equipment_record, equipment_type"),
+    business_id: Optional[int] = Query(None, description="Filter by business"),
+    current_user: dict = Depends(get_current_super_admin_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    """List all deleted records (super admin only)"""
+    deleted_records = []
+    
+    # Get deleted clients
+    if not record_type or record_type == "client":
+        clients_query = "SELECT id, name, deleted_at, deleted_by, business_id FROM clients WHERE deleted_at IS NOT NULL"
+        params = []
+        if business_id:
+            clients_query += " AND business_id = ?"
+            params.append(business_id)
+        rows = db.execute(clients_query, params).fetchall()
+        for row in rows:
+            deleted_records.append({
+                "id": row["id"],
+                "name": row["name"],
+                "deleted_at": row["deleted_at"],
+                "deleted_by": row["deleted_by"],
+                "type": "client",
+                "business_id": row["business_id"],
+                "additional_info": None
+            })
+    
+    # Get deleted sites
+    if not record_type or record_type == "site":
+        sites_query = """SELECT s.id, s.name, s.deleted_at, s.deleted_by, c.business_id, c.name as client_name
+                         FROM sites s
+                         JOIN clients c ON s.client_id = c.id
+                         WHERE s.deleted_at IS NOT NULL"""
+        params = []
+        if business_id:
+            sites_query += " AND c.business_id = ?"
+            params.append(business_id)
+        rows = db.execute(sites_query, params).fetchall()
+        for row in rows:
+            deleted_records.append({
+                "id": row["id"],
+                "name": row["name"],
+                "deleted_at": row["deleted_at"],
+                "deleted_by": row["deleted_by"],
+                "type": "site",
+                "business_id": row["business_id"],
+                "additional_info": {"client_name": row["client_name"]}
+            })
+    
+    # Get deleted equipment_records
+    if not record_type or record_type == "equipment_record":
+        equipment_query = """SELECT er.id, er.equipment_name as name, er.deleted_at, er.deleted_by, c.business_id,
+                                   c.name as client_name, s.name as site_name
+                            FROM equipment_record er
+                            JOIN clients c ON er.client_id = c.id
+                            LEFT JOIN sites s ON er.site_id = s.id
+                            WHERE er.deleted_at IS NOT NULL"""
+        params = []
+        if business_id:
+            equipment_query += " AND c.business_id = ?"
+            params.append(business_id)
+        rows = db.execute(equipment_query, params).fetchall()
+        for row in rows:
+            deleted_records.append({
+                "id": row["id"],
+                "name": row["name"],
+                "deleted_at": row["deleted_at"],
+                "deleted_by": row["deleted_by"],
+                "type": "equipment_record",
+                "business_id": row["business_id"],
+                "additional_info": {
+                    "client_name": row["client_name"],
+                    "site_name": row["site_name"]
+                }
+            })
+    
+    # Get deleted equipment_types
+    if not record_type or record_type == "equipment_type":
+        types_query = "SELECT id, name, deleted_at, deleted_by, business_id FROM equipment_types WHERE deleted_at IS NOT NULL"
+        params = []
+        if business_id:
+            types_query += " AND business_id = ?"
+            params.append(business_id)
+        rows = db.execute(types_query, params).fetchall()
+        for row in rows:
+            deleted_records.append({
+                "id": row["id"],
+                "name": row["name"],
+                "deleted_at": row["deleted_at"],
+                "deleted_by": row["deleted_by"],
+                "type": "equipment_type",
+                "business_id": row["business_id"],
+                "additional_info": None
+            })
+    
+    # Sort by deleted_at descending (most recently deleted first)
+    deleted_records.sort(key=lambda x: x["deleted_at"], reverse=True)
+    
+    return [DeletedRecordRead(**record) for record in deleted_records]
+
+@app.delete("/businesses/{business_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_business(business_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Delete a business (super admin only)"""
+    business = db.execute("SELECT id FROM businesses WHERE id = ?", (business_id,)).fetchone()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    db.execute("DELETE FROM businesses WHERE id = ?", (business_id,))
+    db.commit()
+    return None
 
 # User Management Endpoints (Admin only)
 @app.get("/users", response_model=List[UserRead])
@@ -233,12 +475,21 @@ def list_users(current_user: dict = Depends(get_current_admin_user), db: sqlite3
 
 @app.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(payload: UserCreate, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
-    """Create a new user (admin only)"""
+    """Create a new user (admin only). Super admin can create users for any business, regular admin creates for their business."""
     password_hash = hash_password(payload.password)
+    
+    # Determine business_id: super admin can specify, regular admin uses their business
+    business_id = None
+    if current_user.get("is_super_admin"):
+        # Super admin can create users without business_id (for super admin users) or with a specific business_id
+        business_id = payload.business_id if hasattr(payload, 'business_id') and payload.business_id else None
+    else:
+        business_id = get_business_id(current_user)
+    
     try:
         cur = db.execute(
-            "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
-            (payload.username, password_hash, 1 if payload.is_admin else 0)
+            "INSERT INTO users (username, password_hash, is_admin, business_id) VALUES (?, ?, ?, ?)",
+            (payload.username, password_hash, 1 if payload.is_admin else 0, business_id)
         )
         db.commit()
     except sqlite3.IntegrityError:
@@ -299,6 +550,60 @@ def change_password(payload: ChangePasswordRequest, current_user: dict = Depends
     
     return {"message": "Password changed successfully. Please login again."}
 
+class ChangeUsernameRequest(BaseModel):
+    new_username: str
+    password: str  # Require password confirmation for security
+
+@app.put("/auth/change-username")
+def change_username(payload: ChangeUsernameRequest, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    """Change current user's username"""
+    if not payload.new_username or not payload.new_username.strip():
+        raise HTTPException(status_code=400, detail="Username cannot be empty")
+    
+    new_username = payload.new_username.strip()
+    
+    # Check if new username is the same as current
+    if new_username.lower() == current_user["username"].lower():
+        raise HTTPException(status_code=400, detail="New username must be different from current username")
+    
+    user = db.execute(
+        "SELECT id, password_hash FROM users WHERE id = ?",
+        (current_user["user_id"],)
+    ).fetchone()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Verify password for security
+    if not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Password is incorrect")
+    
+    # Check if username already exists
+    existing_user = db.execute(
+        "SELECT id FROM users WHERE username = ? AND id != ?",
+        (new_username, current_user["user_id"])
+    ).fetchone()
+    
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    # Update username
+    try:
+        db.execute(
+            "UPDATE users SET username = ? WHERE id = ?",
+            (new_username, current_user["user_id"])
+        )
+        # Update username in all tokens for this user
+        db.execute(
+            "UPDATE auth_tokens SET username = ? WHERE user_id = ?",
+            (new_username, current_user["user_id"])
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    return {"message": "Username changed successfully", "new_username": new_username}
+
 # Emergency admin password reset endpoint (for development/testing only)
 # WARNING: Remove or secure this endpoint in production!
 class ResetPasswordRequest(BaseModel):
@@ -354,17 +659,68 @@ class ClientRead(BaseModel):
 
 
 @app.get("/clients", response_model=List[ClientRead])
-def list_clients(db: sqlite3.Connection = Depends(get_db)):
-    cur = db.execute("SELECT id, name, address, billing_info, notes FROM clients ORDER BY name")
-    rows = cur.fetchall()
+def list_clients(
+    include_deleted: bool = Query(False, description="Include deleted records (super admin only)"),
+    business_id_filter: Optional[int] = Query(None, description="Filter by business ID (super admin only)"),
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    # Super admin can filter by any business, regular users are limited to their own
+    if current_user.get("is_super_admin") and business_id_filter is not None:
+        # Query parameter filter takes precedence
+        business_id = business_id_filter
+    elif current_user.get("is_super_admin"):
+        # Super admin: use business_id from token if set, otherwise show all (None)
+        business_id = current_user.get("business_id")
+    else:
+        # Regular user: must have business_id
+        business_id = get_business_id(current_user)
+    
+    # Super admin can request deleted records, regular users cannot
+    if include_deleted and not current_user.get("is_super_admin"):
+        include_deleted = False
+    
+    # Build query based on whether we're filtering by business_id
+    if business_id is None:
+        # Super admin viewing all clients
+        if include_deleted:
+            cur = db.execute(
+                "SELECT id, name, address, billing_info, notes, deleted_at, deleted_by FROM clients ORDER BY name"
+            )
+        else:
+            cur = db.execute(
+                "SELECT id, name, address, billing_info, notes FROM clients WHERE deleted_at IS NULL ORDER BY name"
+            )
+        rows = cur.fetchall()
+    else:
+        # Filter by business_id
+        if include_deleted:
+            cur = db.execute(
+                "SELECT id, name, address, billing_info, notes, deleted_at, deleted_by FROM clients WHERE business_id = ? ORDER BY name",
+                (business_id,)
+            )
+        else:
+            cur = db.execute(
+                "SELECT id, name, address, billing_info, notes FROM clients WHERE business_id = ? AND deleted_at IS NULL ORDER BY name",
+                (business_id,)
+            )
+        rows = cur.fetchall()
     return [ClientRead(**dict(row)) for row in rows]
 
 @app.get("/clients/{client_id}", response_model=ClientRead)
-def get_client(client_id: int, db: sqlite3.Connection = Depends(get_db)):
-    row = db.execute(
-        "SELECT id, name, address, billing_info, notes FROM clients WHERE id = ?",
-        (client_id,),
-    ).fetchone()
+def get_client(client_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    # Super admin can view deleted records, regular users cannot
+    if current_user.get("is_super_admin"):
+        row = db.execute(
+            "SELECT id, name, address, billing_info, notes FROM clients WHERE id = ? AND business_id = ?",
+            (client_id, business_id),
+        ).fetchone()
+    else:
+        row = db.execute(
+            "SELECT id, name, address, billing_info, notes FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL",
+            (client_id, business_id),
+        ).fetchone()
 
     if row is None:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -373,15 +729,23 @@ def get_client(client_id: int, db: sqlite3.Connection = Depends(get_db)):
 
 #Creating Client
 @app.post("/clients", response_model=ClientRead, status_code=status.HTTP_201_CREATED)
-def create_client(payload: ClientCreate, db: sqlite3.Connection = Depends(get_db)):
+def create_client(payload: ClientCreate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    # For super admins, get business_id from token (can be None if viewing all businesses)
+    # For regular users, get_business_id will raise an error if None
+    if current_user.get("is_super_admin"):
+        business_id = current_user.get("business_id")
+        if business_id is None:
+            raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
+    else:
+        business_id = get_business_id(current_user)
     try:
         cur = db.execute(
-            "INSERT INTO clients (name, address, billing_info, notes) VALUES (?, ?, ?, ?)",
-            (payload.name, payload.address, payload.billing_info, payload.notes),
+            "INSERT INTO clients (business_id, name, address, billing_info, notes) VALUES (?, ?, ?, ?, ?)",
+            (business_id, payload.name, payload.address, payload.billing_info, payload.notes),
         )
         db.commit()
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Client name must be unique")
+        raise HTTPException(status_code=400, detail="Client name must be unique within business")
 
     row = db.execute(
         "SELECT id, name, address, billing_info, notes FROM clients WHERE id = ?",
@@ -391,9 +755,13 @@ def create_client(payload: ClientCreate, db: sqlite3.Connection = Depends(get_db
 
 #Update Client
 @app.put("/clients/{client_id}", response_model=ClientRead)
-def update_client(client_id: int, payload: ClientUpdate, db: sqlite3.Connection = Depends(get_db)):
-    
-    row = db.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone()
+def update_client(client_id: int, payload: ClientUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    # Only allow updating non-deleted records (or deleted records if super admin wants to restore)
+    if current_user.get("is_super_admin"):
+        row = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ?", (client_id, business_id)).fetchone()
+    else:
+        row = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (client_id, business_id)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Client not found")
 
@@ -434,9 +802,35 @@ def update_client(client_id: int, payload: ClientUpdate, db: sqlite3.Connection 
 
 #Delete Client
 @app.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_client(client_id: int, db: sqlite3.Connection = Depends(get_db)):
-    cur = db.execute("DELETE FROM clients WHERE id = ?", (client_id,))
+def delete_client(client_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    # Verify client exists and belongs to business
+    client = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (client_id, business_id)).fetchone()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    # Soft delete: mark as deleted
+    username = current_user.get("username", "unknown")
+    deleted_at = datetime.now().isoformat()
+    db.execute(
+        "UPDATE clients SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+        (deleted_at, username, client_id)
+    )
     db.commit()
+
+# Restore endpoints for super admin
+@app.post("/clients/{client_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
+def restore_client(client_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Restore a deleted client (super admin only)"""
+    client = db.execute("SELECT id, deleted_at FROM clients WHERE id = ?", (client_id,)).fetchone()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    if not client.get("deleted_at"):
+        raise HTTPException(status_code=400, detail="Client is not deleted")
+    
+    db.execute("UPDATE clients SET deleted_at = NULL, deleted_by = NULL WHERE id = ?", (client_id,))
+    db.commit()
+    return
 
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -473,25 +867,66 @@ class SiteRead(BaseModel):
 @app.get("/sites", response_model=List[SiteRead])
 def list_sites(
     client_id: Optional[int] = Query(None, description="Filter by client"),
+    include_deleted: bool = Query(False, description="Include deleted records (super admin only)"),
+    current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
+    business_id = get_business_id(current_user)
+    # Super admin can request deleted records, regular users cannot
+    if include_deleted and not current_user.get("is_super_admin"):
+        include_deleted = False
+    
+    deleted_filter = "" if include_deleted else "AND s.deleted_at IS NULL"
+    
     if client_id:
-        cur = db.execute(
-            "SELECT id, client_id, name, address, timezone, notes FROM sites WHERE client_id = ? ORDER BY name",
-            (client_id,)
-        )
+        # Verify client belongs to business
+        client = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (client_id, business_id)).fetchone()
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
+        if include_deleted:
+            cur = db.execute(
+                f"SELECT id, client_id, name, address, timezone, notes, deleted_at, deleted_by FROM sites WHERE client_id = ? {deleted_filter} ORDER BY name",
+                (client_id,)
+            )
+        else:
+            cur = db.execute(
+                "SELECT id, client_id, name, address, timezone, notes FROM sites WHERE client_id = ? AND deleted_at IS NULL ORDER BY name",
+                (client_id,)
+            )
     else:
-        cur = db.execute("SELECT id, client_id, name, address, timezone, notes FROM sites ORDER BY name")
+        # Get all sites for clients in this business
+        cur = db.execute(
+            f"""SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+               FROM sites s 
+               JOIN clients c ON s.client_id = c.id 
+               WHERE c.business_id = ? {deleted_filter}
+               ORDER BY s.name""",
+            (business_id,)
+        )
     rows = cur.fetchall()
     return [SiteRead(**dict(row)) for row in rows]
 
 
 @app.get("/sites/{site_id}", response_model=SiteRead)
-def get_site(site_id: int, db: sqlite3.Connection = Depends(get_db)):
-    row = db.execute(
-        "SELECT id, client_id, name, address, timezone, notes FROM sites WHERE id = ?",
-        (site_id,),
-    ).fetchone()
+def get_site(site_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    # Super admin can view deleted records, regular users cannot
+    if current_user.get("is_super_admin"):
+        row = db.execute(
+            """SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+               FROM sites s 
+               JOIN clients c ON s.client_id = c.id 
+               WHERE s.id = ? AND c.business_id = ?""",
+            (site_id, business_id),
+        ).fetchone()
+    else:
+        row = db.execute(
+            """SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+               FROM sites s 
+               JOIN clients c ON s.client_id = c.id 
+               WHERE s.id = ? AND c.business_id = ? AND s.deleted_at IS NULL""",
+            (site_id, business_id),
+        ).fetchone()
 
     if row is None:
         raise HTTPException(status_code=404, detail="Site not found")
@@ -500,9 +935,12 @@ def get_site(site_id: int, db: sqlite3.Connection = Depends(get_db)):
 
 
 @app.post("/sites", response_model=SiteRead, status_code=status.HTTP_201_CREATED)
-def create_site(payload: SiteCreate, db: sqlite3.Connection = Depends(get_db)):
-    # Verify client exists
-    client_row = db.execute("SELECT id FROM clients WHERE id = ?", (payload.client_id,)).fetchone()
+def create_site(payload: SiteCreate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    if business_id is None:
+        raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
+    # Verify client exists and belongs to business and is not deleted
+    client_row = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (payload.client_id, business_id)).fetchone()
     if client_row is None:
         raise HTTPException(status_code=404, detail="Client not found")
 
@@ -523,8 +961,14 @@ def create_site(payload: SiteCreate, db: sqlite3.Connection = Depends(get_db)):
 
 
 @app.put("/sites/{site_id}", response_model=SiteRead)
-def update_site(site_id: int, payload: SiteUpdate, db: sqlite3.Connection = Depends(get_db)):
-    row = db.execute("SELECT id FROM sites WHERE id = ?", (site_id,)).fetchone()
+def update_site(site_id: int, payload: SiteUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    row = db.execute(
+        """SELECT s.id FROM sites s 
+           JOIN clients c ON s.client_id = c.id 
+           WHERE s.id = ? AND c.business_id = ?""",
+        (site_id, business_id)
+    ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Site not found")
 
@@ -563,13 +1007,39 @@ def update_site(site_id: int, payload: SiteUpdate, db: sqlite3.Connection = Depe
 
 
 @app.delete("/sites/{site_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_site(site_id: int, db: sqlite3.Connection = Depends(get_db)):
-    cur = db.execute("DELETE FROM sites WHERE id = ?", (site_id,))
-    db.commit()
-
-    if cur.rowcount == 0:
+def delete_site(site_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    # Verify site belongs to business through client and is not deleted
+    site = db.execute(
+        """SELECT s.id FROM sites s 
+           JOIN clients c ON s.client_id = c.id 
+           WHERE s.id = ? AND c.business_id = ? AND s.deleted_at IS NULL""",
+        (site_id, business_id)
+    ).fetchone()
+    if not site:
         raise HTTPException(status_code=404, detail="Site not found")
+    
+    # Soft delete: mark as deleted
+    username = current_user.get("username", "unknown")
+    deleted_at = datetime.now().isoformat()
+    db.execute(
+        "UPDATE sites SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+        (deleted_at, username, site_id)
+    )
+    db.commit()
+    return
 
+@app.post("/sites/{site_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
+def restore_site(site_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Restore a deleted site (super admin only)"""
+    site = db.execute("SELECT id, deleted_at FROM sites WHERE id = ?", (site_id,)).fetchone()
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    if not site.get("deleted_at"):
+        raise HTTPException(status_code=400, detail="Site is not deleted")
+    
+    db.execute("UPDATE sites SET deleted_at = NULL, deleted_by = NULL WHERE id = ?", (site_id,))
+    db.commit()
     return
 
 
@@ -846,24 +1316,38 @@ class EquipmentTypeRead(BaseModel):
 @app.get("/equipment-types", response_model=List[EquipmentTypeRead])
 def list_equipment_types(
     active_only: bool = Query(False, description="Filter to active only"),
+    current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
+    business_id = get_business_id(current_user)
     if active_only:
         cur = db.execute(
-            "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE active = 1 ORDER BY name"
+            "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE business_id = ? AND active = 1 ORDER BY name",
+            (business_id,)
         )
     else:
-        cur = db.execute("SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types ORDER BY name")
+        cur = db.execute(
+            "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE business_id = ? ORDER BY name",
+            (business_id,)
+        )
     rows = cur.fetchall()
     return [EquipmentTypeRead(**dict(row)) for row in rows]
 
 
 @app.get("/equipment-types/{equipment_type_id}", response_model=EquipmentTypeRead)
-def get_equipment_type(equipment_type_id: int, db: sqlite3.Connection = Depends(get_db)):
-    row = db.execute(
-        "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
-        (equipment_type_id,),
-    ).fetchone()
+def get_equipment_type(equipment_type_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    # Super admin can view deleted records, regular users cannot
+    if current_user.get("is_super_admin"):
+        row = db.execute(
+            "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ? AND business_id = ?",
+            (equipment_type_id, business_id),
+        ).fetchone()
+    else:
+        row = db.execute(
+            "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ? AND business_id = ? AND deleted_at IS NULL",
+            (equipment_type_id, business_id),
+        ).fetchone()
 
     if row is None:
         raise HTTPException(status_code=404, detail="Equipment type not found")
@@ -872,15 +1356,18 @@ def get_equipment_type(equipment_type_id: int, db: sqlite3.Connection = Depends(
 
 
 @app.post("/equipment-types", response_model=EquipmentTypeRead, status_code=status.HTTP_201_CREATED)
-def create_equipment_type(payload: EquipmentTypeCreate, db: sqlite3.Connection = Depends(get_db)):
+def create_equipment_type(payload: EquipmentTypeCreate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    if business_id is None:
+        raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
     try:
         cur = db.execute(
-            "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?)",
-            (payload.name, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
+            "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?, ?)",
+            (business_id, payload.name, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
         )
         db.commit()
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Equipment type name must be unique")
+        raise HTTPException(status_code=400, detail="Equipment type name must be unique within business")
 
     row = db.execute(
         "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
@@ -890,8 +1377,13 @@ def create_equipment_type(payload: EquipmentTypeCreate, db: sqlite3.Connection =
 
 
 @app.put("/equipment-types/{equipment_type_id}", response_model=EquipmentTypeRead)
-def update_equipment_type(equipment_type_id: int, payload: EquipmentTypeUpdate, db: sqlite3.Connection = Depends(get_db)):
-    row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
+def update_equipment_type(equipment_type_id: int, payload: EquipmentTypeUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    # Only allow updating non-deleted records (or deleted records if super admin wants to restore)
+    if current_user.get("is_super_admin"):
+        row = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ?", (equipment_type_id, business_id)).fetchone()
+    else:
+        row = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (equipment_type_id, business_id)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Equipment type not found")
 
@@ -933,13 +1425,34 @@ def update_equipment_type(equipment_type_id: int, payload: EquipmentTypeUpdate, 
 
 
 @app.delete("/equipment-types/{equipment_type_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_equipment_type(equipment_type_id: int, db: sqlite3.Connection = Depends(get_db)):
-    cur = db.execute("DELETE FROM equipment_types WHERE id = ?", (equipment_type_id,))
-    db.commit()
-
-    if cur.rowcount == 0:
+def delete_equipment_type(equipment_type_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    # Verify equipment type belongs to business and is not deleted
+    et = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (equipment_type_id, business_id)).fetchone()
+    if not et:
         raise HTTPException(status_code=404, detail="Equipment type not found")
+    
+    # Soft delete: mark as deleted
+    username = current_user.get("username", "unknown")
+    deleted_at = datetime.now().isoformat()
+    db.execute(
+        "UPDATE equipment_types SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+        (deleted_at, username, equipment_type_id)
+    )
+    db.commit()
+    return
 
+@app.post("/equipment-types/{equipment_type_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
+def restore_equipment_type(equipment_type_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Restore a deleted equipment type (super admin only)"""
+    et = db.execute("SELECT id, deleted_at FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
+    if not et:
+        raise HTTPException(status_code=404, detail="Equipment type not found")
+    if not et.get("deleted_at"):
+        raise HTTPException(status_code=400, detail="Equipment type is not deleted")
+    
+    db.execute("UPDATE equipment_types SET deleted_at = NULL, deleted_by = NULL WHERE id = ?", (equipment_type_id,))
+    db.commit()
     return
 
 
@@ -1023,6 +1536,7 @@ def list_equipment_records(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
+    business_id = get_business_id(current_user)
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                       er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
@@ -1033,10 +1547,14 @@ def list_equipment_records(
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-               WHERE 1=1"""
-    params = []
+               WHERE c.business_id = ?"""
+    params = [business_id]
     
     if client_id:
+        # Verify client belongs to business
+        client = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ?", (client_id, business_id)).fetchone()
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
         query += " AND er.client_id = ?"
         params.append(client_id)
     
@@ -1085,6 +1603,7 @@ def get_upcoming_equipment_records(
         start_date_obj = today
         end_date_obj = today + dt.timedelta(weeks=2)
     
+    business_id = get_business_id(current_user)
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                       er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
@@ -1095,11 +1614,12 @@ def get_upcoming_equipment_records(
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-               WHERE er.active = 1 
+               WHERE c.business_id = ?
+                 AND er.active = 1 
                  AND (er.due_date IS NOT NULL AND er.due_date >= ? AND er.due_date <= ?)
                ORDER BY er.due_date"""
     
-    cur = db.execute(query, (start_date_obj.isoformat(), end_date_obj.isoformat()))
+    cur = db.execute(query, (business_id, start_date_obj.isoformat(), end_date_obj.isoformat()))
     rows = cur.fetchall()
     result = []
     for row in rows:
@@ -1115,6 +1635,7 @@ def get_overdue_equipment_records(
     db: sqlite3.Connection = Depends(get_db)
 ):
     today = dt.date.today()
+    business_id = get_business_id(current_user)
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                       er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
@@ -1126,12 +1647,14 @@ def get_overdue_equipment_records(
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-               WHERE er.active = 1 
+               WHERE c.business_id = ?
+                 AND er.active = 1 
+                 AND er.deleted_at IS NULL
                  AND er.due_date IS NOT NULL 
                  AND er.due_date < ?
                ORDER BY er.due_date"""
     
-    cur = db.execute(query, (today.isoformat(),))
+    cur = db.execute(query, (business_id, today.isoformat()))
     rows = cur.fetchall()
     result = []
     for row in rows:
@@ -1142,21 +1665,39 @@ def get_overdue_equipment_records(
 
 
 @app.get("/equipment-records/{equipment_record_id}", response_model=EquipmentRecordRead)
-def get_equipment_record(equipment_record_id: int, db: sqlite3.Connection = Depends(get_db)):
-    row = db.execute(
-        """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                  er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
-                  er.active, er.notes, er.timezone,
-                  c.name as client_name,
-                  s.name as site_name,
-                  et.name as equipment_type_name
-           FROM equipment_record er
-           LEFT JOIN clients c ON er.client_id = c.id
-           LEFT JOIN sites s ON er.site_id = s.id
-           LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-           WHERE er.id = ?""",
-        (equipment_record_id,),
-    ).fetchone()
+def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    # Super admin can view deleted records, regular users cannot
+    if current_user.get("is_super_admin"):
+        row = db.execute(
+            """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
+                      er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.active, er.notes, er.timezone,
+                      c.name as client_name,
+                      s.name as site_name,
+                      et.name as equipment_type_name
+               FROM equipment_record er
+               LEFT JOIN clients c ON er.client_id = c.id
+               LEFT JOIN sites s ON er.site_id = s.id
+               LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+               WHERE er.id = ? AND c.business_id = ?""",
+            (equipment_record_id, business_id),
+        ).fetchone()
+    else:
+        row = db.execute(
+            """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
+                      er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.active, er.notes, er.timezone,
+                      c.name as client_name,
+                      s.name as site_name,
+                      et.name as equipment_type_name
+               FROM equipment_record er
+               LEFT JOIN clients c ON er.client_id = c.id
+               LEFT JOIN sites s ON er.site_id = s.id
+               LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+               WHERE er.id = ? AND c.business_id = ? AND er.deleted_at IS NULL""",
+            (equipment_record_id, business_id),
+        ).fetchone()
 
     if row is None:
         raise HTTPException(status_code=404, detail="Equipment record not found")
@@ -1167,21 +1708,24 @@ def get_equipment_record(equipment_record_id: int, db: sqlite3.Connection = Depe
 
 
 @app.post("/equipment-records", response_model=EquipmentRecordRead, status_code=status.HTTP_201_CREATED)
-def create_equipment_record(payload: EquipmentRecordCreate, db: sqlite3.Connection = Depends(get_db)):
-    # Verify client exists
-    client_row = db.execute("SELECT id FROM clients WHERE id = ?", (payload.client_id,)).fetchone()
+def create_equipment_record(payload: EquipmentRecordCreate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    if business_id is None:
+        raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
+    # Verify client exists and belongs to business
+    client_row = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ?", (payload.client_id, business_id)).fetchone()
     if client_row is None:
         raise HTTPException(status_code=404, detail="Client not found")
     
-    # Verify site exists and belongs to the client
-    site_row = db.execute("SELECT id, client_id FROM sites WHERE id = ?", (payload.site_id,)).fetchone()
+    # Verify site exists and belongs to the client and is not deleted
+    site_row = db.execute("SELECT id, client_id FROM sites WHERE id = ? AND deleted_at IS NULL", (payload.site_id,)).fetchone()
     if site_row is None:
         raise HTTPException(status_code=404, detail="Site not found")
     if site_row['client_id'] != payload.client_id:
         raise HTTPException(status_code=400, detail="Site does not belong to the specified client")
     
-    # Verify equipment type exists
-    equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (payload.equipment_type_id,)).fetchone()
+    # Verify equipment type exists and belongs to business and is not deleted
+    equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (payload.equipment_type_id, business_id)).fetchone()
     if equipment_type_row is None:
         raise HTTPException(status_code=404, detail="Equipment type not found")
     
@@ -1202,25 +1746,32 @@ def create_equipment_record(payload: EquipmentRecordCreate, db: sqlite3.Connecti
     except sqlite3.IntegrityError as e:
         raise HTTPException(status_code=400, detail=f"Database error: {str(e)}")
 
-    return get_equipment_record(cur.lastrowid, db)
+    return get_equipment_record(cur.lastrowid, current_user, db)
 
 
 @app.put("/equipment-records/{equipment_record_id}", response_model=EquipmentRecordRead)
-def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUpdate, db: sqlite3.Connection = Depends(get_db)):
-    # Get current equipment record to check site_id and equipment_name
-    current_record = db.execute("SELECT site_id, equipment_name, client_id FROM equipment_record WHERE id = ?", (equipment_record_id,)).fetchone()
+def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    # Get current equipment record to check site_id and equipment_name, and verify it belongs to business
+    current_record = db.execute(
+        """SELECT er.site_id, er.equipment_name, er.client_id 
+           FROM equipment_record er
+           JOIN clients c ON er.client_id = c.id
+           WHERE er.id = ? AND c.business_id = ?""",
+        (equipment_record_id, business_id)
+    ).fetchone()
     if current_record is None:
         raise HTTPException(status_code=404, detail="Equipment record not found")
     
     # Verify equipment type if being updated
     if payload.equipment_type_id is not None:
-        equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (payload.equipment_type_id,)).fetchone()
+        equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ?", (payload.equipment_type_id, business_id)).fetchone()
         if equipment_type_row is None:
             raise HTTPException(status_code=404, detail="Equipment type not found")
 
-    # Verify site if being updated
+    # Verify site if being updated and is not deleted
     if payload.site_id is not None:
-        site_row = db.execute("SELECT id, client_id FROM sites WHERE id = ?", (payload.site_id,)).fetchone()
+        site_row = db.execute("SELECT id, client_id FROM sites WHERE id = ? AND deleted_at IS NULL", (payload.site_id,)).fetchone()
         if site_row is None:
             raise HTTPException(status_code=404, detail="Site not found")
         if site_row['client_id'] != current_record['client_id']:
@@ -1283,17 +1834,43 @@ def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUp
         except sqlite3.IntegrityError as e:
             raise HTTPException(status_code=400, detail=f"Database error: {str(e)}")
 
-    return get_equipment_record(equipment_record_id, db)
+    return get_equipment_record(equipment_record_id, current_user, db)
 
 
 @app.delete("/equipment-records/{equipment_record_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_equipment_record(equipment_record_id: int, db: sqlite3.Connection = Depends(get_db)):
-    cur = db.execute("DELETE FROM equipment_record WHERE id = ?", (equipment_record_id,))
-    db.commit()
-
-    if cur.rowcount == 0:
+def delete_equipment_record(equipment_record_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    # Verify equipment record belongs to business through client and is not deleted
+    er = db.execute(
+        """SELECT er.id FROM equipment_record er
+           JOIN clients c ON er.client_id = c.id
+           WHERE er.id = ? AND c.business_id = ? AND er.deleted_at IS NULL""",
+        (equipment_record_id, business_id)
+    ).fetchone()
+    if not er:
         raise HTTPException(status_code=404, detail="Equipment record not found")
+    
+    # Soft delete: mark as deleted
+    username = current_user.get("username", "unknown")
+    deleted_at = datetime.now().isoformat()
+    db.execute(
+        "UPDATE equipment_record SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+        (deleted_at, username, equipment_record_id)
+    )
+    db.commit()
+    return
 
+@app.post("/equipment-records/{equipment_record_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
+def restore_equipment_record(equipment_record_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Restore a deleted equipment record (super admin only)"""
+    er = db.execute("SELECT id, deleted_at FROM equipment_record WHERE id = ?", (equipment_record_id,)).fetchone()
+    if not er:
+        raise HTTPException(status_code=404, detail="Equipment record not found")
+    if not er.get("deleted_at"):
+        raise HTTPException(status_code=400, detail="Equipment record is not deleted")
+    
+    db.execute("UPDATE equipment_record SET deleted_at = NULL, deleted_by = NULL WHERE id = ?", (equipment_record_id,))
+    db.commit()
     return
 
 
@@ -1324,8 +1901,14 @@ class EquipmentCompletionRead(BaseModel):
 
 @app.post("/equipment-completions", response_model=EquipmentCompletionRead, status_code=status.HTTP_201_CREATED)
 def create_equipment_completion(payload: EquipmentCompletionCreate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    # Verify equipment record exists
-    equipment_row = db.execute("SELECT id FROM equipment_record WHERE id = ?", (payload.equipment_record_id,)).fetchone()
+    business_id = get_business_id(current_user)
+    # Verify equipment record exists and belongs to business
+    equipment_row = db.execute(
+        """SELECT er.id FROM equipment_record er
+           JOIN clients c ON er.client_id = c.id
+           WHERE er.id = ? AND c.business_id = ?""",
+        (payload.equipment_record_id, business_id)
+    ).fetchone()
     if equipment_row is None:
         raise HTTPException(status_code=404, detail="Equipment record not found")
     
@@ -1359,9 +1942,15 @@ def create_equipment_completion(payload: EquipmentCompletionCreate, current_user
 @app.get("/equipment-completions", response_model=List[EquipmentCompletionRead])
 def list_equipment_completions(
     equipment_record_id: Optional[int] = Query(None, description="Filter by equipment record"),
+    business_id_filter: Optional[int] = Query(None, description="Filter by business ID (super admin only)"),
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
+    # Super admin can filter by any business, regular users are limited to their own
+    if current_user.get("is_super_admin") and business_id_filter is not None:
+        business_id = business_id_filter
+    else:
+        business_id = get_business_id(current_user)
     query = """
         SELECT ec.id, ec.equipment_record_id, ec.completed_at, ec.due_date, ec.interval_weeks, ec.completed_by_user,
                er.equipment_name, er.client_id, er.site_id, er.equipment_type_id,
@@ -1373,11 +1962,20 @@ def list_equipment_completions(
         LEFT JOIN clients c ON er.client_id = c.id
         LEFT JOIN sites s ON er.site_id = s.id
         LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-        WHERE 1=1
+        WHERE c.business_id = ?
     """
-    params = []
+    params = [business_id]
     
     if equipment_record_id:
+        # Verify equipment_record belongs to business
+        er_check = db.execute(
+            """SELECT er.id FROM equipment_record er
+               JOIN clients c ON er.client_id = c.id
+               WHERE er.id = ? AND c.business_id = ?""",
+            (equipment_record_id, business_id)
+        ).fetchone()
+        if not er_check:
+            raise HTTPException(status_code=404, detail="Equipment record not found")
         query += " AND ec.equipment_record_id = ?"
         params.append(equipment_record_id)
     
@@ -1390,12 +1988,20 @@ def list_equipment_completions(
 
 @app.delete("/equipment-completions/{completion_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_equipment_completion(completion_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    cur = db.execute("DELETE FROM equipment_completions WHERE id = ?", (completion_id,))
-    db.commit()
-    
-    if cur.rowcount == 0:
+    business_id = get_business_id(current_user)
+    # Verify completion belongs to business through equipment_record -> client
+    completion = db.execute(
+        """SELECT ec.id FROM equipment_completions ec
+           JOIN equipment_record er ON ec.equipment_record_id = er.id
+           JOIN clients c ON er.client_id = c.id
+           WHERE ec.id = ? AND c.business_id = ?""",
+        (completion_id, business_id)
+    ).fetchone()
+    if not completion:
         raise HTTPException(status_code=404, detail="Completion record not found")
     
+    cur = db.execute("DELETE FROM equipment_completions WHERE id = ?", (completion_id,))
+    db.commit()
     return
 
 
@@ -1638,23 +2244,35 @@ def delete_equipment(equipment_id: int, db: sqlite3.Connection = Depends(get_db)
 
 
 @app.post("/clients/{client_id}/equipments/seed-defaults", status_code=status.HTTP_201_CREATED)
-def seed_default_equipments(client_id: int, db: sqlite3.Connection = Depends(get_db)):
-    """Seed default equipment types (global) - maintained for backward compatibility"""
-    # Verify client exists
-    client_row = db.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone()
+def seed_default_equipments(client_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    """Seed default equipment types for the client's business"""
+    # Verify client exists and get business_id
+    client_row = db.execute("SELECT id, business_id FROM clients WHERE id = ? AND deleted_at IS NULL", (client_id,)).fetchone()
     if client_row is None:
         raise HTTPException(status_code=404, detail="Client not found")
     
+    client_dict = dict(client_row)
+    business_id = client_dict.get("business_id")
+    
+    # Verify the client belongs to the current user's business (unless super admin)
+    if not current_user.get("is_super_admin"):
+        user_business_id = get_business_id(current_user)
+        if business_id != user_business_id:
+            raise HTTPException(status_code=403, detail="Client not found in your business")
+    
+    if business_id is None:
+        raise HTTPException(status_code=400, detail="Client has no business context")
+    
     created = []
     for name, interval, rrule_str, lead_weeks in DEFAULT_EQUIPMENTS:
-        # Check if equipment type already exists (global, not per-client)
-        existing = db.execute("SELECT id FROM equipment_types WHERE name = ?", (name,)).fetchone()
+        # Check if equipment type already exists in this business
+        existing = db.execute("SELECT id FROM equipment_types WHERE name = ? AND business_id = ?", (name, business_id)).fetchone()
         if existing:
             continue
         
         cur = db.execute(
-            "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, 1)",
-            (name, interval, rrule_str, lead_weeks),
+            "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?, 1)",
+            (business_id, name, interval, rrule_str, lead_weeks),
         )
         created.append(cur.lastrowid)
     
@@ -1889,6 +2507,7 @@ def get_site_contacts(site_id: int, db: sqlite3.Connection = Depends(get_db)):
 async def import_excel(
     file: UploadFile = File(...),
     site_id: Optional[int] = Query(None, description="Optional: Import to specific site"),
+    current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
     """
@@ -1899,11 +2518,21 @@ async def import_excel(
     if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="File must be an Excel file (.xlsx or .xls)")
     
+    # Get business_id from current user
+    business_id = get_business_id(current_user)
+    if business_id is None:
+        raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
+    
     # If site_id is provided, verify it exists and get client_id
     target_site_id = None
     target_client_id = None
     if site_id:
-        site_row = db.execute("SELECT id, client_id FROM sites WHERE id = ?", (site_id,)).fetchone()
+        site_row = db.execute(
+            """SELECT s.id, s.client_id FROM sites s 
+               JOIN clients c ON s.client_id = c.id 
+               WHERE s.id = ? AND c.business_id = ?""",
+            (site_id, business_id)
+        ).fetchone()
         if not site_row:
             raise HTTPException(status_code=404, detail="Site not found")
         target_site_id = site_row['id']
@@ -2039,15 +2668,15 @@ async def import_excel(
                         continue
                     
                     if client_name not in client_map:
-                        # Check if client exists
-                        existing = db.execute("SELECT id FROM clients WHERE name = ?", (client_name,)).fetchone()
+                        # Check if client exists in this business
+                        existing = db.execute("SELECT id FROM clients WHERE name = ? AND business_id = ?", (client_name, business_id)).fetchone()
                         if existing:
                             client_id = existing['id']
                         else:
-                            # Create client
+                            # Create client with business_id
                             cur = db.execute(
-                                "INSERT INTO clients (name, address) VALUES (?, ?)",
-                                (client_name, str(row[address_col]).strip() if address_col and pd.notna(row.get(address_col)) else None)
+                                "INSERT INTO clients (business_id, name, address) VALUES (?, ?, ?)",
+                                (business_id, client_name, str(row[address_col]).strip() if address_col and pd.notna(row.get(address_col)) else None)
                             )
                             db.commit()
                             client_id = cur.lastrowid
@@ -2233,6 +2862,7 @@ async def import_excel(
 @app.post("/admin/import/equipments")
 async def import_equipments(
     file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
     """
@@ -2243,6 +2873,11 @@ async def import_equipments(
     """
     if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="File must be an Excel file (.xlsx or .xls)")
+    
+    # Get business_id from current user
+    business_id = get_business_id(current_user)
+    if business_id is None:
+        raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
     
     try:
         # Read Excel file
@@ -2326,8 +2961,8 @@ async def import_equipments(
                     stats["errors"].append(f"Row {idx + 2}: Missing client name")
                     continue
                 
-                # Match client (must exist, don't create)
-                client_row = db.execute("SELECT id FROM clients WHERE name = ?", (client_name,)).fetchone()
+                # Match client (must exist in this business, don't create)
+                client_row = db.execute("SELECT id FROM clients WHERE name = ? AND business_id = ?", (client_name, business_id)).fetchone()
                 if not client_row:
                     stats["rows_skipped"] += 1
                     stats["errors"].append(f"Row {idx + 2}: Client '{client_name}' not found")
@@ -2360,18 +2995,18 @@ async def import_equipments(
                     stats["errors"].append(f"Row {idx + 2}: Missing equipment type")
                     continue
                 
-                # Get or create equipment_type
-                equipment_type = db.execute("SELECT id, interval_weeks, default_lead_weeks FROM equipment_types WHERE name = ?", (equipment_type_name,)).fetchone()
+                # Get or create equipment_type (in this business)
+                equipment_type = db.execute("SELECT id, interval_weeks, default_lead_weeks FROM equipment_types WHERE name = ? AND business_id = ?", (equipment_type_name, business_id)).fetchone()
                 if equipment_type:
                     equipment_type_id = equipment_type['id']
                     default_interval_weeks = equipment_type['interval_weeks'] or 52
                     default_lead_weeks = equipment_type['default_lead_weeks'] or 4
                 else:
-                    # Create new equipment_type
+                    # Create new equipment_type with business_id
                     rrule_str = "FREQ=WEEKLY;INTERVAL=52"
                     cur = db.execute(
-                        "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
-                        (equipment_type_name, 52, rrule_str, 4)
+                        "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?, ?)",
+                        (business_id, equipment_type_name, 52, rrule_str, 4)
                     )
                     db.commit()
                     equipment_type_id = cur.lastrowid
@@ -2491,6 +3126,7 @@ async def import_equipments(
 @app.post("/admin/import/temporary")
 async def import_temporary_data(
     file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
     """
@@ -2501,6 +3137,11 @@ async def import_temporary_data(
     """
     if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="File must be an Excel file (.xlsx or .xls)")
+    
+    # Get business_id from current user
+    business_id = get_business_id(current_user)
+    if business_id is None:
+        raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
     
     try:
         # Read Excel file
@@ -2595,14 +3236,14 @@ async def import_temporary_data(
                 
                 # Get or create client
                 if client_name not in client_map:
-                    existing = db.execute("SELECT id FROM clients WHERE name = ?", (client_name,)).fetchone()
+                    existing = db.execute("SELECT id FROM clients WHERE name = ? AND business_id = ?", (client_name, business_id)).fetchone()
                     if existing:
                         client_id = existing['id']
                     else:
-                        # Create client
+                        # Create client with business_id
                         cur = db.execute(
-                            "INSERT INTO clients (name, address) VALUES (?, ?)",
-                            (client_name, None)
+                            "INSERT INTO clients (business_id, name, address) VALUES (?, ?, ?)",
+                            (business_id, client_name, None)
                         )
                         db.commit()
                         client_id = cur.lastrowid
@@ -2651,18 +3292,18 @@ async def import_temporary_data(
                     stats["errors"].append(f"Row {idx + 2}: Missing equipment type")
                     continue
                 
-                # Get or create equipment_type
-                equipment_type = db.execute("SELECT id, interval_weeks, default_lead_weeks FROM equipment_types WHERE name = ?", (equipment_type_name,)).fetchone()
+                # Get or create equipment_type (in this business)
+                equipment_type = db.execute("SELECT id, interval_weeks, default_lead_weeks FROM equipment_types WHERE name = ? AND business_id = ?", (equipment_type_name, business_id)).fetchone()
                 if equipment_type:
                     equipment_type_id = equipment_type['id']
                     default_interval_weeks = equipment_type['interval_weeks'] or 52
                     default_lead_weeks = equipment_type['default_lead_weeks'] or 4
                 else:
-                    # Create new equipment_type
+                    # Create new equipment_type with business_id
                     rrule_str = "FREQ=WEEKLY;INTERVAL=52"
                     cur = db.execute(
-                        "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
-                        (equipment_type_name, 52, rrule_str, 4)
+                        "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?, ?)",
+                        (business_id, equipment_type_name, 52, rrule_str, 4)
                     )
                     db.commit()
                     equipment_type_id = cur.lastrowid

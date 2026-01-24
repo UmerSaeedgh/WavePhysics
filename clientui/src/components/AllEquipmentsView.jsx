@@ -566,7 +566,9 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                     </div>
                     <div className="list-actions" onClick={(e) => e.stopPropagation()}>
                       <button onClick={() => handleDoneClick(equipment)}>Done</button>
-                      <button className="danger" onClick={() => handleDeleteEquipment(equipment.id)}>Delete</button>
+                      {isAdmin && (
+                        <button className="danger" onClick={() => handleDeleteEquipment(equipment.id)}>Delete</button>
+                      )}
                     </div>
                   </li>
                 );

@@ -1,13 +1,19 @@
 import { useState } from "react";
 import AdminTab from "./AdminTab";
 
-export default function UserView({ apiCall, setError, currentUser, onLogout }) {
+export default function UserView({ apiCall, setError, currentUser, onLogout, isSuperAdmin, authToken, onBusinessSwitch, onRefresh }) {
   const [userTab, setUserTab] = useState("settings");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changing, setChanging] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  
+  // Username change state
+  const [newUsername, setNewUsername] = useState("");
+  const [usernamePassword, setUsernamePassword] = useState("");
+  const [changingUsername, setChangingUsername] = useState(false);
+  const [usernameSuccessMessage, setUsernameSuccessMessage] = useState("");
 
   async function handleChangePassword(e) {
     e.preventDefault();
@@ -49,6 +55,52 @@ export default function UserView({ apiCall, setError, currentUser, onLogout }) {
     }
   }
 
+  async function handleChangeUsername(e) {
+    e.preventDefault();
+    setError("");
+    setUsernameSuccessMessage("");
+
+    if (!newUsername || !newUsername.trim()) {
+      setError("New username is required");
+      return;
+    }
+
+    if (!usernamePassword) {
+      setError("Password is required to change username");
+      return;
+    }
+
+    if (newUsername.trim().toLowerCase() === currentUser?.username?.toLowerCase()) {
+      setError("New username must be different from current username");
+      return;
+    }
+
+    setChangingUsername(true);
+    try {
+      const result = await apiCall("/auth/change-username", {
+        method: "PUT",
+        body: JSON.stringify({
+          new_username: newUsername.trim(),
+          password: usernamePassword,
+        }),
+      });
+      setUsernameSuccessMessage("Username changed successfully! Please refresh the page.");
+      setNewUsername("");
+      setUsernamePassword("");
+      // Update current user in localStorage
+      const updatedUser = { ...currentUser, username: result.new_username };
+      localStorage.setItem("currentUser", JSON.stringify(updatedUser));
+      // Optionally refresh the page after a delay to show the success message
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    } catch (err) {
+      setError(err.message || "Failed to change username");
+    } finally {
+      setChangingUsername(false);
+    }
+  }
+
   return (
     <div>
       <div className="card">
@@ -82,9 +134,59 @@ export default function UserView({ apiCall, setError, currentUser, onLogout }) {
                   <strong>Username:</strong> {currentUser?.username}
                 </div>
                 <div>
-                  <strong>Role:</strong> {currentUser?.is_admin ? "Admin" : "User"}
+                  <strong>Role:</strong> {
+                    currentUser?.is_super_admin ? "Super Admin" :
+                    currentUser?.is_admin ? "Admin" : "User"
+                  }
                 </div>
               </div>
+            </div>
+
+            <div style={{ borderTop: "1px solid #8193A4", paddingTop: "2rem" }}>
+              <h3>Change Username</h3>
+              {usernameSuccessMessage && (
+                <div style={{ 
+                  background: "rgba(215, 229, 216, 0.3)", 
+                  border: "1px solid #8193A4", 
+                  color: "#2D3234", 
+                  padding: "0.75rem 1rem", 
+                  borderRadius: "0.5rem", 
+                  marginBottom: "1rem" 
+                }}>
+                  {usernameSuccessMessage}
+                </div>
+              )}
+              <form onSubmit={handleChangeUsername} style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "400px", marginBottom: "2rem" }}>
+                <label>
+                  New Username
+                  <input
+                    type="text"
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(e.target.value)}
+                    placeholder={currentUser?.username}
+                    required
+                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                  />
+                </label>
+                <label>
+                  Current Password (required for security)
+                  <input
+                    type="password"
+                    value={usernamePassword}
+                    onChange={(e) => setUsernamePassword(e.target.value)}
+                    required
+                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="primary"
+                  disabled={changingUsername}
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  {changingUsername ? "Changing..." : "Change Username"}
+                </button>
+              </form>
             </div>
 
             <div style={{ borderTop: "1px solid #8193A4", paddingTop: "2rem" }}>
@@ -161,7 +263,15 @@ export default function UserView({ apiCall, setError, currentUser, onLogout }) {
         )}
 
         {userTab === "admin" && currentUser?.is_admin && (
-          <AdminTab apiCall={apiCall} setError={setError} currentUser={currentUser} />
+          <AdminTab 
+            apiCall={apiCall} 
+            setError={setError} 
+            currentUser={currentUser} 
+            isSuperAdmin={isSuperAdmin} 
+            authToken={authToken}
+            onBusinessSwitch={onBusinessSwitch}
+            onRefresh={onRefresh}
+          />
         )}
       </div>
     </div>

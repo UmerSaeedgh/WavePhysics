@@ -13,6 +13,7 @@ import UpcomingView from "./components/UpcomingView";
 import AddEquipmentPage from "./components/AddEquipmentPage";
 import UserView from "./components/UserView";
 import CompletedView from "./components/CompletedView";
+import DeletedRecordsView from "./components/DeletedRecordsView";
 
 function App() {
   // Authentication state
@@ -53,6 +54,7 @@ function App() {
   const [overdue, setOverdue] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
   const [completions, setCompletions] = useState([]);
+  const [businesses, setBusinesses] = useState([]);
   const [upcomingDate, setUpcomingDate] = useState(() => {
     // Default to today's date
     return new Date().toISOString().split('T')[0];
@@ -69,8 +71,13 @@ function App() {
       fetchUpcoming(true);
       fetchOverdue(true);
       fetchCompletions(true);
+      // Fetch businesses if super admin
+      const isSuperAdmin = currentUser?.is_super_admin === true || currentUser?.is_super_admin === 1;
+      if (isSuperAdmin) {
+        fetchBusinesses();
+      }
     }
-  }, [isAuthenticated, authToken]);
+  }, [isAuthenticated, authToken, currentUser]);
 
   // Fetch sites when a client is selected
   useEffect(() => {
@@ -191,10 +198,12 @@ function App() {
           apiCall("/equipment-types?active_only=true", {}, token).catch(err => { console.error("Failed to fetch equipment types:", err); return []; }),
           apiCall("/equipment-records", {}, token).catch(err => { console.error("Failed to fetch equipment records:", err); return []; }),
           apiCall(`/equipment-records/upcoming?start_date=${today}&end_date=${endDateStr}`, {}, token).catch(err => { console.error("Failed to fetch upcoming:", err); return []; }),
-          apiCall("/equipment-records/overdue", {}, token).catch(err => { console.error("Failed to fetch overdue:", err); return []; })
+          apiCall("/equipment-records/overdue", {}, token).catch(err => { console.error("Failed to fetch overdue:", err); return []; }),
+          // Fetch businesses if super admin
+          data.user?.is_super_admin ? apiCall("/businesses", {}, token).catch(err => { console.error("Failed to fetch businesses:", err); return []; }) : Promise.resolve([])
         ];
         
-        const [clientsData, typesData, equipmentsData, upcomingData, overdueData] = await Promise.all(fetchPromises);
+        const [clientsData, typesData, equipmentsData, upcomingData, overdueData, businessesData] = await Promise.all(fetchPromises);
         if (Array.isArray(clientsData)) {
           setClients(clientsData);
         }
@@ -209,6 +218,9 @@ function App() {
         }
         if (Array.isArray(overdueData)) {
           setOverdue(overdueData);
+        }
+        if (Array.isArray(businessesData)) {
+          setBusinesses(businessesData);
         }
       } catch (fetchErr) {
         console.error("Error fetching initial data after login:", fetchErr);
@@ -306,15 +318,25 @@ function App() {
       return null;
     } catch (err) {
       console.error(`API Error [${endpoint}]:`, err);
-      setError(err.message);
-      throw err;
+      // Provide more user-friendly error messages
+      let errorMessage = err.message;
+      if (err.message === "Failed to fetch" || err.message.includes("NetworkError") || err.message.includes("fetch")) {
+        errorMessage = "Unable to connect to the server. Please check if the backend is running and try again.";
+      }
+      setError(errorMessage);
+      throw new Error(errorMessage);
     }
   }
 
-  async function fetchClients() {
+  async function fetchClients(businessIdFilter = null) {
     setLoading(true);
     try {
-      const data = await apiCall("/clients");
+      const params = new URLSearchParams();
+      if (isSuperAdmin && businessIdFilter) {
+        params.append("business_id_filter", businessIdFilter.toString());
+      }
+      const endpoint = `/clients${params.toString() ? `?${params.toString()}` : ""}`;
+      const data = await apiCall(endpoint);
       if (Array.isArray(data)) {
         setClients(data);
       } else {
@@ -417,6 +439,15 @@ function App() {
     }
   }
 
+  async function fetchBusinesses() {
+    try {
+      const data = await apiCall("/businesses");
+      setBusinesses(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error fetching businesses:", err);
+      setBusinesses([]);
+    }
+  }
 
   async function fetchAllEquipments(silent = false) {
     if (!silent) setLoading(true);
@@ -479,6 +510,24 @@ function App() {
     }
   }
 
+  async function handleBusinessSwitch(businessId) {
+    try {
+      // Refresh current user info to get updated business_id
+      const userInfo = await apiCall("/auth/me");
+      setCurrentUser(userInfo);
+      localStorage.setItem("currentUser", JSON.stringify(userInfo));
+      
+      // Refresh all data for the new business context (or all businesses if businessId is null)
+      await refreshAllCounts();
+      setView("clients"); // Switch to clients view
+    } catch (err) {
+      setError("Failed to switch business context");
+      console.error("Error switching business:", err);
+    }
+  }
+
+  const isSuperAdmin = currentUser?.is_super_admin === true || currentUser?.is_super_admin === 1;
+
   // Login Component
   if (!isAuthenticated) {
     return <LoginView onLogin={handleLogin} error={error} />;
@@ -507,6 +556,7 @@ function App() {
           >
               Clients ({clients.length})
           </button>
+          {/* Temporarily hidden - All Equipments tab
           <button
             className={view === "all-equipments" ? "active" : ""}
             onClick={() => {
@@ -518,6 +568,7 @@ function App() {
           >
               All Equipments ({allEquipments.length})
           </button>
+          */}
           <button
               className={view === "upcoming" ? "active" : ""}
               onClick={() => setView("upcoming")}
@@ -530,6 +581,14 @@ function App() {
             >
               Completed ({completions.length})
             </button>
+            {isSuperAdmin && (
+              <button
+                className={view === "deleted-records" ? "active" : ""}
+                onClick={() => setView("deleted-records")}
+              >
+                Deleted Records
+              </button>
+            )}
             <button
               className={view === "user" ? "active" : ""}
               onClick={() => setView("user")}
@@ -556,6 +615,8 @@ function App() {
               setSelectedClient(client);
               setView("client-sites");
             }}
+            businesses={businesses}
+            isSuperAdmin={isSuperAdmin}
             onEditClient={(client) => {
               // Edit button opens edit client page
               setClientToEdit(client);
@@ -755,6 +816,13 @@ function App() {
             currentUser={currentUser}
             overdue={overdue}
             setOverdue={setOverdue}
+            onNavigateToAddEquipment={(equipment) => {
+              setEquipmentToEdit(equipment);
+              setPreviousView("upcoming");
+              setView("add-equipment");
+            }}
+            onRefreshCompletions={() => fetchCompletions(true)}
+            onRefreshAllCounts={refreshAllCounts}
             onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment
@@ -810,12 +878,25 @@ function App() {
           />
         )}
 
+        {view === "deleted-records" && isSuperAdmin && (
+          <DeletedRecordsView
+            apiCall={apiCall}
+            currentUser={currentUser}
+            businesses={businesses}
+            onRefresh={refreshAllCounts}
+          />
+        )}
+
         {view === "user" && (
           <UserView 
             apiCall={apiCall} 
             setError={setError} 
             currentUser={currentUser}
             onLogout={handleLogout}
+            isSuperAdmin={isSuperAdmin}
+            authToken={authToken}
+            onBusinessSwitch={handleBusinessSwitch}
+            onRefresh={refreshAllCounts}
           />
         )}
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatDate } from "../utils/formatDate";
 
-export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue }) {
+export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue, onNavigateToAddEquipment, onRefreshCompletions, onRefreshAllCounts }) {
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -15,6 +15,18 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   const [clients, setClients] = useState([]);
   const [sites, setSites] = useState([]);
   const [equipmentTypes, setEquipmentTypes] = useState([]);
+
+  // Remaining equipment state
+  const [remaining, setRemaining] = useState([]);
+  const [showRemaining, setShowRemaining] = useState(false);
+
+  // Modal states
+  const [selectedEquipment, setSelectedEquipment] = useState(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showDoneModal, setShowDoneModal] = useState(false);
+  const [doneEquipment, setDoneEquipment] = useState(null);
+  const [calculatedDueDate, setCalculatedDueDate] = useState("");
+  const [doneInterval, setDoneInterval] = useState("");
 
   async function fetchUpcoming() {
     setLoading(true);
@@ -37,6 +49,21 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
       
       const data = await apiCall(url).catch(() => []);
       setUpcoming(Array.isArray(data) ? data : []);
+
+      // Fetch all equipment records to calculate remaining
+      const allRecords = await apiCall("/equipment-records?active_only=true").catch(() => []);
+      const allRecordsArray = Array.isArray(allRecords) ? allRecords : [];
+      
+      // Get IDs of overdue and upcoming items
+      const overdueIds = new Set((Array.isArray(overdueData) ? overdueData : []).map(item => item.id));
+      const upcomingIds = new Set((Array.isArray(data) ? data : []).map(item => item.id));
+      
+      // Filter remaining: items that are not overdue and not upcoming
+      const remainingItems = allRecordsArray.filter(item => {
+        return !overdueIds.has(item.id) && !upcomingIds.has(item.id);
+      });
+      
+      setRemaining(remainingItems);
     } catch (err) {
       const errorMessage = err.message || "Failed to load upcoming data";
       setError(errorMessage);
@@ -110,8 +137,118 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
       });
   }
 
+  function getTodayDate() {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  }
+
+  function calculateDueDate(baseDate, intervalWeeks) {
+    if (!baseDate || !intervalWeeks) return "";
+    const date = new Date(baseDate);
+    const newDate = new Date(date);
+    newDate.setDate(newDate.getDate() + (parseInt(intervalWeeks) * 7));
+    return newDate.toISOString().split('T')[0];
+  }
+
+  function handleDoneClick(equipment) {
+    setDoneEquipment(equipment);
+    const initialInterval = equipment.interval_weeks?.toString() || "";
+    setDoneInterval(initialInterval);
+    
+    // Use today's date as the base date
+    const today = getTodayDate();
+    if (initialInterval) {
+      setCalculatedDueDate(calculateDueDate(today, initialInterval));
+    } else {
+      setCalculatedDueDate("");
+    }
+    setShowDoneModal(true);
+  }
+
+  function handleIntervalChange(newInterval) {
+    setDoneInterval(newInterval);
+    // Use today's date as the base date
+    const today = getTodayDate();
+    if (newInterval) {
+      setCalculatedDueDate(calculateDueDate(today, newInterval));
+    }
+  }
+
+  async function handleSaveDone() {
+    if (!doneEquipment || !calculatedDueDate) {
+      setError("Due date is required");
+      return;
+    }
+    try {
+      const updatePayload = {
+        due_date: calculatedDueDate
+      };
+      if (doneInterval && parseInt(doneInterval) !== doneEquipment.interval_weeks) {
+        updatePayload.interval_weeks = parseInt(doneInterval);
+      }
+      
+      // Update the equipment record
+      await apiCall(`/equipment-records/${doneEquipment.id}`, {
+        method: "PUT",
+        body: JSON.stringify(updatePayload)
+      });
+      
+      // Create a completion record
+      await apiCall("/equipment-completions", {
+        method: "POST",
+        body: JSON.stringify({
+          equipment_record_id: doneEquipment.id,
+          due_date: calculatedDueDate,
+          interval_weeks: doneInterval ? parseInt(doneInterval) : doneEquipment.interval_weeks
+        })
+      });
+      
+      // Refresh completions count in navigation
+      if (onRefreshCompletions) {
+        onRefreshCompletions();
+      }
+      
+      // Refresh all counts
+      if (onRefreshAllCounts) {
+        onRefreshAllCounts();
+      }
+      
+      await fetchUpcoming();
+      setShowDoneModal(false);
+      setDoneEquipment(null);
+      setCalculatedDueDate("");
+      setDoneInterval("");
+    } catch (err) {
+      // error already set
+    }
+  }
+
+  function handleCancelDone() {
+    setShowDoneModal(false);
+    setDoneEquipment(null);
+    setCalculatedDueDate("");
+    setDoneInterval("");
+  }
+
+  async function handleDeleteEquipment(equipmentId) {
+    if (!window.confirm("Delete this equipment record?")) return;
+    try {
+      await apiCall(`/equipment-records/${equipmentId}`, { method: "DELETE" });
+      await fetchUpcoming();
+      // Refresh all counts
+      if (onRefreshAllCounts) {
+        onRefreshAllCounts();
+      }
+    } catch (err) {
+      // error already set
+    }
+  }
+
   function renderEquipmentList(items, className = "", isOverdue = false) {
     const filteredItems = filterAndSortItems(items);
+    // Check if user is admin
+    const isAdmin = currentUser && (currentUser.is_admin === true || currentUser.is_admin === 1);
+    
     return (
       <ul className="list">
         {filteredItems.map(item => {
@@ -132,9 +269,8 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               className={`list-item ${className}`}
               style={{ cursor: "pointer", ...itemStyle, ...overdueStyle }}
               onClick={() => {
-                if (onNavigateToSchedule && item.id) {
-                  onNavigateToSchedule(item.id, null);
-                }
+                setSelectedEquipment(item);
+                setShowDetailsModal(true);
               }}
             >
               <div className="list-main">
@@ -155,8 +291,15 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   {item.equipment_type_name && `Type: ${item.equipment_type_name} • `}
                   Client: {item.client_name}
                   {item.site_name && ` • Site: ${item.site_name}`}
-                  {` • Due: ${formatDate(item.due_date)}`}
+                  {` • Due: `}
+                  <span style={{ fontWeight: "bold", fontSize: "1em" }}>{formatDate(item.due_date)}</span>
                 </div>
+              </div>
+              <div className="list-actions" onClick={(e) => e.stopPropagation()}>
+                <button onClick={() => handleDoneClick(item)}>Done</button>
+                {isAdmin && (
+                  <button className="danger" onClick={() => handleDeleteEquipment(item.id)}>Delete</button>
+                )}
               </div>
             </li>
           );
@@ -220,7 +363,8 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   // Get filtered counts
   const filteredOverdue = filterAndSortItems(overdue);
   const filteredUpcoming = filterAndSortItems(upcoming);
-  const totalFilteredCount = filteredOverdue.length + filteredUpcoming.length;
+  const filteredRemaining = filterAndSortItems(remaining);
+  const totalFilteredCount = filteredOverdue.length + filteredUpcoming.length + (showRemaining ? filteredRemaining.length : 0);
 
   if (loading) return <div className="card"><p>Loading...</p></div>;
 
@@ -237,6 +381,15 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               {showFilters ? "Hide Filters" : `Filter${activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}`}
             </button>
             <button className="secondary" onClick={fetchUpcoming}>Refresh</button>
+            {onNavigateToAddEquipment && (
+              <button className="primary" onClick={() => {
+                if (onNavigateToAddEquipment) {
+                  onNavigateToAddEquipment(null);
+                }
+              }}>
+                + Add New Equipment
+              </button>
+            )}
           </div>
         </div>
 
@@ -457,9 +610,9 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
             </div>
           </div>
         </div>
-        {filteredOverdue.length === 0 && filteredUpcoming.length === 0 ? (
+        {filteredOverdue.length === 0 && filteredUpcoming.length === 0 && filteredRemaining.length === 0 ? (
           <p className="empty">
-            {overdue.length === 0 && upcoming.length === 0 
+            {overdue.length === 0 && upcoming.length === 0 && remaining.length === 0
               ? "No upcoming equipment records" 
               : "No equipment records match your filters"}
           </p>
@@ -475,17 +628,259 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
             )}
             {filteredUpcoming.length > 0 && (
               <div>
-                {filteredOverdue.length > 0 && (
-                  <h3 style={{ padding: "1rem 1rem 0.5rem 1rem", margin: 0, fontSize: "1rem", color: "#2D3234" }}>
-                    Upcoming ({filteredUpcoming.length})
-                  </h3>
-                )}
+                <h3 style={{ padding: "1rem 1rem 0.5rem 1rem", margin: 0, fontSize: "1rem", color: "#2D3234" }}>
+                  Upcoming ({filteredUpcoming.length})
+                </h3>
                 {renderEquipmentList(upcoming, "planned", false)}
+              </div>
+            )}
+            {filteredRemaining.length > 0 && (
+              <div>
+                <div 
+                  style={{ 
+                    padding: "1rem", 
+                    margin: 0, 
+                    fontSize: "1rem", 
+                    color: "#2D3234",
+                    cursor: "pointer",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    borderTop: filteredOverdue.length > 0 || filteredUpcoming.length > 0 ? "1px solid #ddd" : "none",
+                    backgroundColor: showRemaining ? "rgba(129, 147, 164, 0.05)" : "transparent",
+                    transition: "background-color 0.2s ease"
+                  }}
+                  onClick={() => setShowRemaining(!showRemaining)}
+                >
+                  <h3 style={{ margin: 0, fontSize: "1rem", color: "#2D3234" }}>
+                    Remaining ({filteredRemaining.length})
+                  </h3>
+                  <span style={{ fontSize: "0.875rem", color: "#8193A4" }}>
+                    {showRemaining ? "▼" : "▶"}
+                  </span>
+                </div>
+                {showRemaining && (
+                  <div>
+                    {renderEquipmentList(remaining, "remaining", false)}
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
       </div>
+
+      {showDetailsModal && selectedEquipment && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(45, 50, 52, 0.9)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }} onClick={() => setShowDetailsModal(false)}>
+          <div style={{
+            backgroundColor: "#D7E5D8",
+            padding: "2rem",
+            borderRadius: "0.5rem",
+            maxWidth: "800px",
+            maxHeight: "80vh",
+            overflow: "auto",
+            width: "90%",
+            color: "#2D3234"
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <h2 style={{ margin: 0, color: "#2D3234" }}>Equipment Details</h2>
+              <button onClick={() => setShowDetailsModal(false)} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+            </div>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              <div>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Equipment Information</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
+                  <div><strong>Equipment Name:</strong> {selectedEquipment.equipment_name || "N/A"}</div>
+                  <div><strong>Equipment Type:</strong> {selectedEquipment.equipment_type_name || "N/A"}</div>
+                  <div><strong>Anchor Date:</strong> {formatDate(selectedEquipment.anchor_date)}</div>
+                  {selectedEquipment.due_date && <div><strong>Due Date:</strong> {formatDate(selectedEquipment.due_date)}</div>}
+                  {selectedEquipment.interval_weeks && <div><strong>Interval:</strong> {selectedEquipment.interval_weeks} weeks</div>}
+                  {selectedEquipment.lead_weeks && <div><strong>Lead Weeks:</strong> {selectedEquipment.lead_weeks}</div>}
+                  {selectedEquipment.timezone && <div><strong>Timezone:</strong> {selectedEquipment.timezone}</div>}
+                  <div><strong>Status:</strong> {selectedEquipment.active ? "Active" : "Inactive"}</div>
+                  {selectedEquipment.notes && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <strong>Notes:</strong>
+                      <div style={{ marginTop: "0.25rem", whiteSpace: "pre-wrap" }}>{selectedEquipment.notes}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Client Information</h3>
+                <div style={{ fontSize: "0.9rem" }}>
+                  <div><strong>Name:</strong> {selectedEquipment.client_name || "N/A"}</div>
+                </div>
+              </div>
+
+              <div>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
+                <div style={{ fontSize: "0.9rem" }}>
+                  <div><strong>Name:</strong> {selectedEquipment.site_name || "N/A"}</div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <button 
+                  className="primary" 
+                  onClick={() => {
+                    setShowDetailsModal(false);
+                    if (onNavigateToAddEquipment) {
+                      onNavigateToAddEquipment(selectedEquipment);
+                    }
+                  }}
+                >
+                  Edit Equipment
+                </button>
+                {onNavigateToSchedule && (
+                  <button 
+                    className="secondary" 
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      if (selectedEquipment.id) {
+                        onNavigateToSchedule(selectedEquipment.id, null);
+                      }
+                    }}
+                  >
+                    View Schedule
+                  </button>
+                )}
+                <button 
+                  className="secondary" 
+                  onClick={() => setShowDetailsModal(false)}
+                  style={{ 
+                    color: "#2D3234", 
+                    border: "1px solid #8193A4",
+                    background: "transparent"
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDoneModal && doneEquipment && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(45, 50, 52, 0.9)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }} onClick={handleCancelDone}>
+          <div style={{
+            backgroundColor: "#D7E5D8",
+            padding: "2rem",
+            borderRadius: "0.5rem",
+            maxWidth: "500px",
+            width: "90%",
+            color: "#2D3234"
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <h2 style={{ margin: 0, color: "#2D3234" }}>Mark as Done</h2>
+              <button onClick={handleCancelDone} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+            </div>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  Interval (weeks)
+                </label>
+                <input
+                  type="number"
+                  value={doneInterval}
+                  onChange={(e) => handleIntervalChange(e.target.value)}
+                  min="1"
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    backgroundColor: "#fff",
+                    color: "#2D3234"
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  Calculated Due Date
+                </label>
+                <input
+                  type="text"
+                  value={calculatedDueDate}
+                  onChange={(e) => {
+                    // Only allow yyyy-mm-dd format
+                    const value = e.target.value;
+                    // Allow empty or valid yyyy-mm-dd pattern
+                    if (value === "" || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                      setCalculatedDueDate(value);
+                    }
+                  }}
+                  placeholder="yyyy-mm-dd"
+                  pattern="\d{4}-\d{2}-\d{2}"
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    backgroundColor: "#fff",
+                    color: "#2D3234",
+                    fontFamily: "monospace"
+                  }}
+                />
+                <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
+                  {doneInterval ? 
+                    `Today (${getTodayDate()}) + ${doneInterval} weeks = ${calculatedDueDate || "calculating..."}` :
+                    "Enter interval weeks to calculate due date"
+                  }
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <button 
+                  className="primary" 
+                  onClick={handleSaveDone}
+                  disabled={!calculatedDueDate}
+                >
+                  Save
+                </button>
+                <button 
+                  className="secondary"
+                  onClick={handleCancelDone}
+                  style={{ 
+                    color: "#2D3234", 
+                    border: "1px solid #8193A4",
+                    background: "transparent"
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
