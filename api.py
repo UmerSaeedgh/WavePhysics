@@ -207,6 +207,7 @@ class UserRead(BaseModel):
     id: int
     username: str
     is_admin: bool
+    is_super_admin: Optional[bool] = False
     created_at: str
 
 # Authentication Endpoints
@@ -469,7 +470,7 @@ def delete_business(business_id: int, current_user: dict = Depends(get_current_s
 def list_users(current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
     """List all users (admin only)"""
     rows = db.execute(
-        "SELECT id, username, is_admin, created_at FROM users ORDER BY created_at DESC"
+        "SELECT id, username, is_admin, is_super_admin, created_at FROM users ORDER BY created_at DESC"
     ).fetchall()
     return [UserRead(**dict(row)) for row in rows]
 
@@ -508,11 +509,16 @@ def delete_user(user_id: int, current_user: dict = Depends(get_current_admin_use
     if user_id == current_user["user_id"]:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
     
+    # Check if user is a super admin and prevent deletion
+    user = db.execute("SELECT id, is_super_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.get("is_super_admin") == 1 or user.get("is_super_admin") is True:
+        raise HTTPException(status_code=400, detail="Cannot delete super admin users")
+    
     result = db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     db.commit()
-    
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="User not found")
     
     return {"message": "User deleted successfully"}
 
@@ -656,6 +662,7 @@ class ClientRead(BaseModel):
     address: Optional[str]
     billing_info: Optional[str]
     notes: Optional[str]
+    business_id: Optional[int] = None  # Include business_id for super admin context
 
 
 @app.get("/clients", response_model=List[ClientRead])
@@ -685,23 +692,23 @@ def list_clients(
         # Super admin viewing all clients
         if include_deleted:
             cur = db.execute(
-                "SELECT id, name, address, billing_info, notes, deleted_at, deleted_by FROM clients ORDER BY name"
+                "SELECT id, name, address, billing_info, notes, business_id, deleted_at, deleted_by FROM clients ORDER BY name"
             )
         else:
             cur = db.execute(
-                "SELECT id, name, address, billing_info, notes FROM clients WHERE deleted_at IS NULL ORDER BY name"
+                "SELECT id, name, address, billing_info, notes, business_id FROM clients WHERE deleted_at IS NULL ORDER BY name"
             )
         rows = cur.fetchall()
     else:
         # Filter by business_id
         if include_deleted:
             cur = db.execute(
-                "SELECT id, name, address, billing_info, notes, deleted_at, deleted_by FROM clients WHERE business_id = ? ORDER BY name",
+                "SELECT id, name, address, billing_info, notes, business_id, deleted_at, deleted_by FROM clients WHERE business_id = ? ORDER BY name",
                 (business_id,)
             )
         else:
             cur = db.execute(
-                "SELECT id, name, address, billing_info, notes FROM clients WHERE business_id = ? AND deleted_at IS NULL ORDER BY name",
+                "SELECT id, name, address, billing_info, notes, business_id FROM clients WHERE business_id = ? AND deleted_at IS NULL ORDER BY name",
                 (business_id,)
             )
         rows = cur.fetchall()
@@ -709,16 +716,32 @@ def list_clients(
 
 @app.get("/clients/{client_id}", response_model=ClientRead)
 def get_client(client_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
-    # Super admin can view deleted records, regular users cannot
-    if current_user.get("is_super_admin"):
-        row = db.execute(
-            "SELECT id, name, address, billing_info, notes FROM clients WHERE id = ? AND business_id = ?",
-            (client_id, business_id),
-        ).fetchone()
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
     else:
+        business_id = get_business_id(current_user)
+    
+    # Super admin can view deleted records, regular users cannot
+    if is_super_admin:
+        if business_id is None:
+            # Super admin viewing all businesses - allow access to any client
+            row = db.execute(
+                "SELECT id, name, address, billing_info, notes, business_id FROM clients WHERE id = ?",
+                (client_id,),
+            ).fetchone()
+        else:
+            # Super admin viewing specific business
+            row = db.execute(
+                "SELECT id, name, address, billing_info, notes, business_id FROM clients WHERE id = ? AND business_id = ?",
+                (client_id, business_id),
+            ).fetchone()
+    else:
+        # Regular user - must filter by business_id and exclude deleted
         row = db.execute(
-            "SELECT id, name, address, billing_info, notes FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL",
+            "SELECT id, name, address, billing_info, notes, business_id FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL",
             (client_id, business_id),
         ).fetchone()
 
@@ -756,10 +779,22 @@ def create_client(payload: ClientCreate, current_user: dict = Depends(get_curren
 #Update Client
 @app.put("/clients/{client_id}", response_model=ClientRead)
 def update_client(client_id: int, payload: ClientUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+    
     # Only allow updating non-deleted records (or deleted records if super admin wants to restore)
-    if current_user.get("is_super_admin"):
-        row = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ?", (client_id, business_id)).fetchone()
+    if is_super_admin:
+        if business_id is None:
+            # Super admin viewing all businesses - allow access to any client
+            row = db.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone()
+        else:
+            # Super admin viewing specific business
+            row = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ?", (client_id, business_id)).fetchone()
     else:
         row = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (client_id, business_id)).fetchone()
     if row is None:
@@ -803,9 +838,20 @@ def update_client(client_id: int, payload: ClientUpdate, current_user: dict = De
 #Delete Client
 @app.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_client(client_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+    
     # Verify client exists and belongs to business
-    client = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (client_id, business_id)).fetchone()
+    if is_super_admin and business_id is None:
+        # Super admin viewing all businesses - allow access to any client
+        client = db.execute("SELECT id FROM clients WHERE id = ? AND deleted_at IS NULL", (client_id,)).fetchone()
+    else:
+        client = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (client_id, business_id)).fetchone()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     
@@ -871,16 +917,26 @@ def list_sites(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
-    business_id = get_business_id(current_user)
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+    
     # Super admin can request deleted records, regular users cannot
-    if include_deleted and not current_user.get("is_super_admin"):
+    if include_deleted and not is_super_admin:
         include_deleted = False
     
     deleted_filter = "" if include_deleted else "AND s.deleted_at IS NULL"
     
     if client_id:
-        # Verify client belongs to business
-        client = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (client_id, business_id)).fetchone()
+        # Verify client belongs to business (or exists if viewing all businesses)
+        if business_id is not None:
+            client = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (client_id, business_id)).fetchone()
+        else:
+            client = db.execute("SELECT id FROM clients WHERE id = ? AND deleted_at IS NULL", (client_id,)).fetchone()
         if not client:
             raise HTTPException(status_code=404, detail="Client not found")
         if include_deleted:
@@ -894,31 +950,59 @@ def list_sites(
                 (client_id,)
             )
     else:
-        # Get all sites for clients in this business
-        cur = db.execute(
-            f"""SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
-               FROM sites s 
-               JOIN clients c ON s.client_id = c.id 
-               WHERE c.business_id = ? {deleted_filter}
-               ORDER BY s.name""",
-            (business_id,)
-        )
+        # Get all sites for clients in this business (or all businesses if business_id is None)
+        if business_id is not None:
+            cur = db.execute(
+                f"""SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+                   FROM sites s 
+                   JOIN clients c ON s.client_id = c.id 
+                   WHERE c.business_id = ? {deleted_filter}
+                   ORDER BY s.name""",
+                (business_id,)
+            )
+        else:
+            # Super admin viewing all businesses
+            cur = db.execute(
+                f"""SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+                   FROM sites s 
+                   JOIN clients c ON s.client_id = c.id 
+                   WHERE 1=1 {deleted_filter}
+                   ORDER BY s.name"""
+            )
     rows = cur.fetchall()
     return [SiteRead(**dict(row)) for row in rows]
 
 
 @app.get("/sites/{site_id}", response_model=SiteRead)
 def get_site(site_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+    
     # Super admin can view deleted records, regular users cannot
-    if current_user.get("is_super_admin"):
-        row = db.execute(
-            """SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
-               FROM sites s 
-               JOIN clients c ON s.client_id = c.id 
-               WHERE s.id = ? AND c.business_id = ?""",
-            (site_id, business_id),
-        ).fetchone()
+    if is_super_admin:
+        if business_id is None:
+            # Super admin viewing all businesses - allow access to any site
+            row = db.execute(
+                """SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+                   FROM sites s 
+                   JOIN clients c ON s.client_id = c.id 
+                   WHERE s.id = ?""",
+                (site_id,),
+            ).fetchone()
+        else:
+            # Super admin viewing specific business
+            row = db.execute(
+                """SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+                   FROM sites s 
+                   JOIN clients c ON s.client_id = c.id 
+                   WHERE s.id = ? AND c.business_id = ?""",
+                (site_id, business_id),
+            ).fetchone()
     else:
         row = db.execute(
             """SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
@@ -1319,17 +1403,32 @@ def list_equipment_types(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
-    business_id = get_business_id(current_user)
-    if active_only:
-        cur = db.execute(
-            "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE business_id = ? AND active = 1 ORDER BY name",
-            (business_id,)
-        )
+    is_super_admin = current_user.get("is_super_admin")
+    business_id = current_user.get("business_id") if is_super_admin else get_business_id(current_user)
+    
+    # Build query based on whether we're filtering by business_id
+    if business_id is None:
+        # Super admin viewing all businesses - show all equipment types
+        if active_only:
+            cur = db.execute(
+                "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE active = 1 ORDER BY name"
+            )
+        else:
+            cur = db.execute(
+                "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types ORDER BY name"
+            )
     else:
-        cur = db.execute(
-            "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE business_id = ? ORDER BY name",
-            (business_id,)
-        )
+        # Filter by business_id
+        if active_only:
+            cur = db.execute(
+                "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE business_id = ? AND active = 1 ORDER BY name",
+                (business_id,)
+            )
+        else:
+            cur = db.execute(
+                "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE business_id = ? ORDER BY name",
+                (business_id,)
+            )
     rows = cur.fetchall()
     return [EquipmentTypeRead(**dict(row)) for row in rows]
 
@@ -1536,7 +1635,14 @@ def list_equipment_records(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
-    business_id = get_business_id(current_user)
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+    
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                       er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
@@ -1547,12 +1653,20 @@ def list_equipment_records(
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-               WHERE c.business_id = ?"""
-    params = [business_id]
+               WHERE er.deleted_at IS NULL"""
+    params = []
+    
+    # Filter by business_id if specified (None means all businesses for super admin)
+    if business_id is not None:
+        query += " AND c.business_id = ?"
+        params.append(business_id)
     
     if client_id:
-        # Verify client belongs to business
-        client = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ?", (client_id, business_id)).fetchone()
+        # Verify client belongs to business (or exists if viewing all businesses)
+        if business_id is not None:
+            client = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ?", (client_id, business_id)).fetchone()
+        else:
+            client = db.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone()
         if not client:
             raise HTTPException(status_code=404, detail="Client not found")
         query += " AND er.client_id = ?"
@@ -1603,7 +1717,14 @@ def get_upcoming_equipment_records(
         start_date_obj = today
         end_date_obj = today + dt.timedelta(weeks=2)
     
-    business_id = get_business_id(current_user)
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+    
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                       er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
@@ -1614,12 +1735,20 @@ def get_upcoming_equipment_records(
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-               WHERE c.business_id = ?
+               WHERE er.deleted_at IS NULL
                  AND er.active = 1 
-                 AND (er.due_date IS NOT NULL AND er.due_date >= ? AND er.due_date <= ?)
-               ORDER BY er.due_date"""
+                 AND (er.due_date IS NOT NULL AND er.due_date >= ? AND er.due_date <= ?)"""
     
-    cur = db.execute(query, (business_id, start_date_obj.isoformat(), end_date_obj.isoformat()))
+    params = [start_date_obj.isoformat(), end_date_obj.isoformat()]
+    
+    # Filter by business_id if specified (None means all businesses for super admin)
+    if business_id is not None:
+        query += " AND c.business_id = ?"
+        params.append(business_id)
+    
+    query += " ORDER BY er.due_date"
+    
+    cur = db.execute(query, params)
     rows = cur.fetchall()
     result = []
     for row in rows:
@@ -1635,7 +1764,13 @@ def get_overdue_equipment_records(
     db: sqlite3.Connection = Depends(get_db)
 ):
     today = dt.date.today()
-    business_id = get_business_id(current_user)
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                       er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
@@ -1647,14 +1782,21 @@ def get_overdue_equipment_records(
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-               WHERE c.business_id = ?
+               WHERE er.deleted_at IS NULL
                  AND er.active = 1 
-                 AND er.deleted_at IS NULL
                  AND er.due_date IS NOT NULL 
-                 AND er.due_date < ?
-               ORDER BY er.due_date"""
+                 AND er.due_date < ?"""
     
-    cur = db.execute(query, (business_id, today.isoformat()))
+    params = [today.isoformat()]
+    
+    # Filter by business_id if specified (None means all businesses for super admin)
+    if business_id is not None:
+        query += " AND c.business_id = ?"
+        params.append(business_id)
+    
+    query += " ORDER BY er.due_date"
+    
+    cur = db.execute(query, params)
     rows = cur.fetchall()
     result = []
     for row in rows:
@@ -1666,24 +1808,49 @@ def get_overdue_equipment_records(
 
 @app.get("/equipment-records/{equipment_record_id}", response_model=EquipmentRecordRead)
 def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
-    # Super admin can view deleted records, regular users cannot
-    if current_user.get("is_super_admin"):
-        row = db.execute(
-            """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                      er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
-                      er.active, er.notes, er.timezone,
-                      c.name as client_name,
-                      s.name as site_name,
-                      et.name as equipment_type_name
-               FROM equipment_record er
-               LEFT JOIN clients c ON er.client_id = c.id
-               LEFT JOIN sites s ON er.site_id = s.id
-               LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-               WHERE er.id = ? AND c.business_id = ?""",
-            (equipment_record_id, business_id),
-        ).fetchone()
+    is_super_admin = current_user.get("is_super_admin")
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
     else:
+        business_id = get_business_id(current_user)
+    
+    # Super admin can view deleted records, regular users cannot
+    if is_super_admin:
+        if business_id is None:
+            # Super admin viewing all businesses - allow access to any equipment record
+            row = db.execute(
+                """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
+                          er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                          er.active, er.notes, er.timezone,
+                          c.name as client_name,
+                          s.name as site_name,
+                          et.name as equipment_type_name
+                   FROM equipment_record er
+                   LEFT JOIN clients c ON er.client_id = c.id
+                   LEFT JOIN sites s ON er.site_id = s.id
+                   LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+                   WHERE er.id = ?""",
+                (equipment_record_id,),
+            ).fetchone()
+        else:
+            # Super admin viewing specific business
+            row = db.execute(
+                """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
+                          er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                          er.active, er.notes, er.timezone,
+                          c.name as client_name,
+                          s.name as site_name,
+                          et.name as equipment_type_name
+                   FROM equipment_record er
+                   LEFT JOIN clients c ON er.client_id = c.id
+                   LEFT JOIN sites s ON er.site_id = s.id
+                   LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+                   WHERE er.id = ? AND c.business_id = ?""",
+                (equipment_record_id, business_id),
+            ).fetchone()
+    else:
+        # Regular user - must filter by business_id and exclude deleted
         row = db.execute(
             """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                       er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
@@ -1709,13 +1876,23 @@ def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(
 
 @app.post("/equipment-records", response_model=EquipmentRecordRead, status_code=status.HTTP_201_CREATED)
 def create_equipment_record(payload: EquipmentRecordCreate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
-    if business_id is None:
-        raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
-    # Verify client exists and belongs to business
-    client_row = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ?", (payload.client_id, business_id)).fetchone()
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # Get business_id from the client being used (not from user context)
+    # This allows super admins in "all businesses" mode to create equipment
+    client_row = db.execute("SELECT id, business_id FROM clients WHERE id = ? AND deleted_at IS NULL", (payload.client_id,)).fetchone()
     if client_row is None:
         raise HTTPException(status_code=404, detail="Client not found")
+    
+    business_id = client_row['business_id']
+    if business_id is None:
+        raise HTTPException(status_code=400, detail="Client has no business assigned")
+    
+    # For non-super admins, verify the client belongs to their business
+    if not is_super_admin:
+        user_business_id = get_business_id(current_user)
+        if business_id != user_business_id:
+            raise HTTPException(status_code=403, detail="Client does not belong to your business")
     
     # Verify site exists and belongs to the client and is not deleted
     site_row = db.execute("SELECT id, client_id FROM sites WHERE id = ? AND deleted_at IS NULL", (payload.site_id,)).fetchone()
@@ -1839,14 +2016,30 @@ def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUp
 
 @app.delete("/equipment-records/{equipment_record_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_equipment_record(equipment_record_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
+    is_super_admin = current_user.get("is_super_admin")
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+    
     # Verify equipment record belongs to business through client and is not deleted
-    er = db.execute(
-        """SELECT er.id FROM equipment_record er
-           JOIN clients c ON er.client_id = c.id
-           WHERE er.id = ? AND c.business_id = ? AND er.deleted_at IS NULL""",
-        (equipment_record_id, business_id)
-    ).fetchone()
+    if business_id is None:
+        # Super admin viewing all businesses - allow deletion of any equipment record
+        er = db.execute(
+            """SELECT er.id FROM equipment_record er
+               WHERE er.id = ? AND er.deleted_at IS NULL""",
+            (equipment_record_id,)
+        ).fetchone()
+    else:
+        # Filter by business_id
+        er = db.execute(
+            """SELECT er.id FROM equipment_record er
+               JOIN clients c ON er.client_id = c.id
+               WHERE er.id = ? AND c.business_id = ? AND er.deleted_at IS NULL""",
+            (equipment_record_id, business_id)
+        ).fetchone()
+    
     if not er:
         raise HTTPException(status_code=404, detail="Equipment record not found")
     

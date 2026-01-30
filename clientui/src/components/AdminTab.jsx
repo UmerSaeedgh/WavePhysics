@@ -521,13 +521,15 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   <li key={user.id} className="list-item">
                     <div className="list-main">
                       <div className="list-title">
-                        {user.username} {user.is_admin && <span style={{ color: "#8193A4", fontSize: "0.875rem" }}>(Admin)</span>}
+                        {user.username} 
+                        {user.is_admin && <span style={{ color: "#8193A4", fontSize: "0.875rem" }}>(Admin)</span>}
+                        {user.is_super_admin && <span style={{ color: "#8193A4", fontSize: "0.875rem", fontWeight: "bold" }}>(Super Admin)</span>}
                       </div>
                       <div className="list-subtitle">
                         Created: {formatDate(user.created_at)}
                       </div>
                     </div>
-                    {user.id !== currentUser.id && (
+                    {user.id !== currentUser.id && !user.is_super_admin && (
                       <button
                         className="secondary"
                         onClick={() => handleDeleteUser(user.id)}

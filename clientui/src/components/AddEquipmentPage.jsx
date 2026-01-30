@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-export default function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, previousView, onBack, onSuccess, currentUser }) {
+export default function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, previousView, onBack, onSuccess, currentUser, initialClientId, initialSiteId }) {
   const [selectedClientId, setSelectedClientId] = useState("");
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [availableSites, setAvailableSites] = useState([]);
@@ -28,13 +28,6 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
 
   useEffect(() => {
     async function loadData() {
-      try {
-        const types = await apiCall("/equipment-types?active_only=true");
-        setEquipmentTypes(types || []);
-      } catch (err) {
-        setEquipmentTypes([]);
-      }
-
       if (equipmentToEdit && equipmentToEdit.id) {
         try {
           const record = await apiCall(`/equipment-records/${equipmentToEdit.id}`);
@@ -61,10 +54,42 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
           setSelectedSiteId(equipmentToEdit.site.id.toString());
         }
         await fetchSitesForClient(equipmentToEdit.client.id);
+      } else if (initialClientId) {
+        // Use initial values from filter (when creating new equipment from filtered view)
+        setSelectedClientId(initialClientId.toString());
+        await fetchSitesForClient(initialClientId);
+        if (initialSiteId) {
+          setSelectedSiteId(initialSiteId.toString());
+        }
       }
     }
     loadData();
-  }, [equipmentToEdit, apiCall]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [equipmentToEdit, initialClientId, initialSiteId]);
+
+  // Fetch equipment types on mount
+  useEffect(() => {
+    async function fetchTypes() {
+      try {
+        console.log("Fetching equipment types...");
+        const types = await apiCall("/equipment-types?active_only=true");
+        console.log("Equipment types received:", types);
+        if (Array.isArray(types)) {
+          console.log(`Setting ${types.length} equipment types`);
+          setEquipmentTypes(types);
+        } else {
+          console.warn("Equipment types response is not an array:", types);
+          setEquipmentTypes([]);
+        }
+      } catch (err) {
+        console.error("Failed to load equipment types:", err);
+        setError(err.message || "Failed to load equipment types");
+        setEquipmentTypes([]);
+      }
+    }
+    fetchTypes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (selectedClientId) {
@@ -416,14 +441,35 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
         </label>
 
         {currentUser?.is_admin && (
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              name="active"
-              checked={equipmentForm.active}
-              onChange={handleChange}
-            />
-            Active
+          <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}>
+            <div
+              onClick={() => setEquipmentForm(prev => ({ ...prev, active: !prev.active }))}
+              style={{
+                position: "relative",
+                width: "48px",
+                height: "24px",
+                backgroundColor: equipmentForm.active ? "#8193A4" : "#cbd5e1",
+                borderRadius: "12px",
+                transition: "background-color 0.2s ease",
+                cursor: "pointer",
+                flexShrink: 0
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  top: "2px",
+                  left: equipmentForm.active ? "26px" : "2px",
+                  width: "20px",
+                  height: "20px",
+                  backgroundColor: "#ffffff",
+                  borderRadius: "50%",
+                  transition: "left 0.2s ease",
+                  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)"
+                }}
+              />
+            </div>
+            <span style={{ userSelect: "none" }}>Active</span>
           </label>
         )}
 

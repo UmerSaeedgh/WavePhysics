@@ -20,6 +20,10 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   const [remaining, setRemaining] = useState([]);
   const [showRemaining, setShowRemaining] = useState(false);
 
+  // Notes editing state
+  const [editingNotesId, setEditingNotesId] = useState(null);
+  const [editingNotes, setEditingNotes] = useState("");
+
   // Modal states
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -244,6 +248,39 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
     }
   }
 
+  async function handleSaveNotes(equipmentId) {
+    try {
+      const updated = await apiCall(`/equipment-records/${equipmentId}`, {
+        method: "PUT",
+        body: JSON.stringify({ notes: editingNotes })
+      });
+      setEditingNotesId(null);
+      setEditingNotes("");
+      // Update the item in the current lists
+      const updateItemInList = (list, setList) => {
+        const updatedList = list.map(item => 
+          item.id === equipmentId ? { ...item, notes: updated.notes } : item
+        );
+        setList(updatedList);
+      };
+      updateItemInList(overdue, setOverdue);
+      updateItemInList(upcoming, setUpcoming);
+      updateItemInList(remaining, setRemaining);
+    } catch (err) {
+      // error already set
+    }
+  }
+
+  function handleStartEditNotes(item) {
+    setEditingNotesId(item.id);
+    setEditingNotes(item.notes || "");
+  }
+
+  function handleCancelEditNotes() {
+    setEditingNotesId(null);
+    setEditingNotes("");
+  }
+
   function renderEquipmentList(items, className = "", isOverdue = false) {
     const filteredItems = filterAndSortItems(items);
     // Check if user is admin
@@ -269,11 +306,13 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               className={`list-item ${className}`}
               style={{ cursor: "pointer", ...itemStyle, ...overdueStyle }}
               onClick={() => {
-                setSelectedEquipment(item);
-                setShowDetailsModal(true);
+                if (editingNotesId !== item.id) {
+                  setSelectedEquipment(item);
+                  setShowDetailsModal(true);
+                }
               }}
             >
-              <div className="list-main">
+              <div className="list-main" style={{ flex: 1 }}>
                 <div className="list-title">
                   {item.equipment_name || 'Unknown'}
                   {isOverdue && (
@@ -292,8 +331,80 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   Client: {item.client_name}
                   {item.site_name && ` • Site: ${item.site_name}`}
                   {` • Due: `}
-                  <span style={{ fontWeight: "bold", fontSize: "1em" }}>{formatDate(item.due_date)}</span>
+                  <span style={{ fontWeight: "900", fontSize: "1.5em", color: "#2D3234" }}>{formatDate(item.due_date)}</span>
                 </div>
+                {editingNotesId === item.id ? (
+                  <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem", alignItems: "flex-start" }} onClick={(e) => e.stopPropagation()}>
+                    <textarea
+                      value={editingNotes}
+                      onChange={(e) => setEditingNotes(e.target.value)}
+                      placeholder="Add notes..."
+                      style={{
+                        flex: 1,
+                        padding: "0.5rem",
+                        border: "1px solid #8193A4",
+                        borderRadius: "0.25rem",
+                        fontSize: "0.9rem",
+                        minHeight: "60px",
+                        resize: "vertical"
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                      <button 
+                        className="primary" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSaveNotes(item.id);
+                        }}
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.85rem" }}
+                      >
+                        Save
+                      </button>
+                      <button 
+                        className="secondary" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCancelEditNotes();
+                        }}
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.85rem" }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: "0.5rem" }}>
+                    {item.notes ? (
+                      <div style={{ fontSize: "0.9rem", color: "#2D3234", fontStyle: "italic", whiteSpace: "pre-wrap" }}>
+                        {item.notes}
+                      </div>
+                    ) : (
+                      <button
+                        className="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartEditNotes(item);
+                        }}
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.85rem" }}
+                      >
+                        + Add Notes
+                      </button>
+                    )}
+                    {item.notes && (
+                      <button
+                        className="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartEditNotes(item);
+                        }}
+                        style={{ marginLeft: "0.5rem", padding: "0.25rem 0.5rem", fontSize: "0.85rem" }}
+                      >
+                        Edit Notes
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="list-actions" onClick={(e) => e.stopPropagation()}>
                 <button onClick={() => handleDoneClick(item)}>Done</button>
@@ -384,7 +495,11 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
             {onNavigateToAddEquipment && (
               <button className="primary" onClick={() => {
                 if (onNavigateToAddEquipment) {
-                  onNavigateToAddEquipment(null);
+                  // Pass filter values so they can be pre-selected in AddEquipmentPage
+                  onNavigateToAddEquipment({
+                    client_id: selectedClientId ? parseInt(selectedClientId) : null,
+                    site_id: selectedSiteId ? parseInt(selectedSiteId) : null,
+                  });
                 }
               }}>
                 + Add New Equipment

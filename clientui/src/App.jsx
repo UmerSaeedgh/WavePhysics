@@ -29,6 +29,8 @@ function App() {
 
   const [view, setView] = useState("clients"); // "clients", "client-sites", "all-equipments", "upcoming", "overdue", "completed", "admin", "user", "add-equipment", "edit-client", "edit-site", "edit-contact"
   const [equipmentToEdit, setEquipmentToEdit] = useState(null); // Equipment record to edit when navigating to add-equipment page
+  const [initialClientIdForEquipment, setInitialClientIdForEquipment] = useState(null); // Initial client ID when adding new equipment from filtered view
+  const [initialSiteIdForEquipment, setInitialSiteIdForEquipment] = useState(null); // Initial site ID when adding new equipment from filtered view
   const [clientToEdit, setClientToEdit] = useState(null); // Client to edit when navigating to edit-client page
   const [siteToEdit, setSiteToEdit] = useState(null); // Site to edit when navigating to edit-site page
   const [contactToEdit, setContactToEdit] = useState(null); // Contact link to edit when navigating to edit-contact page
@@ -63,7 +65,7 @@ function App() {
 
   useEffect(() => {
     if (isAuthenticated && authToken) {
-      fetchClients();
+    fetchClients();
       fetchEquipmentTypes();
       fetchSites(null, true); // Fetch all sites for client counts (silent)
       // Fetch counts silently (without showing loading state)
@@ -533,16 +535,82 @@ function App() {
     return <LoginView onLogin={handleLogin} error={error} />;
   }
 
+  // Get current business name
+  const currentBusiness = businesses.find(b => b.id === currentUser?.business_id);
+  let businessName = currentBusiness?.name;
+
+  // Get context names based on current view
+  const getContextNames = () => {
+    const names = [];
+    
+    // Determine business name - if in "all businesses" mode and a client is selected, get business from client
+    let displayBusinessName = businessName;
+    if (!displayBusinessName && selectedClient && selectedClient.business_id) {
+      // In "all businesses" mode, get business name from selected client
+      const clientBusiness = businesses.find(b => b.id === selectedClient.business_id);
+      displayBusinessName = clientBusiness?.name;
+    }
+    
+    // Always show business name if available (except when on clients page - show only business)
+    if (displayBusinessName) {
+      names.push(displayBusinessName);
+    }
+    
+    // Show client name when:
+    // - Editing a client
+    // - On sites page (client-sites view)
+    // - When a client is selected and we're on equipment views
+    if (view === "edit-client" && clientToEdit) {
+      names.push(clientToEdit.name);
+    } else if (view === "client-sites" && selectedClient) {
+      names.push(selectedClient.name);
+    } else if (view === "clients") {
+      // On clients page, show only business name (already added above)
+      // Don't add client name
+    } else if (selectedClient && (view === "all-equipments" || view === "upcoming" || view === "completed")) {
+      // For equipment views, show client if selected
+      names.push(selectedClient.name);
+    }
+    
+    // Show site name when:
+    // - Editing a site
+    // - On sites page (client-sites view) when a site is selected
+    // - When a site is selected and we're on equipment views
+    if (view === "edit-site" && siteToEdit) {
+      names.push(siteToEdit.name);
+    } else if (view === "client-sites" && selectedSite) {
+      // Show site name when on client-sites view and a site is selected
+      names.push(selectedSite.name);
+    } else if (selectedSite && (view === "all-equipments" || view === "upcoming" || view === "completed")) {
+      // For equipment views, show site if selected
+      names.push(selectedSite.name);
+    }
+    
+    return names;
+  };
+
+  const contextNames = getContextNames();
+
   return (
     <div className="app">
       <header className="topbar">
-        <div style={{ display: "flex", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
           <img 
             src={wavePhysicsLogo} 
             alt="WAVE PHYSICS" 
             className="logo"
             style={{ height: "50px", maxWidth: "200px", objectFit: "contain" }}
           />
+          {contextNames.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#D7E5D8", fontSize: "0.95rem" }}>
+              {contextNames.map((name, index) => (
+                <span key={index}>
+                  {index > 0 && <span style={{ margin: "0 0.25rem" }}>•</span>}
+                  <span style={{ fontWeight: index === 0 ? "600" : "400" }}>{name}</span>
+                </span>
+              ))}
+        </div>
+          )}
         </div>
         <nav className="tabs" style={{ marginTop: "0", display: "flex", alignItems: "center" }}>
           <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -559,7 +627,7 @@ function App() {
           {/* Temporarily hidden - All Equipments tab
           <button
             className={view === "all-equipments" ? "active" : ""}
-            onClick={() => {
+                onClick={() => {
               // Clear filters when navigating from navigation bar
               setAllEquipmentsInitialClientId(null);
               setAllEquipmentsInitialSiteId(null);
@@ -575,26 +643,26 @@ function App() {
           >
               Upcoming ({overdue.length + upcoming.length})
           </button>
-            <button
+          <button
               className={view === "completed" ? "active" : ""}
               onClick={() => setView("completed")}
-            >
+          >
               Completed ({completions.length})
-            </button>
+          </button>
             {isSuperAdmin && (
-              <button
+          <button
                 className={view === "deleted-records" ? "active" : ""}
                 onClick={() => setView("deleted-records")}
-              >
+          >
                 Deleted Records
-              </button>
+          </button>
             )}
-            <button
+          <button
               className={view === "user" ? "active" : ""}
               onClick={() => setView("user")}
-            >
+          >
               User
-            </button>
+          </button>
           </div>
         </nav>
       </header>
@@ -679,6 +747,8 @@ function App() {
               // Navigate to all-equipments view with client and site filters applied
               setAllEquipmentsInitialClientId(selectedClient.id.toString());
               setAllEquipmentsInitialSiteId(site.id.toString());
+              // Set selected site for context display
+              setSelectedSite(site);
               setView("all-equipments");
             }}
             onAddSite={() => {
@@ -818,6 +888,14 @@ function App() {
             setOverdue={setOverdue}
             onNavigateToAddEquipment={(equipment) => {
               setEquipmentToEdit(equipment);
+              // If equipment is an object with client_id/site_id (from filters), set initial values
+              if (equipment && typeof equipment === 'object' && !equipment.id) {
+                setInitialClientIdForEquipment(equipment.client_id || null);
+                setInitialSiteIdForEquipment(equipment.site_id || null);
+              } else {
+                setInitialClientIdForEquipment(null);
+                setInitialSiteIdForEquipment(null);
+              }
               setPreviousView("upcoming");
               setView("add-equipment");
             }}
@@ -845,15 +923,21 @@ function App() {
             equipmentToEdit={equipmentToEdit}
             previousView={previousView}
             currentUser={currentUser}
+            initialClientId={initialClientIdForEquipment}
+            initialSiteId={initialSiteIdForEquipment}
             onBack={() => {
               const returnView = previousView || "all-equipments";
               setEquipmentToEdit(null);
+              setInitialClientIdForEquipment(null);
+              setInitialSiteIdForEquipment(null);
               setPreviousView(null);
               setView(returnView);
             }}
             onSuccess={async () => {
               const returnView = previousView || "all-equipments";
               setEquipmentToEdit(null);
+              setInitialClientIdForEquipment(null);
+              setInitialSiteIdForEquipment(null);
               setPreviousView(null);
               setView(returnView);
               // Refresh data if coming from edit-site
