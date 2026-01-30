@@ -19,6 +19,8 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
   const [businessName, setBusinessName] = useState("");
   const [selectedBusinessId, setSelectedBusinessId] = useState(null);
 
+  const [selectedBusinessForImport, setSelectedBusinessForImport] = useState(null);
+
   async function handleImportEquipments(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -34,6 +36,10 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
     try {
       const formData = new FormData();
       formData.append('file', file);
+      // Add business_id if super admin and business is selected
+      if (isSuperAdmin && selectedBusinessForImport) {
+        formData.append('business_id', selectedBusinessForImport.toString());
+      }
 
       const headers = {};
       if (authToken) {
@@ -95,6 +101,10 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
     try {
       const formData = new FormData();
       formData.append('file', file);
+      // Add business_id if super admin and business is selected
+      if (isSuperAdmin && selectedBusinessForImport) {
+        formData.append('business_id', selectedBusinessForImport.toString());
+      }
 
       const headers = {};
       if (authToken) {
@@ -347,9 +357,35 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
               <h3>Import Equipments</h3>
               <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
                 Import equipment records from Excel file. Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date.
+                {isSuperAdmin && " Optional column: Business (if not provided, will use business from Excel file)."}
                 <br />
                 <strong>Note:</strong> If client or site doesn't exist, the row will be skipped. If equipment identifier doesn't exist, a new equipment will be created.
               </p>
+              {isSuperAdmin && (
+                <div style={{ marginBottom: "1rem" }}>
+                  <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                    Business (Optional - leave empty to use Business column from Excel)
+                  </label>
+                  <select
+                    value={selectedBusinessForImport || ""}
+                    onChange={(e) => setSelectedBusinessForImport(e.target.value ? parseInt(e.target.value) : null)}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem",
+                      border: "1px solid #8193A4",
+                      borderRadius: "0.25rem",
+                      fontSize: "0.9rem"
+                    }}
+                  >
+                    <option value="">Use Business column from Excel</option>
+                    {businesses.map(business => (
+                      <option key={business.id} value={business.id.toString()}>
+                        {business.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                 <input
                   ref={fileInputRef}
@@ -375,9 +411,36 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
               <h3>Temporary Data Upload</h3>
               <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
                 Import equipment records from Excel file. Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date.
+                {isSuperAdmin && " Optional column: Business (if not provided, will use business from Excel file or create it)."}
                 <br />
                 <strong>Note:</strong> If client or site doesn't exist, they will be created automatically. If equipment identifier doesn't exist, a new equipment will be created.
+                {isSuperAdmin && " If business doesn't exist, it will be created automatically."}
               </p>
+              {isSuperAdmin && (
+                <div style={{ marginBottom: "1rem" }}>
+                  <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                    Business (Optional - leave empty to use Business column from Excel)
+                  </label>
+                  <select
+                    value={selectedBusinessForImport || ""}
+                    onChange={(e) => setSelectedBusinessForImport(e.target.value ? parseInt(e.target.value) : null)}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem",
+                      border: "1px solid #8193A4",
+                      borderRadius: "0.25rem",
+                      fontSize: "0.9rem"
+                    }}
+                  >
+                    <option value="">Use Business column from Excel</option>
+                    {businesses.map(business => (
+                      <option key={business.id} value={business.id.toString()}>
+                        {business.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                 <input
                   ref={temporaryFileInputRef}

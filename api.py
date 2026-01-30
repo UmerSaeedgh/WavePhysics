@@ -11,7 +11,7 @@ import io
 import hashlib
 import secrets
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Header
+from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Header, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
@@ -3055,22 +3055,35 @@ async def import_excel(
 @app.post("/admin/import/equipments")
 async def import_equipments(
     file: UploadFile = File(...),
+    business_id: Optional[int] = Form(None),
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
     """
     Import equipment records from Excel file.
     Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date
+    Optional column: Business (for super admins)
     - If client or site doesn't exist, the row is skipped (voided)
     - If equipment type doesn't exist, it will be created in equipment_types table
+    - For super admins: can specify business_id or use business from Excel
+    - For normal admins: uses their business, filters out rows with different businesses
     """
     if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="File must be an Excel file (.xlsx or .xls)")
     
-    # Get business_id from current user
-    business_id = get_business_id(current_user)
-    if business_id is None:
-        raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # Determine business_id
+    if is_super_admin:
+        # Super admin can use provided business_id or get from Excel
+        if business_id is None:
+            # Will be determined from Excel file (Business column)
+            business_id = None
+    else:
+        # Regular admin must use their business
+        business_id = get_business_id(current_user)
+        if business_id is None:
+            raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
     
     try:
         # Read Excel file
@@ -3083,6 +3096,7 @@ async def import_equipments(
         # Identify columns
         client_col = None
         site_col = None
+        business_col = None  # Business column (for super admins)
         equipment_type_col = None  # Equipment Type (dropdown value - maps to equipment_type_id)
         equipment_name_col = None  # Equipment Name (text field)
         anchor_date_col = None
@@ -3098,6 +3112,8 @@ async def import_equipments(
                 client_col = col
             elif site_col is None and any(x in col_lower for x in ['site', 'location', 'facility']):
                 site_col = col
+            elif business_col is None and 'business' in col_lower:
+                business_col = col
             elif equipment_type_col is None and any(x in col_lower for x in ['equipment_type', 'equipmenttype', 'type', 'test', 'modality']):
                 # Equipment Type (dropdown value - maps to equipment_type_id)
                 equipment_type_col = col
@@ -3147,6 +3163,42 @@ async def import_equipments(
         for idx, row in df.iterrows():
             stats["rows_processed"] += 1
             try:
+                # Determine business_id for this row
+                row_business_id = business_id
+                if is_super_admin:
+                    # Super admin: use business from Excel if provided, otherwise use provided business_id
+                    if business_col and business_col in row:
+                        business_name = str(row[business_col]).strip()
+                        if business_name and business_name.lower() not in ['nan', 'none', '']:
+                            # Look up business by name
+                            business_row = db.execute("SELECT id FROM businesses WHERE name = ?", (business_name,)).fetchone()
+                            if business_row:
+                                row_business_id = business_row['id']
+                            else:
+                                # Business doesn't exist - skip row (normal import doesn't create businesses)
+                                stats["rows_skipped"] += 1
+                                stats["errors"].append(f"Row {idx + 2}: Business '{business_name}' not found")
+                                continue
+                        elif business_id is None:
+                            stats["rows_skipped"] += 1
+                            stats["errors"].append(f"Row {idx + 2}: Business not specified")
+                            continue
+                    elif business_id is None:
+                        stats["rows_skipped"] += 1
+                        stats["errors"].append(f"Row {idx + 2}: Business not specified")
+                        continue
+                else:
+                    # Regular admin: filter out rows that don't match their business
+                    if business_col and business_col in row:
+                        business_name = str(row[business_col]).strip()
+                        if business_name and business_name.lower() not in ['nan', 'none', '']:
+                            # Check if business matches
+                            business_row = db.execute("SELECT id FROM businesses WHERE name = ? AND id = ?", (business_name, business_id)).fetchone()
+                            if not business_row:
+                                # Different business - skip this row
+                                stats["rows_skipped"] += 1
+                                continue
+                
                 # Get client name
                 client_name = str(row[client_col]).strip()
                 if not client_name or client_name.lower() in ['nan', 'none', '']:
@@ -3155,10 +3207,10 @@ async def import_equipments(
                     continue
                 
                 # Match client (must exist in this business, don't create)
-                client_row = db.execute("SELECT id FROM clients WHERE name = ? AND business_id = ?", (client_name, business_id)).fetchone()
+                client_row = db.execute("SELECT id FROM clients WHERE name = ? AND business_id = ?", (client_name, row_business_id)).fetchone()
                 if not client_row:
                     stats["rows_skipped"] += 1
-                    stats["errors"].append(f"Row {idx + 2}: Client '{client_name}' not found")
+                    stats["errors"].append(f"Row {idx + 2}: Client '{client_name}' not found in business")
                     continue
                 client_id = client_row['id']
                 
@@ -3189,7 +3241,7 @@ async def import_equipments(
                     continue
                 
                 # Get or create equipment_type (in this business)
-                equipment_type = db.execute("SELECT id, interval_weeks, default_lead_weeks FROM equipment_types WHERE name = ? AND business_id = ?", (equipment_type_name, business_id)).fetchone()
+                equipment_type = db.execute("SELECT id, interval_weeks, default_lead_weeks FROM equipment_types WHERE name = ? AND business_id = ?", (equipment_type_name, row_business_id)).fetchone()
                 if equipment_type:
                     equipment_type_id = equipment_type['id']
                     default_interval_weeks = equipment_type['interval_weeks'] or 52
@@ -3199,7 +3251,7 @@ async def import_equipments(
                     rrule_str = "FREQ=WEEKLY;INTERVAL=52"
                     cur = db.execute(
                         "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?, ?)",
-                        (business_id, equipment_type_name, 52, rrule_str, 4)
+                        (row_business_id, equipment_type_name, 52, rrule_str, 4)
                     )
                     db.commit()
                     equipment_type_id = cur.lastrowid
@@ -3319,22 +3371,35 @@ async def import_equipments(
 @app.post("/admin/import/temporary")
 async def import_temporary_data(
     file: UploadFile = File(...),
+    business_id: Optional[int] = Form(None),
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
     """
     Import equipment records from Excel file (temporary data upload).
     Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date
+    Optional column: Business (for super admins)
     - If client or site doesn't exist, they will be created automatically
     - If equipment type doesn't exist, it will be created in equipment_types table
+    - For super admins: if business doesn't exist, it will be created
+    - For normal admins: uses their business, filters out rows with different businesses
     """
     if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="File must be an Excel file (.xlsx or .xls)")
     
-    # Get business_id from current user
-    business_id = get_business_id(current_user)
-    if business_id is None:
-        raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # Determine business_id
+    if is_super_admin:
+        # Super admin can use provided business_id or get from Excel
+        if business_id is None:
+            # Will be determined from Excel file (Business column)
+            business_id = None
+    else:
+        # Regular admin must use their business
+        business_id = get_business_id(current_user)
+        if business_id is None:
+            raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
     
     try:
         # Read Excel file
@@ -3347,6 +3412,7 @@ async def import_temporary_data(
         # Identify columns
         client_col = None
         site_col = None
+        business_col = None  # Business column (for super admins)
         equipment_col = None  # Equipment Identifier (dropdown value)
         equipment_name_col = None  # Equipment Name (textarea value)
         anchor_date_col = None
@@ -3362,6 +3428,8 @@ async def import_temporary_data(
                 client_col = col
             elif site_col is None and any(x in col_lower for x in ['site', 'location', 'facility']):
                 site_col = col
+            elif business_col is None and 'business' in col_lower:
+                business_col = col
             elif equipment_col is None and ('identifier' in col_lower or 'equipment_identifier' in col_lower):
                 # "identifier" column = Equipment Identifier (dropdown value - used to match/create equipment)
                 equipment_col = col
@@ -3420,6 +3488,42 @@ async def import_temporary_data(
         for idx, row in df.iterrows():
             stats["rows_processed"] += 1
             try:
+                # Determine business_id for this row
+                row_business_id = business_id
+                if is_super_admin:
+                    # Super admin: use business from Excel if provided, otherwise use provided business_id
+                    if business_col and business_col in row:
+                        business_name = str(row[business_col]).strip()
+                        if business_name and business_name.lower() not in ['nan', 'none', '']:
+                            # Look up or create business by name
+                            business_row = db.execute("SELECT id FROM businesses WHERE name = ?", (business_name,)).fetchone()
+                            if business_row:
+                                row_business_id = business_row['id']
+                            else:
+                                # Create business if it doesn't exist (temporary upload creates businesses)
+                                cur = db.execute("INSERT INTO businesses (name) VALUES (?)", (business_name,))
+                                db.commit()
+                                row_business_id = cur.lastrowid
+                        elif business_id is None:
+                            stats["rows_skipped"] += 1
+                            stats["errors"].append(f"Row {idx + 2}: Business not specified")
+                            continue
+                    elif business_id is None:
+                        stats["rows_skipped"] += 1
+                        stats["errors"].append(f"Row {idx + 2}: Business not specified")
+                        continue
+                else:
+                    # Regular admin: filter out rows that don't match their business
+                    if business_col and business_col in row:
+                        business_name = str(row[business_col]).strip()
+                        if business_name and business_name.lower() not in ['nan', 'none', '']:
+                            # Check if business matches
+                            business_row = db.execute("SELECT id FROM businesses WHERE name = ? AND id = ?", (business_name, business_id)).fetchone()
+                            if not business_row:
+                                # Different business - skip this row
+                                stats["rows_skipped"] += 1
+                                continue
+                
                 # Get client name
                 client_name = str(row[client_col]).strip()
                 if not client_name or client_name.lower() in ['nan', 'none', '']:
@@ -3427,24 +3531,25 @@ async def import_temporary_data(
                     stats["errors"].append(f"Row {idx + 2}: Missing client name")
                     continue
                 
-                # Get or create client
-                if client_name not in client_map:
-                    existing = db.execute("SELECT id FROM clients WHERE name = ? AND business_id = ?", (client_name, business_id)).fetchone()
+                # Get or create client (use row_business_id)
+                client_key = (row_business_id, client_name)
+                if client_key not in client_map:
+                    existing = db.execute("SELECT id FROM clients WHERE name = ? AND business_id = ?", (client_name, row_business_id)).fetchone()
                     if existing:
                         client_id = existing['id']
                     else:
                         # Create client with business_id
                         cur = db.execute(
                             "INSERT INTO clients (business_id, name, address) VALUES (?, ?, ?)",
-                            (business_id, client_name, None)
+                            (row_business_id, client_name, None)
                         )
                         db.commit()
                         client_id = cur.lastrowid
                         stats["clients_created"] += 1
                     
-                    client_map[client_name] = client_id
+                    client_map[client_key] = client_id
                 
-                client_id = client_map[client_name]
+                client_id = client_map[client_key]
                 
                 # Get site name
                 site_name = str(row[site_col]).strip()
@@ -3486,7 +3591,7 @@ async def import_temporary_data(
                     continue
                 
                 # Get or create equipment_type (in this business)
-                equipment_type = db.execute("SELECT id, interval_weeks, default_lead_weeks FROM equipment_types WHERE name = ? AND business_id = ?", (equipment_type_name, business_id)).fetchone()
+                equipment_type = db.execute("SELECT id, interval_weeks, default_lead_weeks FROM equipment_types WHERE name = ? AND business_id = ?", (equipment_type_name, row_business_id)).fetchone()
                 if equipment_type:
                     equipment_type_id = equipment_type['id']
                     default_interval_weeks = equipment_type['interval_weeks'] or 52
@@ -3496,7 +3601,7 @@ async def import_temporary_data(
                     rrule_str = "FREQ=WEEKLY;INTERVAL=52"
                     cur = db.execute(
                         "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?, ?)",
-                        (business_id, equipment_type_name, 52, rrule_str, 4)
+                        (row_business_id, equipment_type_name, 52, rrule_str, 4)
                     )
                     db.commit()
                     equipment_type_id = cur.lastrowid
@@ -3621,6 +3726,7 @@ async def export_equipments(
         # Query all equipment records with related data
         cur = db.execute("""
             SELECT 
+                b.name as business_name,
                 c.name as client_name,
                 s.name as site_name,
                 et.name as equipment_type,
@@ -3636,8 +3742,9 @@ async def export_equipments(
             JOIN clients c ON er.client_id = c.id
             JOIN sites s ON er.site_id = s.id
             JOIN equipment_types et ON er.equipment_type_id = et.id
+            JOIN businesses b ON c.business_id = b.id
             WHERE er.active = 1
-            ORDER BY c.name, s.name, er.anchor_date
+            ORDER BY b.name, c.name, s.name, er.anchor_date
         """)
         
         rows = cur.fetchall()
@@ -3646,6 +3753,7 @@ async def export_equipments(
         data = []
         for row in rows:
             data.append({
+                "Business": row['business_name'],
                 "Client": row['client_name'],
                 "Site": row['site_name'],
                 "Equipment Type": row['equipment_type'],
