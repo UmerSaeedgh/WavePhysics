@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatDate } from "../utils/formatDate";
 
-export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue, onNavigateToAddEquipment, onRefreshCompletions, onRefreshAllCounts }) {
+export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue, onNavigateToAddEquipment, onRefreshCompletions, onRefreshAllCounts, onBack }) {
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -481,6 +481,11 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
 
   return (
     <div>
+      {onBack && (
+        <div style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+          <button className="secondary" onClick={onBack}>← Back to Clients</button>
+        </div>
+      )}
       <div className="card">
         <div className="card-header">
           <h2>Upcoming ({totalFilteredCount})</h2>

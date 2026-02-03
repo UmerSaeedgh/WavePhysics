@@ -209,6 +209,8 @@ class UserRead(BaseModel):
     is_admin: bool
     is_super_admin: Optional[bool] = False
     created_at: str
+    business_id: Optional[int] = None
+    business_name: Optional[str] = None
 
 # Authentication Endpoints
 @app.post("/auth/login", response_model=LoginResponse)
@@ -470,7 +472,11 @@ def delete_business(business_id: int, current_user: dict = Depends(get_current_s
 def list_users(current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
     """List all users (admin only)"""
     rows = db.execute(
-        "SELECT id, username, is_admin, is_super_admin, created_at FROM users ORDER BY created_at DESC"
+        """SELECT u.id, u.username, u.is_admin, u.is_super_admin, u.created_at, 
+                  u.business_id, b.name as business_name
+           FROM users u
+           LEFT JOIN businesses b ON u.business_id = b.id
+           ORDER BY u.created_at DESC"""
     ).fetchall()
     return [UserRead(**dict(row)) for row in rows]
 
@@ -555,6 +561,40 @@ def change_password(payload: ChangePasswordRequest, current_user: dict = Depends
     db.commit()
     
     return {"message": "Password changed successfully. Please login again."}
+
+# Super admin password change endpoint
+class AdminChangePasswordRequest(BaseModel):
+    user_id: int
+    new_password: str
+
+@app.put("/admin/change-password")
+def admin_change_password(payload: AdminChangePasswordRequest, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Change password for any user (super admin only)"""
+    if not payload.new_password or len(payload.new_password) < 1:
+        raise HTTPException(status_code=400, detail="Password cannot be empty")
+    
+    # Check if user exists
+    user = db.execute(
+        "SELECT id FROM users WHERE id = ?",
+        (payload.user_id,)
+    ).fetchone()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Update password
+    new_password_hash = hash_password(payload.new_password)
+    db.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (new_password_hash, payload.user_id)
+    )
+    db.commit()
+    
+    # Invalidate all tokens for this user (force re-login)
+    db.execute("DELETE FROM auth_tokens WHERE user_id = ?", (payload.user_id,))
+    db.commit()
+    
+    return {"message": "Password changed successfully"}
 
 class ChangeUsernameRequest(BaseModel):
     new_username: str

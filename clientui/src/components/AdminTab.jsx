@@ -173,6 +173,10 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
   }
 
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [selectedUserForPasswordChange, setSelectedUserForPasswordChange] = useState(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   async function fetchUsers() {
     setLoadingUsers(true);
@@ -235,6 +239,47 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
       await fetchUsers();
     } catch (err) {
       setError(err.message || "Failed to delete user");
+    }
+  }
+
+  function handleChangePasswordClick(user) {
+    setSelectedUserForPasswordChange(user);
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowChangePasswordModal(true);
+  }
+
+  function handleCancelPasswordChange() {
+    setShowChangePasswordModal(false);
+    setSelectedUserForPasswordChange(null);
+    setNewPassword("");
+    setConfirmPassword("");
+  }
+
+  async function handleSavePasswordChange() {
+    if (!newPassword || newPassword.length < 1) {
+      setError("Password cannot be empty");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    try {
+      await apiCall("/admin/change-password", {
+        method: "PUT",
+        body: JSON.stringify({
+          user_id: selectedUserForPasswordChange.id,
+          new_password: newPassword
+        })
+      });
+      setShowChangePasswordModal(false);
+      setSelectedUserForPasswordChange(null);
+      setNewPassword("");
+      setConfirmPassword("");
+      alert("Password changed successfully");
+    } catch (err) {
+      setError(err.message || "Failed to change password");
     }
   }
 
@@ -587,20 +632,35 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                         {user.username} 
                         {user.is_admin && <span style={{ color: "#8193A4", fontSize: "0.875rem" }}>(Admin)</span>}
                         {user.is_super_admin && <span style={{ color: "#8193A4", fontSize: "0.875rem", fontWeight: "bold" }}>(Super Admin)</span>}
+                        {isSuperAdmin && user.business_name && (
+                          <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "#2D3234", fontStyle: "italic" }}>
+                            • {user.business_name}
+                          </span>
+                        )}
                       </div>
                       <div className="list-subtitle">
                         Created: {formatDate(user.created_at)}
                       </div>
                     </div>
-                    {user.id !== currentUser.id && !user.is_super_admin && (
-                      <button
-                        className="secondary"
-                        onClick={() => handleDeleteUser(user.id)}
-                        style={{ marginLeft: "auto" }}
-                      >
-                        Delete
-                      </button>
-                    )}
+                    <div className="list-actions" onClick={(e) => e.stopPropagation()}>
+                      {isSuperAdmin && (
+                        <button
+                          className="secondary"
+                          onClick={() => handleChangePasswordClick(user)}
+                          style={{ marginLeft: "auto" }}
+                        >
+                          Change Password
+                        </button>
+                      )}
+                      {user.id !== currentUser.id && !user.is_super_admin && (
+                        <button
+                          className="danger"
+                          onClick={() => handleDeleteUser(user.id)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -756,6 +816,104 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                     setEditingBusiness(null);
                     setBusinessName("");
                   }}
+                  style={{ 
+                    color: "#2D3234", 
+                    border: "1px solid #8193A4",
+                    background: "transparent"
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showChangePasswordModal && selectedUserForPasswordChange && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(45, 50, 52, 0.9)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }} onClick={handleCancelPasswordChange}>
+          <div style={{
+            backgroundColor: "#D7E5D8",
+            padding: "2rem",
+            borderRadius: "0.5rem",
+            maxWidth: "500px",
+            width: "90%",
+            color: "#2D3234"
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <h2 style={{ margin: 0, color: "#2D3234" }}>
+                Change Password for {selectedUserForPasswordChange.username}
+              </h2>
+              <button onClick={handleCancelPasswordChange} style={{ color: "#2D3234", border: "1px solid #8193A4", background: "transparent", cursor: "pointer", fontSize: "1.5rem", padding: "0.25rem 0.5rem" }}>✕</button>
+            </div>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password..."
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    backgroundColor: "#fff",
+                    color: "#2D3234"
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  Confirm Password
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password..."
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    backgroundColor: "#fff",
+                    color: "#2D3234"
+                  }}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter") {
+                      handleSavePasswordChange();
+                    }
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <button 
+                  className="primary" 
+                  onClick={handleSavePasswordChange}
+                >
+                  Change Password
+                </button>
+                <button 
+                  className="secondary"
+                  onClick={handleCancelPasswordChange}
                   style={{ 
                     color: "#2D3234", 
                     border: "1px solid #8193A4",

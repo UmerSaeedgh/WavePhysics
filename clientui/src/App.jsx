@@ -886,6 +886,16 @@ function App() {
             currentUser={currentUser}
             overdue={overdue}
             setOverdue={setOverdue}
+            onBack={() => {
+              if (selectedClient) {
+                // Return to client sites page
+                setView("client-sites");
+              } else {
+                // Return to clients list
+                setView("clients");
+                setSelectedClient(null);
+              }
+            }}
             onNavigateToAddEquipment={(equipment) => {
               setEquipmentToEdit(equipment);
               // If equipment is an object with client_id/site_id (from filters), set initial values
