@@ -204,11 +204,20 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     return today.toISOString().split('T')[0];
   }
 
-  function calculateDueDate(baseDate, intervalWeeks) {
-    if (!baseDate || !intervalWeeks) return "";
-    const date = new Date(baseDate);
-    const newDate = new Date(date);
-    newDate.setDate(newDate.getDate() + (parseInt(intervalWeeks) * 7));
+  function calculateDueDate(anchorDate, intervalWeeks) {
+    if (!anchorDate || !intervalWeeks) return "";
+    const anchor = new Date(anchorDate);
+    const today = new Date();
+    const intervalDays = parseInt(intervalWeeks) * 7;
+    
+    // Calculate: anchor_date + [(current_date - anchor_date)/interval + 1] * interval
+    const daysSinceAnchor = Math.floor((today - anchor) / (1000 * 60 * 60 * 24));
+    const intervalsPassed = Math.floor(daysSinceAnchor / intervalDays);
+    const nextInterval = intervalsPassed + 1;
+    const daysToAdd = nextInterval * intervalDays;
+    
+    const newDate = new Date(anchor);
+    newDate.setDate(newDate.getDate() + daysToAdd);
     return newDate.toISOString().split('T')[0];
   }
 
@@ -217,10 +226,10 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     const initialInterval = equipment.interval_weeks?.toString() || "";
     setDoneInterval(initialInterval);
     
-    // Use today's date as the base date
-    const today = getTodayDate();
-    if (initialInterval) {
-      setCalculatedDueDate(calculateDueDate(today, initialInterval));
+    // Use anchor date for calculation
+    const anchorDate = equipment.anchor_date;
+    if (initialInterval && anchorDate) {
+      setCalculatedDueDate(calculateDueDate(anchorDate, initialInterval));
     } else {
       setCalculatedDueDate("");
     }
@@ -229,10 +238,10 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
 
   function handleIntervalChange(newInterval) {
     setDoneInterval(newInterval);
-    // Use today's date as the base date
-    const today = getTodayDate();
-    if (newInterval) {
-      setCalculatedDueDate(calculateDueDate(today, newInterval));
+    // Use anchor date for calculation
+    const anchorDate = doneEquipment?.anchor_date;
+    if (newInterval && anchorDate) {
+      setCalculatedDueDate(calculateDueDate(anchorDate, newInterval));
     }
   }
 
@@ -242,6 +251,20 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
       return;
     }
     try {
+      // Get the previous due date (before updating)
+      const previousDueDate = doneEquipment.due_date;
+      
+      // Create a completion record with the PREVIOUS due date (the one that was completed)
+      await apiCall("/equipment-completions", {
+        method: "POST",
+        body: JSON.stringify({
+          equipment_record_id: doneEquipment.id,
+          due_date: previousDueDate, // Use the old due_date, not the new calculated one
+          interval_weeks: doneInterval ? parseInt(doneInterval) : doneEquipment.interval_weeks
+        })
+      });
+      
+      // Now update the equipment record with the new calculated due date
       const updatePayload = {
         due_date: calculatedDueDate
       };
@@ -249,20 +272,9 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
         updatePayload.interval_weeks = parseInt(doneInterval);
       }
       
-      // Update the equipment record
       await apiCall(`/equipment-records/${doneEquipment.id}`, {
         method: "PUT",
         body: JSON.stringify(updatePayload)
-      });
-      
-      // Create a completion record
-      await apiCall("/equipment-completions", {
-        method: "POST",
-        body: JSON.stringify({
-          equipment_record_id: doneEquipment.id,
-          due_date: calculatedDueDate,
-          interval_weeks: doneInterval ? parseInt(doneInterval) : doneEquipment.interval_weeks
-        })
       });
       
       // Refresh completions count in navigation
@@ -745,8 +757,9 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   }}
                 />
                 <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
-                  {doneInterval ? 
-                    `Today (${getTodayDate()}) + ${doneInterval} weeks = ${calculatedDueDate || "calculating..."}` :
+                  {doneInterval && doneEquipment?.anchor_date ? 
+                    `Anchor (${doneEquipment.anchor_date}) + [(${getTodayDate()} - ${doneEquipment.anchor_date})/${doneInterval} + 1] × ${doneInterval} weeks = ${calculatedDueDate || "calculating..."}` :
+                    doneInterval ? "Enter anchor date to calculate due date" :
                     "Enter interval weeks to calculate due date"
                   }
                 </div>

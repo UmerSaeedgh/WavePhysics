@@ -1968,21 +1968,54 @@ def create_equipment_record(payload: EquipmentRecordCreate, current_user: dict =
 
 @app.put("/equipment-records/{equipment_record_id}", response_model=EquipmentRecordRead)
 def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
+    is_super_admin = current_user.get("is_super_admin")
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+    
     # Get current equipment record to check site_id and equipment_name, and verify it belongs to business
-    current_record = db.execute(
-        """SELECT er.site_id, er.equipment_name, er.client_id 
-           FROM equipment_record er
-           JOIN clients c ON er.client_id = c.id
-           WHERE er.id = ? AND c.business_id = ?""",
-        (equipment_record_id, business_id)
-    ).fetchone()
+    # Use the same pattern as get_equipment_record for consistency
+    if is_super_admin:
+        if business_id is None:
+            # Super admin viewing all businesses - allow access to any equipment record (including deleted)
+            current_record = db.execute(
+                """SELECT er.site_id, er.equipment_name, er.client_id 
+                   FROM equipment_record er
+                   WHERE er.id = ?""",
+                (equipment_record_id,)
+            ).fetchone()
+        else:
+            # Super admin viewing specific business - exclude deleted records
+            current_record = db.execute(
+                """SELECT er.site_id, er.equipment_name, er.client_id 
+                   FROM equipment_record er
+                   LEFT JOIN clients c ON er.client_id = c.id
+                   WHERE er.id = ? AND c.business_id = ? AND er.deleted_at IS NULL""",
+                (equipment_record_id, business_id)
+            ).fetchone()
+    else:
+        # Regular user - must filter by business_id and exclude deleted
+        current_record = db.execute(
+            """SELECT er.site_id, er.equipment_name, er.client_id 
+               FROM equipment_record er
+               LEFT JOIN clients c ON er.client_id = c.id
+               WHERE er.id = ? AND c.business_id = ? AND er.deleted_at IS NULL""",
+            (equipment_record_id, business_id)
+        ).fetchone()
+    
     if current_record is None:
         raise HTTPException(status_code=404, detail="Equipment record not found")
     
     # Verify equipment type if being updated
     if payload.equipment_type_id is not None:
-        equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ?", (payload.equipment_type_id, business_id)).fetchone()
+        if is_super_admin and business_id is None:
+            # Super admin viewing all businesses - allow any equipment type
+            equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (payload.equipment_type_id,)).fetchone()
+        else:
+            # Regular user or super admin viewing specific business
+            equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ?", (payload.equipment_type_id, business_id)).fetchone()
         if equipment_type_row is None:
             raise HTTPException(status_code=404, detail="Equipment type not found")
 
@@ -2120,7 +2153,7 @@ class EquipmentCompletionRead(BaseModel):
     id: int
     equipment_record_id: int
     completed_at: str
-    due_date: str
+    due_date: str  # Previous due date (the one that was completed)
     interval_weeks: Optional[int] = None
     completed_by_user: Optional[str] = None
     equipment_name: Optional[str] = None
@@ -2130,18 +2163,44 @@ class EquipmentCompletionRead(BaseModel):
     site_name: Optional[str] = None
     equipment_type_id: Optional[int] = None
     equipment_type_name: Optional[str] = None
+    anchor_date: Optional[str] = None  # Previous anchor date from equipment_record
 
 
 @app.post("/equipment-completions", response_model=EquipmentCompletionRead, status_code=status.HTTP_201_CREATED)
 def create_equipment_completion(payload: EquipmentCompletionCreate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
+    is_super_admin = current_user.get("is_super_admin")
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+    
     # Verify equipment record exists and belongs to business
-    equipment_row = db.execute(
-        """SELECT er.id FROM equipment_record er
-           JOIN clients c ON er.client_id = c.id
-           WHERE er.id = ? AND c.business_id = ?""",
-        (payload.equipment_record_id, business_id)
-    ).fetchone()
+    # Use the same pattern as get_equipment_record for consistency
+    if is_super_admin:
+        if business_id is None:
+            # Super admin viewing all businesses - allow access to any equipment record (including deleted)
+            equipment_row = db.execute(
+                """SELECT er.id FROM equipment_record er
+                   WHERE er.id = ?""",
+                (payload.equipment_record_id,)
+            ).fetchone()
+        else:
+            # Super admin viewing specific business - exclude deleted records
+            equipment_row = db.execute(
+                """SELECT er.id FROM equipment_record er
+                   LEFT JOIN clients c ON er.client_id = c.id
+                   WHERE er.id = ? AND c.business_id = ? AND er.deleted_at IS NULL""",
+                (payload.equipment_record_id, business_id)
+            ).fetchone()
+    else:
+        # Regular user - must filter by business_id and exclude deleted
+        equipment_row = db.execute(
+            """SELECT er.id FROM equipment_record er
+               LEFT JOIN clients c ON er.client_id = c.id
+               WHERE er.id = ? AND c.business_id = ? AND er.deleted_at IS NULL""",
+            (payload.equipment_record_id, business_id)
+        ).fetchone()
     if equipment_row is None:
         raise HTTPException(status_code=404, detail="Equipment record not found")
     
@@ -2157,7 +2216,7 @@ def create_equipment_completion(payload: EquipmentCompletionCreate, current_user
     # Fetch the completion with joined equipment data
     row = db.execute("""
         SELECT ec.id, ec.equipment_record_id, ec.completed_at, ec.due_date, ec.interval_weeks, ec.completed_by_user,
-               er.equipment_name, er.client_id, er.site_id, er.equipment_type_id,
+               er.equipment_name, er.client_id, er.site_id, er.equipment_type_id, er.anchor_date,
                c.name as client_name,
                s.name as site_name,
                et.name as equipment_type_name
@@ -2167,7 +2226,7 @@ def create_equipment_completion(payload: EquipmentCompletionCreate, current_user
         LEFT JOIN sites s ON er.site_id = s.id
         LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
         WHERE ec.id = ?
-    """, (cur.lastrowid,)).fetchone()
+""", (cur.lastrowid,)).fetchone()
     
     return EquipmentCompletionRead(**dict(row))
 
@@ -2179,14 +2238,20 @@ def list_equipment_completions(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
+    is_super_admin = current_user.get("is_super_admin")
     # Super admin can filter by any business, regular users are limited to their own
-    if current_user.get("is_super_admin") and business_id_filter is not None:
-        business_id = business_id_filter
+    if is_super_admin:
+        if business_id_filter is not None:
+            business_id = business_id_filter
+        else:
+            # Super admin viewing all businesses (business_id can be None)
+            business_id = current_user.get("business_id")
     else:
         business_id = get_business_id(current_user)
+    
     query = """
         SELECT ec.id, ec.equipment_record_id, ec.completed_at, ec.due_date, ec.interval_weeks, ec.completed_by_user,
-               er.equipment_name, er.client_id, er.site_id, er.equipment_type_id,
+               er.equipment_name, er.client_id, er.site_id, er.equipment_type_id, er.anchor_date,
                c.name as client_name,
                s.name as site_name,
                et.name as equipment_type_name
@@ -2195,18 +2260,33 @@ def list_equipment_completions(
         LEFT JOIN clients c ON er.client_id = c.id
         LEFT JOIN sites s ON er.site_id = s.id
         LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
-        WHERE c.business_id = ?
     """
-    params = [business_id]
+    params = []
+    
+    # Filter by business_id if specified (None means all businesses for super admin)
+    if business_id is not None:
+        query += " WHERE c.business_id = ?"
+        params.append(business_id)
+    else:
+        # Super admin viewing all businesses - no business_id filter
+        query += " WHERE 1=1"
     
     if equipment_record_id:
-        # Verify equipment_record belongs to business
-        er_check = db.execute(
-            """SELECT er.id FROM equipment_record er
-               JOIN clients c ON er.client_id = c.id
-               WHERE er.id = ? AND c.business_id = ?""",
-            (equipment_record_id, business_id)
-        ).fetchone()
+        # Verify equipment_record exists
+        if business_id is not None:
+            er_check = db.execute(
+                """SELECT er.id FROM equipment_record er
+                   LEFT JOIN clients c ON er.client_id = c.id
+                   WHERE er.id = ? AND c.business_id = ?""",
+                (equipment_record_id, business_id)
+            ).fetchone()
+        else:
+            # Super admin viewing all businesses - allow any equipment record
+            er_check = db.execute(
+                """SELECT er.id FROM equipment_record er
+                   WHERE er.id = ?""",
+                (equipment_record_id,)
+            ).fetchone()
         if not er_check:
             raise HTTPException(status_code=404, detail="Equipment record not found")
         query += " AND ec.equipment_record_id = ?"
@@ -2221,13 +2301,28 @@ def list_equipment_completions(
 
 @app.delete("/equipment-completions/{completion_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_equipment_completion(completion_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
+    is_super_admin = current_user.get("is_super_admin")
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+    
     # Verify completion belongs to business through equipment_record -> client
-    completion = db.execute(
-        """SELECT ec.id FROM equipment_completions ec
-           JOIN equipment_record er ON ec.equipment_record_id = er.id
-           JOIN clients c ON er.client_id = c.id
-           WHERE ec.id = ? AND c.business_id = ?""",
+    if is_super_admin and business_id is None:
+        # Super admin viewing all businesses - allow deletion of any completion
+        completion = db.execute(
+            """SELECT ec.id FROM equipment_completions ec
+               WHERE ec.id = ?""",
+            (completion_id,)
+        ).fetchone()
+    else:
+        # Regular user or super admin viewing specific business
+        completion = db.execute(
+            """SELECT ec.id FROM equipment_completions ec
+               JOIN equipment_record er ON ec.equipment_record_id = er.id
+               LEFT JOIN clients c ON er.client_id = c.id
+               WHERE ec.id = ? AND c.business_id = ?""",
         (completion_id, business_id)
     ).fetchone()
     if not completion:

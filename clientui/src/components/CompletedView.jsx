@@ -379,8 +379,9 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
                     {completion.equipment_type_name && `Type: ${completion.equipment_type_name} • `}
                     Client: {completion.client_name}
                     {completion.site_name && ` • Site: ${completion.site_name}`}
+                    {completion.anchor_date && ` • Previous Anchor: ${formatDate(completion.anchor_date)}`}
+                    {` • Previous Due: ${formatDate(completion.due_date)}`}
                     {` • Completed: ${formatDate(completion.completed_at)}`}
-                    {` • Due Date: ${formatDate(completion.due_date)}`}
                     {completion.completed_by_user && ` • By: ${completion.completed_by_user}`}
                   </div>
                 </div>
