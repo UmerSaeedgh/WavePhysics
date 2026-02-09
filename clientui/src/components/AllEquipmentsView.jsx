@@ -204,20 +204,14 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     return today.toISOString().split('T')[0];
   }
 
-  function calculateDueDate(anchorDate, intervalWeeks) {
-    if (!anchorDate || !intervalWeeks) return "";
-    const anchor = new Date(anchorDate);
-    const today = new Date();
+  function calculateDueDate(completionDate, intervalWeeks) {
+    if (!completionDate || !intervalWeeks) return "";
+    const completion = new Date(completionDate);
     const intervalDays = parseInt(intervalWeeks) * 7;
     
-    // Calculate: anchor_date + [(current_date - anchor_date)/interval + 1] * interval
-    const daysSinceAnchor = Math.floor((today - anchor) / (1000 * 60 * 60 * 24));
-    const intervalsPassed = Math.floor(daysSinceAnchor / intervalDays);
-    const nextInterval = intervalsPassed + 1;
-    const daysToAdd = nextInterval * intervalDays;
-    
-    const newDate = new Date(anchor);
-    newDate.setDate(newDate.getDate() + daysToAdd);
+    // Simple rule: Next due date = last completed test date + interval
+    const newDate = new Date(completion);
+    newDate.setDate(newDate.getDate() + intervalDays);
     return newDate.toISOString().split('T')[0];
   }
 
@@ -226,10 +220,10 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     const initialInterval = equipment.interval_weeks?.toString() || "";
     setDoneInterval(initialInterval);
     
-    // Use anchor date for calculation
-    const anchorDate = equipment.anchor_date;
-    if (initialInterval && anchorDate) {
-      setCalculatedDueDate(calculateDueDate(anchorDate, initialInterval));
+    // Use today's date (completion date) + interval for next due date
+    const today = getTodayDate();
+    if (initialInterval) {
+      setCalculatedDueDate(calculateDueDate(today, initialInterval));
     } else {
       setCalculatedDueDate("");
     }
@@ -238,10 +232,10 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
 
   function handleIntervalChange(newInterval) {
     setDoneInterval(newInterval);
-    // Use anchor date for calculation
-    const anchorDate = doneEquipment?.anchor_date;
-    if (newInterval && anchorDate) {
-      setCalculatedDueDate(calculateDueDate(anchorDate, newInterval));
+    // Recalculate using today's date (completion date) + new interval
+    const today = getTodayDate();
+    if (newInterval) {
+      setCalculatedDueDate(calculateDueDate(today, newInterval));
     }
   }
 
@@ -757,9 +751,8 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   }}
                 />
                 <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
-                  {doneInterval && doneEquipment?.anchor_date ? 
-                    `Anchor (${doneEquipment.anchor_date}) + [(${getTodayDate()} - ${doneEquipment.anchor_date})/${doneInterval} + 1] × ${doneInterval} weeks = ${calculatedDueDate || "calculating..."}` :
-                    doneInterval ? "Enter anchor date to calculate due date" :
+                  {doneInterval ? 
+                    `Completion Date (${getTodayDate()}) + ${doneInterval} weeks = ${calculatedDueDate || "calculating..."}` :
                     "Enter interval weeks to calculate due date"
                   }
                 </div>
