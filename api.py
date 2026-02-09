@@ -166,19 +166,15 @@ def on_startup():
         # Create default super admin user if no users exist
         user_count = conn.execute("SELECT COUNT(*) as count FROM users").fetchone()['count']
         if user_count == 0:
-            # Create default business
-            cur = conn.execute("INSERT INTO businesses (name) VALUES ('Default Business')")
-            default_business_id = cur.lastrowid
-            
-            # Create super admin user
+            # Create super admin user without business_id (superadmin exists without business)
             super_admin_password_hash = hash_password("superadmin")
             conn.execute(
                 "INSERT INTO users (username, password_hash, is_admin, is_super_admin, business_id) VALUES (?, ?, ?, ?, ?)",
-                ("superadmin", super_admin_password_hash, 1, 1, default_business_id)
+                ("superadmin", super_admin_password_hash, 1, 1, None)
             )
             conn.commit()
             print("Created default super admin user: username='superadmin', password='superadmin'")
-            print("Created default business: 'Default Business'")
+            print("Note: Superadmin exists without a business. Create a business and admin user when needed.")
     finally:
         conn.close()
 
@@ -298,6 +294,9 @@ def switch_business(payload: SwitchBusinessRequest, credentials: HTTPAuthorizati
 # Business Management Endpoints (Super Admin only)
 class BusinessCreate(BaseModel):
     name: str
+    create_admin_user: Optional[bool] = False
+    admin_username: Optional[str] = None
+    admin_password: Optional[str] = None
 
 class BusinessRead(BaseModel):
     id: int
@@ -314,14 +313,34 @@ def list_businesses(current_user: dict = Depends(get_current_super_admin_user), 
 
 @app.post("/businesses", response_model=BusinessRead, status_code=status.HTTP_201_CREATED)
 def create_business(payload: BusinessCreate, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
-    """Create a new business (super admin only)"""
+    """Create a new business (super admin only). Optionally create an admin user for the business."""
     try:
         cur = db.execute(
             "INSERT INTO businesses (name) VALUES (?)",
             (payload.name,)
         )
+        business_id = cur.lastrowid
         db.commit()
-        row = db.execute("SELECT id, name, created_at FROM businesses WHERE id = ?", (cur.lastrowid,)).fetchone()
+        
+        # Optionally create admin user for the business
+        if payload.create_admin_user and payload.admin_username and payload.admin_password:
+            if not payload.admin_username.strip() or not payload.admin_password.strip():
+                raise HTTPException(status_code=400, detail="Admin username and password are required when creating admin user")
+            
+            password_hash = hash_password(payload.admin_password)
+            try:
+                db.execute(
+                    "INSERT INTO users (username, password_hash, is_admin, business_id) VALUES (?, ?, ?, ?)",
+                    (payload.admin_username.strip(), password_hash, 1, business_id)
+                )
+                db.commit()
+            except sqlite3.IntegrityError:
+                # Rollback business creation if user creation fails
+                db.execute("DELETE FROM businesses WHERE id = ?", (business_id,))
+                db.commit()
+                raise HTTPException(status_code=400, detail="Username already exists")
+        
+        row = db.execute("SELECT id, name, created_at FROM businesses WHERE id = ?", (business_id,)).fetchone()
         return BusinessRead(**dict(row))
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="Business name already exists")
@@ -1418,6 +1437,7 @@ class EquipmentTypeCreate(BaseModel):
     rrule: str
     default_lead_weeks: int
     active: bool = True
+    business_id: Optional[int] = None  # For superadmin to specify business (optional)
 
 
 class EquipmentTypeUpdate(BaseModel):
@@ -1435,6 +1455,8 @@ class EquipmentTypeRead(BaseModel):
     rrule: str
     default_lead_weeks: int
     active: bool
+    business_id: Optional[int] = None
+    business_name: Optional[str] = None
 
 
 @app.get("/equipment-types", response_model=List[EquipmentTypeRead])
@@ -1448,25 +1470,75 @@ def list_equipment_types(
     
     # Build query based on whether we're filtering by business_id
     if business_id is None:
-        # Super admin viewing all businesses - show all equipment types
+        # Super admin viewing all businesses - show all equipment types with business info
         if active_only:
             cur = db.execute(
-                "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE active = 1 ORDER BY name"
+                """SELECT et.id, et.name, et.interval_weeks, et.rrule, et.default_lead_weeks, et.active, 
+                          et.business_id, 
+                          CASE WHEN et.business_id IS NULL THEN 'All Businesses' ELSE b.name END as business_name
+                   FROM equipment_types et
+                   LEFT JOIN businesses b ON et.business_id = b.id
+                   WHERE et.active = 1 
+                   ORDER BY CASE WHEN et.business_id IS NULL THEN 0 ELSE 1 END, b.name, et.name"""
             )
         else:
             cur = db.execute(
-                "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types ORDER BY name"
+                """SELECT et.id, et.name, et.interval_weeks, et.rrule, et.default_lead_weeks, et.active,
+                          et.business_id,
+                          CASE WHEN et.business_id IS NULL THEN 'All Businesses' ELSE b.name END as business_name
+                   FROM equipment_types et
+                   LEFT JOIN businesses b ON et.business_id = b.id
+                   ORDER BY CASE WHEN et.business_id IS NULL THEN 0 ELSE 1 END, b.name, et.name"""
             )
     else:
-        # Filter by business_id
+        # Filter by business_id - include equipment types for this business AND types for all businesses (business_id IS NULL)
+        # If both a business-specific and "all businesses" version exist, prefer the "all businesses" version
+        # Use a subquery to get unique names, prioritizing "all businesses" versions
         if active_only:
             cur = db.execute(
-                "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE business_id = ? AND active = 1 ORDER BY name",
+                """SELECT et_all.id, et_all.name, et_all.interval_weeks, et_all.rrule, et_all.default_lead_weeks, et_all.active, 
+                          et_all.business_id, NULL as business_name
+                   FROM equipment_types et_all
+                   WHERE et_all.business_id IS NULL 
+                   AND et_all.active = 1 
+                   AND et_all.deleted_at IS NULL
+                   UNION
+                   SELECT et_biz.id, et_biz.name, et_biz.interval_weeks, et_biz.rrule, et_biz.default_lead_weeks, et_biz.active,
+                          et_biz.business_id, NULL as business_name
+                   FROM equipment_types et_biz
+                   WHERE et_biz.business_id = ?
+                   AND et_biz.active = 1
+                   AND et_biz.deleted_at IS NULL
+                   AND NOT EXISTS (
+                     SELECT 1 FROM equipment_types et_check 
+                     WHERE et_check.name = et_biz.name 
+                     AND et_check.business_id IS NULL 
+                     AND et_check.active = 1 
+                     AND et_check.deleted_at IS NULL
+                   )
+                   ORDER BY name""",
                 (business_id,)
             )
         else:
             cur = db.execute(
-                "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE business_id = ? ORDER BY name",
+                """SELECT et_all.id, et_all.name, et_all.interval_weeks, et_all.rrule, et_all.default_lead_weeks, et_all.active, 
+                          et_all.business_id, NULL as business_name
+                   FROM equipment_types et_all
+                   WHERE et_all.business_id IS NULL 
+                   AND et_all.deleted_at IS NULL
+                   UNION
+                   SELECT et_biz.id, et_biz.name, et_biz.interval_weeks, et_biz.rrule, et_biz.default_lead_weeks, et_biz.active,
+                          et_biz.business_id, NULL as business_name
+                   FROM equipment_types et_biz
+                   WHERE et_biz.business_id = ?
+                   AND et_biz.deleted_at IS NULL
+                   AND NOT EXISTS (
+                     SELECT 1 FROM equipment_types et_check 
+                     WHERE et_check.name = et_biz.name 
+                     AND et_check.business_id IS NULL 
+                     AND et_check.deleted_at IS NULL
+                   )
+                   ORDER BY name""",
                 (business_id,)
             )
     rows = cur.fetchall()
@@ -1495,18 +1567,59 @@ def get_equipment_type(equipment_type_id: int, current_user: dict = Depends(get_
 
 
 @app.post("/equipment-types", response_model=EquipmentTypeRead, status_code=status.HTTP_201_CREATED)
-def create_equipment_type(payload: EquipmentTypeCreate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
-    if business_id is None:
-        raise HTTPException(status_code=400, detail="No business context available. Please select a business first.")
+def create_equipment_type(payload: EquipmentTypeCreate, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Create a new equipment type (admin/superadmin only). Admin can only create for their business, superadmin can create for any business."""
+    is_super_admin = current_user.get("is_super_admin")
+    
+    # Determine business_id
+    if is_super_admin:
+        # Superadmin can specify business_id (for specific business) or None (for all businesses)
+        if payload.business_id is not None:
+            # Verify business exists
+            business_row = db.execute("SELECT id FROM businesses WHERE id = ?", (payload.business_id,)).fetchone()
+            if business_row is None:
+                raise HTTPException(status_code=404, detail="Business not found")
+            business_id = payload.business_id
+        else:
+            # business_id is None means "all businesses" - this is allowed for superadmin
+            business_id = None
+    else:
+        # Regular admin can only create for their own business
+        business_id = get_business_id(current_user)
+        if business_id is None:
+            raise HTTPException(status_code=400, detail="No business context available")
+    
     try:
         cur = db.execute(
             "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?, ?)",
             (business_id, payload.name, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
         )
         db.commit()
-    except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Equipment type name must be unique within business")
+    except sqlite3.IntegrityError as e:
+        # Check if it's a unique constraint violation
+        # If business_id is NULL, name must be unique globally
+        # If business_id is set, name must be unique within that business
+        error_msg = str(e)
+        if "UNIQUE" in error_msg.upper() or "unique" in error_msg:
+            # Check for existing record with same name
+            if business_id is None:
+                # For "all businesses", check if name exists globally (with NULL business_id)
+                existing = db.execute(
+                    "SELECT id FROM equipment_types WHERE name = ? AND business_id IS NULL",
+                    (payload.name,)
+                ).fetchone()
+                if existing:
+                    raise HTTPException(status_code=400, detail="Equipment type name must be unique for all businesses")
+            else:
+                # For specific business, check if name exists for this business OR for all businesses
+                existing = db.execute(
+                    "SELECT id FROM equipment_types WHERE name = ? AND (business_id = ? OR business_id IS NULL)",
+                    (payload.name, business_id)
+                ).fetchone()
+                if existing:
+                    raise HTTPException(status_code=400, detail="Equipment type name must be unique within business")
+        # If it's a different constraint error, provide a generic message
+        raise HTTPException(status_code=400, detail=f"Database error: {error_msg}")
 
     row = db.execute(
         "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
@@ -1516,11 +1629,21 @@ def create_equipment_type(payload: EquipmentTypeCreate, current_user: dict = Dep
 
 
 @app.put("/equipment-types/{equipment_type_id}", response_model=EquipmentTypeRead)
-def update_equipment_type(equipment_type_id: int, payload: EquipmentTypeUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
+def update_equipment_type(equipment_type_id: int, payload: EquipmentTypeUpdate, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Update equipment type (admin/superadmin only)"""
+    is_super_admin = current_user.get("is_super_admin")
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
     # Only allow updating non-deleted records (or deleted records if super admin wants to restore)
-    if current_user.get("is_super_admin"):
-        row = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ?", (equipment_type_id, business_id)).fetchone()
+    if is_super_admin:
+        if business_id is None:
+            # Superadmin viewing all businesses - allow updating any equipment type
+            row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
+        else:
+            # Superadmin viewing specific business
+            row = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ?", (equipment_type_id, business_id)).fetchone()
     else:
         row = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (equipment_type_id, business_id)).fetchone()
     if row is None:
@@ -1564,10 +1687,19 @@ def update_equipment_type(equipment_type_id: int, payload: EquipmentTypeUpdate, 
 
 
 @app.delete("/equipment-types/{equipment_type_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_equipment_type(equipment_type_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
+def delete_equipment_type(equipment_type_id: int, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Delete equipment type (admin/superadmin only)"""
+    is_super_admin = current_user.get("is_super_admin")
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
     # Verify equipment type belongs to business and is not deleted
-    et = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (equipment_type_id, business_id)).fetchone()
+    if is_super_admin and business_id is None:
+        # Superadmin viewing all businesses - allow deleting any equipment type
+        et = db.execute("SELECT id FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
+    else:
+        et = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (equipment_type_id, business_id)).fetchone()
     if not et:
         raise HTTPException(status_code=404, detail="Equipment type not found")
     
@@ -1597,7 +1729,7 @@ def restore_equipment_type(equipment_type_id: int, current_user: dict = Depends(
 
 @app.post("/equipment-types/seed", status_code=status.HTTP_201_CREATED)
 def seed_equipment_types(db: sqlite3.Connection = Depends(get_db)):
-    """Seed default equipment types"""
+    """Seed default equipment types for all businesses (business_id = NULL)"""
     defaults = [
         ("NM Audit", 13, "FREQ=WEEKLY;INTERVAL=13", 3),
         ("ACR PET / Gamma camera ACR", 26, "FREQ=WEEKLY;INTERVAL=26", 4),
@@ -1606,14 +1738,14 @@ def seed_equipment_types(db: sqlite3.Connection = Depends(get_db)):
     
     created = []
     for name, interval, rrule_str, lead_weeks in defaults:
-        # Check if exists
-        existing = db.execute("SELECT id FROM equipment_types WHERE name = ?", (name,)).fetchone()
+        # Check if exists for all businesses (business_id IS NULL)
+        existing = db.execute("SELECT id FROM equipment_types WHERE name = ? AND business_id IS NULL", (name,)).fetchone()
         if existing:
             continue
         
         cur = db.execute(
-            "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, 1)",
-            (name, interval, rrule_str, lead_weeks),
+            "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?, 1)",
+            (None, name, interval, rrule_str, lead_weeks),
         )
         created.append(cur.lastrowid)
     
@@ -1941,8 +2073,12 @@ def create_equipment_record(payload: EquipmentRecordCreate, current_user: dict =
     if site_row['client_id'] != payload.client_id:
         raise HTTPException(status_code=400, detail="Site does not belong to the specified client")
     
-    # Verify equipment type exists and belongs to business and is not deleted
-    equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (payload.equipment_type_id, business_id)).fetchone()
+    # Verify equipment type exists and belongs to business (or is for all businesses) and is not deleted
+    # Equipment types with business_id = NULL are available to all businesses
+    equipment_type_row = db.execute(
+        "SELECT id FROM equipment_types WHERE id = ? AND (business_id = ? OR business_id IS NULL) AND deleted_at IS NULL", 
+        (payload.equipment_type_id, business_id)
+    ).fetchone()
     if equipment_type_row is None:
         raise HTTPException(status_code=404, detail="Equipment type not found")
     
@@ -2460,13 +2596,14 @@ def create_client_equipment(client_id: int, payload: EquipmentCreate, db: sqlite
         raise HTTPException(status_code=400, detail="Equipment type name must be unique (case-insensitive)")
 
     try:
+        # Create equipment type for all businesses (business_id = NULL) - legacy endpoint
         cur = db.execute(
-            "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?)",
-            (payload.name, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
+            "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?, ?)",
+            (None, payload.name, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
         )
         db.commit()
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Equipment type name must be unique")
+        raise HTTPException(status_code=400, detail="Equipment type name must be unique for all businesses")
 
     row = db.execute(
         "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
@@ -2573,8 +2710,8 @@ def delete_equipment(equipment_id: int, db: sqlite3.Connection = Depends(get_db)
 
 @app.post("/clients/{client_id}/equipments/seed-defaults", status_code=status.HTTP_201_CREATED)
 def seed_default_equipments(client_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    """Seed default equipment types for the client's business"""
-    # Verify client exists and get business_id
+    """Seed default equipment types for all businesses (business_id = NULL). These are available to all businesses."""
+    # Verify client exists
     client_row = db.execute("SELECT id, business_id FROM clients WHERE id = ? AND deleted_at IS NULL", (client_id,)).fetchone()
     if client_row is None:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -2588,19 +2725,17 @@ def seed_default_equipments(client_id: int, current_user: dict = Depends(get_cur
         if business_id != user_business_id:
             raise HTTPException(status_code=403, detail="Client not found in your business")
     
-    if business_id is None:
-        raise HTTPException(status_code=400, detail="Client has no business context")
-    
     created = []
     for name, interval, rrule_str, lead_weeks in DEFAULT_EQUIPMENTS:
-        # Check if equipment type already exists in this business
-        existing = db.execute("SELECT id FROM equipment_types WHERE name = ? AND business_id = ?", (name, business_id)).fetchone()
+        # Check if equipment type already exists for all businesses (business_id IS NULL)
+        existing = db.execute("SELECT id FROM equipment_types WHERE name = ? AND business_id IS NULL", (name,)).fetchone()
         if existing:
             continue
         
+        # Create equipment type for all businesses (business_id = NULL)
         cur = db.execute(
             "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?, 1)",
-            (business_id, name, interval, rrule_str, lead_weeks),
+            (None, name, interval, rrule_str, lead_weeks),
         )
         created.append(cur.lastrowid)
     

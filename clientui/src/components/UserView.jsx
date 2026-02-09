@@ -1,8 +1,8 @@
 import { useState } from "react";
 import AdminTab from "./AdminTab";
 
-export default function UserView({ apiCall, setError, currentUser, onLogout, isSuperAdmin, authToken, onBusinessSwitch, onRefresh }) {
-  const [userTab, setUserTab] = useState("settings");
+export default function UserView({ apiCall, setError, currentUser, onLogout, isSuperAdmin, authToken, onBusinessSwitch, onRefresh, initialTab }) {
+  const [userTab, setUserTab] = useState(initialTab || "settings");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");

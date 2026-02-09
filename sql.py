@@ -70,7 +70,7 @@ def init_schema(conn):
         -- Equipment types (recurrence templates)
         CREATE TABLE IF NOT EXISTS equipment_types (
           id                 INTEGER PRIMARY KEY,
-          business_id        INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+          business_id        INTEGER REFERENCES businesses(id) ON DELETE CASCADE,
           name               TEXT NOT NULL,
           interval_weeks     INTEGER NOT NULL,
           rrule              TEXT NOT NULL,
@@ -338,5 +338,128 @@ def init_schema(conn):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN deleted_by TEXT")
         except sqlite3.OperationalError:
             pass  # Column already exists
+    
+    # Migration: Allow NULL business_id in equipment_types for "all businesses" support
+    # SQLite doesn't support ALTER COLUMN, so we need to recreate the table if it has NOT NULL constraint
+    try:
+        # Check table schema to see if business_id allows NULL
+        table_info = conn.execute("PRAGMA table_info(equipment_types)").fetchall()
+        business_id_col = None
+        for col in table_info:
+            if col[1] == 'business_id':  # col[1] is the column name
+                business_id_col = col
+                break
+        
+        if business_id_col and business_id_col[3] == 1:  # col[3] is notnull (1 = NOT NULL, 0 = allows NULL)
+            # Need to migrate - recreate table without NOT NULL constraint
+            try:
+                # Get all existing data
+                existing_data = conn.execute("""
+                    SELECT id, business_id, name, interval_weeks, rrule, default_lead_weeks, active, 
+                           deleted_at, deleted_by
+                    FROM equipment_types
+                """).fetchall()
+                
+                # Create new table with NULL allowed
+                conn.execute("DROP TABLE equipment_types")
+                conn.execute("""
+                    CREATE TABLE equipment_types (
+                        id                 INTEGER PRIMARY KEY,
+                        business_id        INTEGER REFERENCES businesses(id) ON DELETE CASCADE,
+                        name               TEXT NOT NULL,
+                        interval_weeks     INTEGER NOT NULL,
+                        rrule              TEXT NOT NULL,
+                        default_lead_weeks INTEGER NOT NULL,
+                        active             INTEGER NOT NULL DEFAULT 1,
+                        deleted_at         TEXT,
+                        deleted_by         TEXT,
+                        UNIQUE(business_id, name)
+                    )
+                """)
+                
+                # Restore existing data
+                for row in existing_data:
+                    conn.execute("""
+                        INSERT INTO equipment_types 
+                        (id, business_id, name, interval_weeks, rrule, default_lead_weeks, active, deleted_at, deleted_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, row)
+                
+                conn.commit()
+            except sqlite3.OperationalError as e:
+                conn.rollback()
+                print(f"Migration note for equipment_types: {e}")
+    except sqlite3.OperationalError:
+        # Table might not exist yet, which is fine
+        pass
+    
+    # Migration: Consolidate duplicate default equipment types to "all businesses" (business_id = NULL)
+    # This migrates default equipment types that were created per business to be "all businesses" types
+    try:
+        # List of default equipment type names that should be "all businesses" types
+        default_type_names = [
+            "RSO-Certificate of X-ray Registration",
+            "RSO-Radioactive Material License",
+            "Radiation Licensing & Program Setup",
+            "Shielding Design & Public Exposure Surveys",
+            "Patient Radiation Dose Evaluation & NM Misadministration",
+            "General Radiation Safety Awareness Workshop",
+            "Quarterly Audits",
+            "SPECT Testing",
+            "PET Testing",
+            "Computed Tomography",
+            "General Radiography",
+            "Fluoroscopy",
+            "Magnetic Resonance Imaging",
+            "Mammography (MQSA)",
+            "NM Audit",
+            "ACR PET / Gamma camera ACR",
+            "X-ray/CT physics testing"
+        ]
+        
+        for type_name in default_type_names:
+            # Find all equipment types with this name that have a business_id (duplicates per business)
+            duplicates = conn.execute(
+                "SELECT id, business_id FROM equipment_types WHERE name = ? AND business_id IS NOT NULL AND deleted_at IS NULL",
+                (type_name,)
+            ).fetchall()
+            
+            if duplicates:
+                # Check if "all businesses" version already exists
+                all_businesses_version = conn.execute(
+                    "SELECT id FROM equipment_types WHERE name = ? AND business_id IS NULL AND deleted_at IS NULL",
+                    (type_name,)
+                ).fetchone()
+                
+                if not all_businesses_version:
+                    # Get the first duplicate's details to create the "all businesses" version
+                    first_dup = duplicates[0]
+                    dup_details = conn.execute(
+                        "SELECT interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
+                        (first_dup['id'],)
+                    ).fetchone()
+                    
+                    if dup_details:
+                        # Create "all businesses" version
+                        conn.execute(
+                            "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?, ?)",
+                            (None, type_name, dup_details['interval_weeks'], dup_details['rrule'], dup_details['default_lead_weeks'], dup_details['active'])
+                        )
+                
+                # Soft delete all business-specific duplicates (they'll be replaced by the "all businesses" version)
+                for dup in duplicates:
+                    conn.execute(
+                        "UPDATE equipment_types SET deleted_at = datetime('now'), deleted_by = 'migration' WHERE id = ?",
+                        (dup['id'],)
+                    )
+        
+        conn.commit()
+    except Exception as e:
+        # If migration fails, rollback and continue
+        try:
+            conn.rollback()
+        except:
+            pass
+        print(f"Migration note for consolidating default equipment types: {e}")
     
     conn.commit()

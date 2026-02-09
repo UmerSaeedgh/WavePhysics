@@ -321,6 +321,11 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               <div className="list-main" style={{ flex: 1 }}>
                 <div className="list-title">
                   {item.equipment_name || 'Unknown'}
+                  {item.due_date && (
+                    <span style={{ marginLeft: "0.75rem", fontSize: "0.9rem", color: isOverdue ? "#d32f2f" : "#2D3234", fontWeight: "bold" }}>
+                      • Due: {formatDate(item.due_date)}
+                    </span>
+                  )}
                   {isOverdue && (
                     <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#d32f2f", fontWeight: "bold" }}>
                       (OVERDUE)
@@ -336,8 +341,6 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   {item.equipment_type_name && `Type: ${item.equipment_type_name} • `}
                   Client: {item.client_name}
                   {item.site_name && ` • Site: ${item.site_name}`}
-                  {` • Due: `}
-                  <span style={{ fontWeight: "900", fontSize: "1.5em", color: "#2D3234" }}>{formatDate(item.due_date)}</span>
                 </div>
                 {editingNotesId === item.id ? (
                   <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem", alignItems: "flex-start" }} onClick={(e) => e.stopPropagation()}>

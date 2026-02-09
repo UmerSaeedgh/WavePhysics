@@ -18,8 +18,25 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
   const [editingBusiness, setEditingBusiness] = useState(null);
   const [businessName, setBusinessName] = useState("");
   const [selectedBusinessId, setSelectedBusinessId] = useState(null);
+  const [createAdminUser, setCreateAdminUser] = useState(true);
+  const [adminUsername, setAdminUsername] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
 
   const [selectedBusinessForImport, setSelectedBusinessForImport] = useState(null);
+
+  // Equipment type management state
+  const [equipmentTypes, setEquipmentTypes] = useState([]);
+  const [showAddEquipmentType, setShowAddEquipmentType] = useState(false);
+  const [editingEquipmentType, setEditingEquipmentType] = useState(null);
+  const [equipmentTypesExpanded, setEquipmentTypesExpanded] = useState(true);
+  const [equipmentTypeForm, setEquipmentTypeForm] = useState({
+    name: "",
+    interval_weeks: "52",
+    rrule: "FREQ=WEEKLY;INTERVAL=52",
+    default_lead_weeks: "4",
+    active: true,
+    business_id: null
+  });
 
   async function handleImportEquipments(e) {
     const file = e.target.files[0];
@@ -202,6 +219,16 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
     }
   }
 
+  async function fetchEquipmentTypes() {
+    try {
+      const types = await apiCall("/equipment-types");
+      setEquipmentTypes(types || []);
+    } catch (err) {
+      console.error("Failed to fetch equipment types:", err);
+      setEquipmentTypes([]);
+    }
+  }
+
   useEffect(() => {
     if (adminTab === "users" && currentUser?.is_admin) {
       fetchUsers();
@@ -211,6 +238,12 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
     }
     if (adminTab === "businesses" && isSuperAdmin) {
       fetchBusinesses();
+    }
+    if (adminTab === "utilities" && currentUser?.is_admin) {
+      fetchEquipmentTypes();
+      if (isSuperAdmin) {
+        fetchBusinesses();
+      }
     }
   }, [adminTab, currentUser, isSuperAdmin]);
 
@@ -289,12 +322,27 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
       setError("Business name is required");
       return;
     }
+    if (createAdminUser) {
+      if (!adminUsername.trim() || !adminPassword.trim()) {
+        setError("Admin username and password are required when creating admin user");
+        return;
+      }
+    }
     try {
+      const payload = {
+        name: businessName.trim(),
+        create_admin_user: createAdminUser,
+        admin_username: createAdminUser ? adminUsername.trim() : null,
+        admin_password: createAdminUser ? adminPassword.trim() : null
+      };
       await apiCall("/businesses", {
         method: "POST",
-        body: JSON.stringify({ name: businessName.trim() })
+        body: JSON.stringify(payload)
       });
       setBusinessName("");
+      setAdminUsername("");
+      setAdminPassword("");
+      setCreateAdminUser(true);
       setShowAddBusiness(false);
       await fetchBusinesses();
       if (onRefresh) onRefresh();
@@ -361,6 +409,9 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
   function handleEditBusiness(business) {
     setEditingBusiness(business);
     setBusinessName(business.name);
+    setCreateAdminUser(false); // Don't create admin when editing
+    setAdminUsername("");
+    setAdminPassword("");
     setShowAddBusiness(true);
   }
 
@@ -392,46 +443,183 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
       </nav>
 
       {adminTab === "utilities" && (
-        <div className="card">
-          <div className="card-header">
-            <h2>Utilities</h2>
-          </div>
-          
-          <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-            <div>
-              <h3>Import Equipments</h3>
-              <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
-                Import equipment records from Excel file. Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date.
-                {isSuperAdmin && " Optional column: Business (if not provided, will use business from Excel file)."}
-                <br />
-                <strong>Note:</strong> If client or site doesn't exist, the row will be skipped. If equipment identifier doesn't exist, a new equipment will be created.
-              </p>
-              {isSuperAdmin && (
-                <div style={{ marginBottom: "1rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
-                    Business (Optional - leave empty to use Business column from Excel)
-                  </label>
-                  <select
-                    value={selectedBusinessForImport || ""}
-                    onChange={(e) => setSelectedBusinessForImport(e.target.value ? parseInt(e.target.value) : null)}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #8193A4",
-                      borderRadius: "0.25rem",
-                      fontSize: "0.9rem"
+        <>
+          {/* Equipment Types Management - Separate Card */}
+          <div className="card" style={{ marginBottom: "1.5rem" }}>
+            <div 
+              className="card-header" 
+              style={{ cursor: "pointer" }} 
+              onClick={() => setEquipmentTypesExpanded(!equipmentTypesExpanded)}
+            >
+              <h2 style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ 
+                  transform: equipmentTypesExpanded ? "rotate(90deg)" : "rotate(0deg)", 
+                  transition: "transform 0.2s", 
+                  display: "inline-block",
+                  fontSize: "0.75rem"
+                }}>▶</span>
+                Equipment Types
+                <span style={{ fontSize: "0.875rem", fontWeight: "normal", color: "#8193A4", marginLeft: "0.5rem" }}>
+                  ({equipmentTypes.length})
+                </span>
+              </h2>
+              <div style={{ display: "flex", gap: "0.5rem" }} onClick={(e) => e.stopPropagation()}>
+                {isSuperAdmin && selectedBusinessId && (
+                  <button 
+                    className="secondary" 
+                    onClick={async () => {
+                      await handleSwitchBusiness(null);
+                      await fetchEquipmentTypes();
                     }}
                   >
-                    <option value="">Use Business column from Excel</option>
-                    {businesses.map(business => (
-                      <option key={business.id} value={business.id.toString()}>
-                        {business.name}
-                      </option>
-                    ))}
-                  </select>
+                    View All Businesses
+                  </button>
+                )}
+                <button className="secondary" onClick={fetchEquipmentTypes}>Refresh</button>
+              </div>
+            </div>
+            
+            {equipmentTypesExpanded && (
+              <div style={{ padding: "1rem" }}>
+                <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
+                  Manage equipment types for {isSuperAdmin ? "businesses" : "your business"}. Each business has its own equipment types.
+                  {isSuperAdmin && " As superadmin, you can create equipment types for any business or for all businesses."}
+                </p>
+
+                {isSuperAdmin && selectedBusinessId === null && (
+                  <div style={{ padding: "1rem", marginBottom: "1.5rem", backgroundColor: "rgba(129, 147, 164, 0.1)", borderLeft: "4px solid #8193A4", borderRadius: "0.25rem" }}>
+                    <strong>Viewing All Businesses</strong> - You are currently viewing equipment types from all businesses. Switch to a specific business to filter.
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
+                  <button
+                    className="primary"
+                    onClick={() => {
+                      setEditingEquipmentType(null);
+                      setEquipmentTypeForm({
+                        name: "",
+                        interval_weeks: "52",
+                        rrule: "FREQ=WEEKLY;INTERVAL=52",
+                        default_lead_weeks: "4",
+                        active: true,
+                        business_id: isSuperAdmin ? null : currentUser?.business_id
+                      });
+                      setShowAddEquipmentType(true);
+                    }}
+                  >
+                    + Add New Equipment Type
+                  </button>
                 </div>
-              )}
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+
+                {equipmentTypes.length === 0 ? (
+                  <p className="empty">No equipment types yet. Click "Add New Equipment Type" to get started.</p>
+                ) : (
+                  <div style={{ maxHeight: "500px", overflowY: "auto", border: "1px solid #e0e0e0", borderRadius: "0.25rem", padding: "0.5rem" }}>
+                    <ul className="list" style={{ margin: 0 }}>
+                      {equipmentTypes.map(type => (
+                        <li key={type.id} className="list-item">
+                          <div className="list-main" style={{ flex: 1 }}>
+                            <div className="list-title">
+                              {type.name}
+                              {!type.active && (
+                                <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#8193A4", fontStyle: "italic" }}>
+                                  (Inactive)
+                                </span>
+                              )}
+                            </div>
+                            <div className="list-subtitle">
+                              {type.business_name && `Business: ${type.business_name} • `}
+                              Interval: {type.interval_weeks} weeks • Default Lead: {type.default_lead_weeks} weeks
+                            </div>
+                          </div>
+                          <div className="list-actions" onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => {
+                              setEditingEquipmentType(type);
+                              setEquipmentTypeForm({
+                                name: type.name,
+                                interval_weeks: type.interval_weeks.toString(),
+                                rrule: type.rrule,
+                                default_lead_weeks: type.default_lead_weeks.toString(),
+                                active: type.active,
+                                business_id: null // Don't allow changing business when editing
+                              });
+                              setShowAddEquipmentType(true);
+                            }}>Edit</button>
+                            <button className="danger" onClick={async () => {
+                              if (!window.confirm(`Are you sure you want to delete "${type.name}"?`)) return;
+                              try {
+                                await apiCall(`/equipment-types/${type.id}`, { method: "DELETE" });
+                                await fetchEquipmentTypes();
+                                if (onRefresh) onRefresh();
+                              } catch (err) {
+                                setError(err.message || "Failed to delete equipment type");
+                              }
+                            }}>Delete</button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Import/Export Section - Separate Card */}
+          <div className="card">
+            <div className="card-header">
+              <h2>Import & Export</h2>
+            </div>
+            
+            <div style={{ padding: "1rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "2rem" }}>
+              {/* Import Section */}
+              <div style={{ 
+                padding: "1.5rem", 
+                backgroundColor: "#f8f9fa", 
+                borderRadius: "0.5rem",
+                border: "1px solid #e0e0e0"
+              }}>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234" }}>Import Equipments</h3>
+                <p style={{ color: "#8193A4", fontSize: "0.875rem", marginBottom: "1rem", lineHeight: "1.5" }}>
+                  Import equipment records from Excel file. Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date.
+                  {isSuperAdmin && " Optional column: Business."}
+                </p>
+                <div style={{ 
+                  padding: "0.75rem", 
+                  backgroundColor: "#fff3cd", 
+                  borderRadius: "0.25rem", 
+                  marginBottom: "1rem",
+                  fontSize: "0.875rem",
+                  color: "#856404"
+                }}>
+                  <strong>Note:</strong> If client or site doesn't exist, the row will be skipped.
+                </div>
+                {isSuperAdmin && (
+                  <div style={{ marginBottom: "1rem" }}>
+                    <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem", fontWeight: "600", color: "#2D3234" }}>
+                      Business (Optional)
+                    </label>
+                    <select
+                      value={selectedBusinessForImport || ""}
+                      onChange={(e) => setSelectedBusinessForImport(e.target.value ? parseInt(e.target.value) : null)}
+                      style={{
+                        width: "100%",
+                        padding: "0.5rem",
+                        border: "1px solid #8193A4",
+                        borderRadius: "0.25rem",
+                        fontSize: "0.875rem"
+                      }}
+                    >
+                      <option value="">Use Business column from Excel</option>
+                      {businesses.map(business => (
+                        <option key={business.id} value={business.id.toString()}>
+                          {business.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -444,49 +632,62 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   type="button"
                   className="primary"
                   disabled={uploading || uploadingTemporary}
-                  style={{ cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer" }}
+                  style={{ 
+                    cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer",
+                    width: "100%"
+                  }}
                   onClick={() => fileInputRef.current?.click()}
                 >
                   {uploading ? "Uploading..." : "📁 Import Equipments"}
                 </button>
               </div>
-            </div>
 
-            <div>
-              <h3>Temporary Data Upload</h3>
-              <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
-                Import equipment records from Excel file. Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date.
-                {isSuperAdmin && " Optional column: Business (if not provided, will use business from Excel file or create it)."}
-                <br />
-                <strong>Note:</strong> If client or site doesn't exist, they will be created automatically. If equipment identifier doesn't exist, a new equipment will be created.
-                {isSuperAdmin && " If business doesn't exist, it will be created automatically."}
-              </p>
-              {isSuperAdmin && (
-                <div style={{ marginBottom: "1rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
-                    Business (Optional - leave empty to use Business column from Excel)
-                  </label>
-                  <select
-                    value={selectedBusinessForImport || ""}
-                    onChange={(e) => setSelectedBusinessForImport(e.target.value ? parseInt(e.target.value) : null)}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #8193A4",
-                      borderRadius: "0.25rem",
-                      fontSize: "0.9rem"
-                    }}
-                  >
-                    <option value="">Use Business column from Excel</option>
-                    {businesses.map(business => (
-                      <option key={business.id} value={business.id.toString()}>
-                        {business.name}
-                      </option>
-                    ))}
-                  </select>
+              {/* Temporary Upload Section */}
+              <div style={{ 
+                padding: "1.5rem", 
+                backgroundColor: "#f8f9fa", 
+                borderRadius: "0.5rem",
+                border: "1px solid #e0e0e0"
+              }}>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234" }}>Temporary Data Upload</h3>
+                <p style={{ color: "#8193A4", fontSize: "0.875rem", marginBottom: "1rem", lineHeight: "1.5" }}>
+                  Import equipment records from Excel file. Creates missing clients, sites, and businesses automatically.
+                </p>
+                <div style={{ 
+                  padding: "0.75rem", 
+                  backgroundColor: "#d1ecf1", 
+                  borderRadius: "0.25rem", 
+                  marginBottom: "1rem",
+                  fontSize: "0.875rem",
+                  color: "#0c5460"
+                }}>
+                  <strong>Auto-Create:</strong> Missing clients, sites{businesses.length > 0 && ", and businesses"} will be created automatically.
                 </div>
-              )}
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                {isSuperAdmin && (
+                  <div style={{ marginBottom: "1rem" }}>
+                    <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem", fontWeight: "600", color: "#2D3234" }}>
+                      Business (Optional)
+                    </label>
+                    <select
+                      value={selectedBusinessForImport || ""}
+                      onChange={(e) => setSelectedBusinessForImport(e.target.value ? parseInt(e.target.value) : null)}
+                      style={{
+                        width: "100%",
+                        padding: "0.5rem",
+                        border: "1px solid #8193A4",
+                        borderRadius: "0.25rem",
+                        fontSize: "0.875rem"
+                      }}
+                    >
+                      <option value="">Use Business column from Excel</option>
+                      {businesses.map(business => (
+                        <option key={business.id} value={business.id.toString()}>
+                          {business.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <input
                   ref={temporaryFileInputRef}
                   type="file"
@@ -499,26 +700,301 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   type="button"
                   className="primary"
                   disabled={uploading || uploadingTemporary}
-                  style={{ cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer" }}
+                  style={{ 
+                    cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer",
+                    width: "100%"
+                  }}
                   onClick={() => temporaryFileInputRef.current?.click()}
                 >
                   {uploadingTemporary ? "Uploading..." : "📁 Temporary Data Upload"}
                 </button>
               </div>
-            </div>
 
-            <div>
-              <h3>Export Equipments</h3>
-              <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
-                Export all equipment records to Excel file.
-              </p>
-              <button
-                type="button"
-                className="primary"
-                onClick={handleExportEquipments}
-              >
-                📥 Export Equipments
-              </button>
+              {/* Export Section */}
+              <div style={{ 
+                padding: "1.5rem", 
+                backgroundColor: "#f8f9fa", 
+                borderRadius: "0.5rem",
+                border: "1px solid #e0e0e0"
+              }}>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234" }}>Export Equipments</h3>
+                <p style={{ color: "#8193A4", fontSize: "0.875rem", marginBottom: "1.5rem", lineHeight: "1.5" }}>
+                  Export all equipment records to an Excel file for backup or external processing.
+                </p>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={handleExportEquipments}
+                  style={{ width: "100%" }}
+                >
+                  📥 Export Equipments
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showAddEquipmentType && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(45, 50, 52, 0.9)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }} onClick={() => {
+          setShowAddEquipmentType(false);
+          setEditingEquipmentType(null);
+          setEquipmentTypeForm({
+            name: "",
+            interval_weeks: "52",
+            rrule: "FREQ=WEEKLY;INTERVAL=52",
+            default_lead_weeks: "4",
+            active: true,
+            business_id: null
+          });
+        }}>
+          <div style={{
+            backgroundColor: "#D7E5D8",
+            padding: "2rem",
+            borderRadius: "0.5rem",
+            maxWidth: "500px",
+            width: "90%",
+            color: "#2D3234",
+            maxHeight: "90vh",
+            overflowY: "auto"
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <h2 style={{ margin: 0, color: "#2D3234" }}>
+                {editingEquipmentType ? "Edit Equipment Type" : "Add New Equipment Type"}
+              </h2>
+              <button onClick={() => {
+                setShowAddEquipmentType(false);
+                setEditingEquipmentType(null);
+                setEquipmentTypeForm({
+                  name: "",
+                  interval_weeks: "52",
+                  rrule: "FREQ=WEEKLY;INTERVAL=52",
+                  default_lead_weeks: "4",
+                  active: true,
+                  business_id: null
+                });
+              }} style={{ color: "#2D3234", border: "1px solid #8193A4", background: "transparent", cursor: "pointer", fontSize: "1.5rem", padding: "0.25rem 0.5rem" }}>✕</button>
+            </div>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              {isSuperAdmin && !editingEquipmentType && (
+                <div>
+                  <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                    Business
+                  </label>
+                  <select
+                    value={equipmentTypeForm.business_id === null ? "all" : (equipmentTypeForm.business_id || "")}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setEquipmentTypeForm(prev => ({ 
+                        ...prev, 
+                        business_id: value === "all" ? null : (value ? parseInt(value) : null)
+                      }));
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem",
+                      border: "1px solid #8193A4",
+                      borderRadius: "0.25rem",
+                      backgroundColor: "#fff",
+                      color: "#2D3234"
+                    }}
+                  >
+                    <option value="all">All Businesses</option>
+                    {businesses.map(business => (
+                      <option key={business.id} value={business.id.toString()}>
+                        {business.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  Name *
+                </label>
+                <input
+                  type="text"
+                  value={equipmentTypeForm.name}
+                  onChange={(e) => setEquipmentTypeForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Equipment type name"
+                  required
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    backgroundColor: "#fff",
+                    color: "#2D3234"
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  Interval (weeks) *
+                </label>
+                <input
+                  type="number"
+                  value={equipmentTypeForm.interval_weeks}
+                  onChange={(e) => {
+                    const interval = e.target.value;
+                    setEquipmentTypeForm(prev => ({
+                      ...prev,
+                      interval_weeks: interval,
+                      rrule: `FREQ=WEEKLY;INTERVAL=${interval || 52}`
+                    }));
+                  }}
+                  required
+                  min="1"
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    backgroundColor: "#fff",
+                    color: "#2D3234"
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  Default Lead Weeks *
+                </label>
+                <input
+                  type="number"
+                  value={equipmentTypeForm.default_lead_weeks}
+                  onChange={(e) => setEquipmentTypeForm(prev => ({ ...prev, default_lead_weeks: e.target.value }))}
+                  required
+                  min="0"
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    backgroundColor: "#fff",
+                    color: "#2D3234"
+                  }}
+                />
+              </div>
+
+              <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}>
+                <div
+                  onClick={() => setEquipmentTypeForm(prev => ({ ...prev, active: !prev.active }))}
+                  style={{
+                    position: "relative",
+                    width: "48px",
+                    height: "24px",
+                    backgroundColor: equipmentTypeForm.active ? "#8193A4" : "#cbd5e1",
+                    borderRadius: "12px",
+                    transition: "background-color 0.2s ease",
+                    cursor: "pointer",
+                    flexShrink: 0
+                  }}
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "2px",
+                      left: equipmentTypeForm.active ? "26px" : "2px",
+                      width: "20px",
+                      height: "20px",
+                      backgroundColor: "#ffffff",
+                      borderRadius: "50%",
+                      transition: "left 0.2s ease",
+                      boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)"
+                    }}
+                  />
+                </div>
+                <span style={{ userSelect: "none" }}>Active</span>
+              </label>
+
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <button 
+                  className="primary" 
+                  onClick={async () => {
+                    if (!equipmentTypeForm.name.trim()) {
+                      setError("Equipment type name is required");
+                      return;
+                    }
+                    try {
+                      const payload = {
+                        name: equipmentTypeForm.name.trim(),
+                        interval_weeks: parseInt(equipmentTypeForm.interval_weeks) || 52,
+                        rrule: equipmentTypeForm.rrule || `FREQ=WEEKLY;INTERVAL=${parseInt(equipmentTypeForm.interval_weeks) || 52}`,
+                        default_lead_weeks: parseInt(equipmentTypeForm.default_lead_weeks) || 4,
+                        active: equipmentTypeForm.active
+                      };
+                      // Include business_id (can be null for "all businesses")
+                      if (isSuperAdmin && !editingEquipmentType) {
+                        payload.business_id = equipmentTypeForm.business_id;
+                      }
+                      if (editingEquipmentType) {
+                        await apiCall(`/equipment-types/${editingEquipmentType.id}`, {
+                          method: "PUT",
+                          body: JSON.stringify(payload)
+                        });
+                      } else {
+                        await apiCall("/equipment-types", {
+                          method: "POST",
+                          body: JSON.stringify(payload)
+                        });
+                      }
+                      setShowAddEquipmentType(false);
+                      setEditingEquipmentType(null);
+                      setEquipmentTypeForm({
+                        name: "",
+                        interval_weeks: "52",
+                        rrule: "FREQ=WEEKLY;INTERVAL=52",
+                        default_lead_weeks: "4",
+                        active: true,
+                        business_id: null
+                      });
+                      await fetchEquipmentTypes();
+                      if (onRefresh) onRefresh();
+                    } catch (err) {
+                      // error already set
+                    }
+                  }}
+                >
+                  {editingEquipmentType ? "Update" : "Create"}
+                </button>
+                <button 
+                  className="secondary"
+                  onClick={() => {
+                    setShowAddEquipmentType(false);
+                    setEditingEquipmentType(null);
+                    setEquipmentTypeForm({
+                      name: "",
+                      interval_weeks: "52",
+                      rrule: "FREQ=WEEKLY;INTERVAL=52",
+                      default_lead_weeks: "4",
+                      active: true,
+                      business_id: null
+                    });
+                  }}
+                  style={{ 
+                    color: "#2D3234", 
+                    border: "1px solid #8193A4",
+                    background: "transparent"
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -679,6 +1155,9 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                 onClick={() => {
                   setEditingBusiness(null);
                   setBusinessName("");
+                  setCreateAdminUser(true);
+                  setAdminUsername("");
+                  setAdminPassword("");
                   setShowAddBusiness(true);
                 }}
               >
@@ -773,6 +1252,9 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                 setShowAddBusiness(false);
                 setEditingBusiness(null);
                 setBusinessName("");
+                setCreateAdminUser(true);
+                setAdminUsername("");
+                setAdminPassword("");
               }} style={{ color: "#2D3234", border: "1px solid #8193A4", background: "transparent", cursor: "pointer", fontSize: "1.5rem", padding: "0.25rem 0.5rem" }}>✕</button>
             </div>
             
@@ -802,6 +1284,84 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                 />
               </div>
 
+              {!editingBusiness && (
+                <>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}>
+                    <div
+                      onClick={() => setCreateAdminUser(!createAdminUser)}
+                      style={{
+                        position: "relative",
+                        width: "48px",
+                        height: "24px",
+                        backgroundColor: createAdminUser ? "#8193A4" : "#cbd5e1",
+                        borderRadius: "12px",
+                        transition: "background-color 0.2s ease",
+                        cursor: "pointer",
+                        flexShrink: 0
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "2px",
+                          left: createAdminUser ? "26px" : "2px",
+                          width: "20px",
+                          height: "20px",
+                          backgroundColor: "#ffffff",
+                          borderRadius: "50%",
+                          transition: "left 0.2s ease",
+                          boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)"
+                        }}
+                      />
+                    </div>
+                    <span style={{ userSelect: "none" }}>Create Admin User for this Business</span>
+                  </label>
+
+                  {createAdminUser && (
+                    <>
+                      <div>
+                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                          Admin Username
+                        </label>
+                        <input
+                          type="text"
+                          value={adminUsername}
+                          onChange={(e) => setAdminUsername(e.target.value)}
+                          placeholder="Enter admin username..."
+                          style={{
+                            width: "100%",
+                            padding: "0.5rem",
+                            border: "1px solid #8193A4",
+                            borderRadius: "0.25rem",
+                            backgroundColor: "#fff",
+                            color: "#2D3234"
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                          Admin Password
+                        </label>
+                        <input
+                          type="password"
+                          value={adminPassword}
+                          onChange={(e) => setAdminPassword(e.target.value)}
+                          placeholder="Enter admin password..."
+                          style={{
+                            width: "100%",
+                            padding: "0.5rem",
+                            border: "1px solid #8193A4",
+                            borderRadius: "0.25rem",
+                            backgroundColor: "#fff",
+                            color: "#2D3234"
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
               <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
                 <button 
                   className="primary" 
@@ -815,6 +1375,9 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                     setShowAddBusiness(false);
                     setEditingBusiness(null);
                     setBusinessName("");
+                    setCreateAdminUser(true);
+                    setAdminUsername("");
+                    setAdminPassword("");
                   }}
                   style={{ 
                     color: "#2D3234", 

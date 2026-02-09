@@ -1,19 +1,11 @@
 import { useState, useEffect } from "react";
 
-export default function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, previousView, onBack, onSuccess, currentUser, initialClientId, initialSiteId }) {
+export default function AddEquipmentPage({ apiCall, setError, clients, sites, equipmentToEdit, previousView, onBack, onSuccess, currentUser, initialClientId, initialSiteId, isSuperAdmin, onNavigateToBusinesses }) {
   const [selectedClientId, setSelectedClientId] = useState("");
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [availableSites, setAvailableSites] = useState([]);
   const [equipmentTypes, setEquipmentTypes] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [showNewTypeForm, setShowNewTypeForm] = useState(false);
-  const [newTypeForm, setNewTypeForm] = useState({
-    name: "",
-    interval_weeks: "52",
-    rrule: "FREQ=WEEKLY;INTERVAL=52",
-    default_lead_weeks: "4",
-    active: true,
-  });
   const [equipmentForm, setEquipmentForm] = useState({
     equipment_type_id: "",
     equipment_name: "",
@@ -172,12 +164,36 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
     }
   }
 
+  // Check if superadmin has no businesses/clients
+  const hasNoBusinesses = isSuperAdmin && (!clients || clients.length === 0);
+
   return (
     <div className="card">
       <div className="card-header">
         <h2>{equipmentToEdit && equipmentToEdit.id ? "Edit Equipment" : "Add New Equipment"}</h2>
         <button onClick={onBack}>Back</button>
       </div>
+
+      {hasNoBusinesses && (
+        <div style={{ padding: "1rem", margin: "1rem", backgroundColor: "#fff3cd", border: "1px solid #ffc107", borderRadius: "0.25rem" }}>
+          <p style={{ margin: 0, color: "#856404", fontWeight: "600" }}>
+            No businesses or clients found. You need to create a business first before adding equipment.
+          </p>
+          {onNavigateToBusinesses && (
+            <button
+              className="primary"
+              onClick={() => {
+                if (onNavigateToBusinesses) {
+                  onNavigateToBusinesses();
+                }
+              }}
+              style={{ marginTop: "0.75rem" }}
+            >
+              Create Business
+            </button>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} style={{ padding: "1rem" }}>
         <label>
@@ -218,149 +234,20 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
 
         <label>
           Equipment Type *
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            <select
-              name="equipment_type_id"
-              value={equipmentForm.equipment_type_id}
-              onChange={handleChange}
-              required
-              style={{ flex: 1 }}
-            >
-              <option value="">Select an equipment type</option>
-              {equipmentTypes.map(type => (
-                <option key={type.id} value={type.id.toString()}>
-                  {type.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setShowNewTypeForm(true)}
-              style={{ whiteSpace: "nowrap" }}
-            >
-              + Add New Type
-            </button>
-          </div>
+          <select
+            name="equipment_type_id"
+            value={equipmentForm.equipment_type_id}
+            onChange={handleChange}
+            required
+          >
+            <option value="">Select an equipment type</option>
+            {equipmentTypes.map(type => (
+              <option key={type.id} value={type.id.toString()}>
+                {type.name}
+              </option>
+            ))}
+          </select>
         </label>
-
-        {showNewTypeForm && (
-          <div style={{ 
-            padding: "1rem", 
-            backgroundColor: "#8193A4", 
-            borderRadius: "0.5rem", 
-            marginTop: "0.5rem",
-            border: "1px solid #2D3234"
-          }}>
-            <h4 style={{ marginTop: 0, marginBottom: "1rem", color: "#2D3234" }}>Add New Equipment Type</h4>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <label style={{ color: "#2D3234" }}>
-                Name *
-                <input
-                  type="text"
-                  value={newTypeForm.name}
-                  onChange={(e) => setNewTypeForm(prev => ({ ...prev, name: e.target.value }))}
-                  required
-                  placeholder="Equipment type name"
-                  style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
-                />
-              </label>
-              <label style={{ color: "#2D3234" }}>
-                Interval (weeks) *
-                <input
-                  type="number"
-                  value={newTypeForm.interval_weeks}
-                  onChange={(e) => {
-                    const interval = e.target.value;
-                    setNewTypeForm(prev => ({ 
-                      ...prev, 
-                      interval_weeks: interval,
-                      rrule: `FREQ=WEEKLY;INTERVAL=${interval || 52}`
-                    }));
-                  }}
-                  required
-                  min="1"
-                  style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
-                />
-              </label>
-              <label style={{ color: "#2D3234" }}>
-                Default Lead Weeks *
-                <input
-                  type="number"
-                  value={newTypeForm.default_lead_weeks}
-                  onChange={(e) => setNewTypeForm(prev => ({ ...prev, default_lead_weeks: e.target.value }))}
-                  required
-                  min="0"
-                  style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
-                />
-              </label>
-              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={async () => {
-                    if (!newTypeForm.name.trim()) {
-                      setError("Equipment type name is required");
-                      return;
-                    }
-                    try {
-                      const newType = await apiCall("/equipment-types", {
-                        method: "POST",
-                        body: JSON.stringify({
-                          name: newTypeForm.name,
-                          interval_weeks: parseInt(newTypeForm.interval_weeks) || 52,
-                          rrule: newTypeForm.rrule || `FREQ=WEEKLY;INTERVAL=${parseInt(newTypeForm.interval_weeks) || 52}`,
-                          default_lead_weeks: parseInt(newTypeForm.default_lead_weeks) || 4,
-                          active: newTypeForm.active,
-                        }),
-                      });
-                      const types = await apiCall("/equipment-types?active_only=true");
-                      setEquipmentTypes(types || []);
-                      setEquipmentForm(prev => ({
-                        ...prev,
-                        equipment_type_id: newType.id.toString(),
-                        interval_weeks: newType.interval_weeks.toString(),
-                      }));
-                      setNewTypeForm({
-                        name: "",
-                        interval_weeks: "52",
-                        rrule: "FREQ=WEEKLY;INTERVAL=52",
-                        default_lead_weeks: "4",
-                        active: true,
-                      });
-                      setShowNewTypeForm(false);
-                    } catch (err) {
-                      // error already set
-                    }
-                  }}
-                >
-                  Create
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                    setShowNewTypeForm(false);
-                    setNewTypeForm({
-                      name: "",
-                      interval_weeks: "52",
-                      rrule: "FREQ=WEEKLY;INTERVAL=52",
-                      default_lead_weeks: "4",
-                      active: true,
-                    });
-                  }}
-                  style={{ 
-                    color: "#2D3234", 
-                    border: "1px solid #2D3234",
-                    background: "transparent"
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         <label>
           Equipment Name *

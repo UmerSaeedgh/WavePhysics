@@ -935,6 +935,14 @@ function App() {
             currentUser={currentUser}
             initialClientId={initialClientIdForEquipment}
             initialSiteId={initialSiteIdForEquipment}
+            isSuperAdmin={isSuperAdmin}
+            onNavigateToBusinesses={() => {
+              setEquipmentToEdit(null);
+              setInitialClientIdForEquipment(null);
+              setInitialSiteIdForEquipment(null);
+              setPreviousView("add-equipment");
+              setView("admin");
+            }}
             onBack={() => {
               const returnView = previousView || "all-equipments";
               setEquipmentToEdit(null);
@@ -981,7 +989,7 @@ function App() {
           />
         )}
 
-        {view === "user" && (
+        {(view === "user" || view === "admin") && (
           <UserView 
             apiCall={apiCall} 
             setError={setError} 
@@ -991,6 +999,7 @@ function App() {
             authToken={authToken}
             onBusinessSwitch={handleBusinessSwitch}
             onRefresh={refreshAllCounts}
+            initialTab={view === "admin" ? "admin" : "settings"}
           />
         )}
 

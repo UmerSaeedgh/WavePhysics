@@ -7,6 +7,9 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
   const [editingBusiness, setEditingBusiness] = useState(null);
   const [businessName, setBusinessName] = useState("");
   const [selectedBusinessId, setSelectedBusinessId] = useState(null);
+  const [createAdminUser, setCreateAdminUser] = useState(true);
+  const [adminUsername, setAdminUsername] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
 
   useEffect(() => {
     fetchBusinesses();
@@ -35,12 +38,27 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
       setError("Business name is required");
       return;
     }
+    if (createAdminUser) {
+      if (!adminUsername.trim() || !adminPassword.trim()) {
+        setError("Admin username and password are required when creating admin user");
+        return;
+      }
+    }
     try {
+      const payload = {
+        name: businessName.trim(),
+        create_admin_user: createAdminUser,
+        admin_username: createAdminUser ? adminUsername.trim() : null,
+        admin_password: createAdminUser ? adminPassword.trim() : null
+      };
       await apiCall("/businesses", {
         method: "POST",
-        body: JSON.stringify({ name: businessName.trim() })
+        body: JSON.stringify(payload)
       });
       setBusinessName("");
+      setAdminUsername("");
+      setAdminPassword("");
+      setCreateAdminUser(true);
       setShowAddModal(false);
       await fetchBusinesses();
       if (onRefresh) onRefresh();
@@ -98,6 +116,9 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
   function handleEditClick(business) {
     setEditingBusiness(business);
     setBusinessName(business.name);
+    setCreateAdminUser(false); // Don't create admin when editing
+    setAdminUsername("");
+    setAdminPassword("");
     setShowAddModal(true);
   }
 
@@ -105,6 +126,9 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
     setShowAddModal(false);
     setEditingBusiness(null);
     setBusinessName("");
+    setCreateAdminUser(true);
+    setAdminUsername("");
+    setAdminPassword("");
   }
 
   if (loading && businesses.length === 0) {
@@ -213,6 +237,84 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
                   }}
                 />
               </div>
+
+              {!editingBusiness && (
+                <>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}>
+                    <div
+                      onClick={() => setCreateAdminUser(!createAdminUser)}
+                      style={{
+                        position: "relative",
+                        width: "48px",
+                        height: "24px",
+                        backgroundColor: createAdminUser ? "#8193A4" : "#cbd5e1",
+                        borderRadius: "12px",
+                        transition: "background-color 0.2s ease",
+                        cursor: "pointer",
+                        flexShrink: 0
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "2px",
+                          left: createAdminUser ? "26px" : "2px",
+                          width: "20px",
+                          height: "20px",
+                          backgroundColor: "#ffffff",
+                          borderRadius: "50%",
+                          transition: "left 0.2s ease",
+                          boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)"
+                        }}
+                      />
+                    </div>
+                    <span style={{ userSelect: "none" }}>Create Admin User for this Business</span>
+                  </label>
+
+                  {createAdminUser && (
+                    <>
+                      <div>
+                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                          Admin Username
+                        </label>
+                        <input
+                          type="text"
+                          value={adminUsername}
+                          onChange={(e) => setAdminUsername(e.target.value)}
+                          placeholder="Enter admin username..."
+                          style={{
+                            width: "100%",
+                            padding: "0.5rem",
+                            border: "1px solid #8193A4",
+                            borderRadius: "0.25rem",
+                            backgroundColor: "#fff",
+                            color: "#2D3234"
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                          Admin Password
+                        </label>
+                        <input
+                          type="password"
+                          value={adminPassword}
+                          onChange={(e) => setAdminPassword(e.target.value)}
+                          placeholder="Enter admin password..."
+                          style={{
+                            width: "100%",
+                            padding: "0.5rem",
+                            border: "1px solid #8193A4",
+                            borderRadius: "0.25rem",
+                            backgroundColor: "#fff",
+                            color: "#2D3234"
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
 
               <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
                 <button 
