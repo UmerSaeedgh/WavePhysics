@@ -29,6 +29,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showDoneModal, setShowDoneModal] = useState(false);
   const [doneEquipment, setDoneEquipment] = useState(null);
+  const [completionDate, setCompletionDate] = useState("");
   const [calculatedDueDate, setCalculatedDueDate] = useState("");
   const [doneInterval, setDoneInterval] = useState("");
 
@@ -146,9 +147,9 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
     return today.toISOString().split('T')[0];
   }
 
-  function calculateDueDate(completionDate, intervalWeeks) {
-    if (!completionDate || !intervalWeeks) return "";
-    const completion = new Date(completionDate);
+  function calculateDueDate(completionDateStr, intervalWeeks) {
+    if (!completionDateStr || !intervalWeeks) return "";
+    const completion = new Date(completionDateStr);
     const intervalDays = parseInt(intervalWeeks) * 7;
     
     // Simple rule: Next due date = last completed test date + interval
@@ -157,27 +158,46 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
     return newDate.toISOString().split('T')[0];
   }
 
+  function recalculateDueDate(completionDateStr, intervalWeeks) {
+    const calculated = calculateDueDate(completionDateStr, intervalWeeks);
+    setCalculatedDueDate(calculated);
+  }
+
   function handleDoneClick(equipment) {
     setDoneEquipment(equipment);
     const initialInterval = equipment.interval_weeks?.toString() || "";
     setDoneInterval(initialInterval);
     
-    // Use today's date (completion date) + interval for next due date
+    // Set completion date to today by default
     const today = getTodayDate();
+    setCompletionDate(today);
+    
+    // Calculate due date from completion date + interval
     if (initialInterval) {
-      setCalculatedDueDate(calculateDueDate(today, initialInterval));
+      recalculateDueDate(today, initialInterval);
     } else {
       setCalculatedDueDate("");
     }
     setShowDoneModal(true);
   }
 
+  function handleCompletionDateChange(newDate) {
+    setCompletionDate(newDate);
+    // Recalculate due date when completion date changes
+    if (newDate && doneInterval) {
+      recalculateDueDate(newDate, doneInterval);
+    } else {
+      setCalculatedDueDate("");
+    }
+  }
+
   function handleIntervalChange(newInterval) {
     setDoneInterval(newInterval);
-    // Recalculate using today's date (completion date) + new interval
-    const today = getTodayDate();
-    if (newInterval) {
-      setCalculatedDueDate(calculateDueDate(today, newInterval));
+    // Recalculate using completion date + new interval
+    if (completionDate && newInterval) {
+      recalculateDueDate(completionDate, newInterval);
+    } else {
+      setCalculatedDueDate("");
     }
   }
 
@@ -226,6 +246,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
       await fetchUpcoming();
       setShowDoneModal(false);
       setDoneEquipment(null);
+      setCompletionDate("");
       setCalculatedDueDate("");
       setDoneInterval("");
     } catch (err) {
@@ -236,6 +257,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   function handleCancelDone() {
     setShowDoneModal(false);
     setDoneEquipment(null);
+    setCompletionDate("");
     setCalculatedDueDate("");
     setDoneInterval("");
   }
@@ -933,6 +955,28 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  Completion Date
+                </label>
+                <input
+                  type="date"
+                  value={completionDate}
+                  onChange={(e) => handleCompletionDateChange(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    backgroundColor: "#fff",
+                    color: "#2D3234"
+                  }}
+                />
+                <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
+                  Select the date when the test was completed. Default is today.
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
                   Interval (weeks)
                 </label>
                 <input
@@ -953,35 +997,28 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
 
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
-                  Calculated Due Date
+                  Calculated Due Date (Read-only)
                 </label>
                 <input
                   type="text"
-                  value={calculatedDueDate}
-                  onChange={(e) => {
-                    // Only allow yyyy-mm-dd format
-                    const value = e.target.value;
-                    // Allow empty or valid yyyy-mm-dd pattern
-                    if (value === "" || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-                      setCalculatedDueDate(value);
-                    }
-                  }}
-                  placeholder="yyyy-mm-dd"
-                  pattern="\d{4}-\d{2}-\d{2}"
+                  value={calculatedDueDate || ""}
+                  readOnly
+                  placeholder="Will be calculated automatically"
                   style={{
                     width: "100%",
                     padding: "0.5rem",
                     border: "1px solid #8193A4",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
+                    backgroundColor: "#f5f5f5",
                     color: "#2D3234",
-                    fontFamily: "monospace"
+                    fontFamily: "monospace",
+                    cursor: "not-allowed"
                   }}
                 />
                 <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
-                  {doneInterval ? 
-                    `Completion Date (${getTodayDate()}) + ${doneInterval} weeks = ${calculatedDueDate || "calculating..."}` :
-                    "Enter interval weeks to calculate due date"
+                  {completionDate && doneInterval ? 
+                    `Calculation: ${completionDate} + ${doneInterval} weeks = ${calculatedDueDate || "calculating..."}` :
+                    "Select completion date and interval to calculate due date"
                   }
                 </div>
               </div>
