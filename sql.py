@@ -105,40 +105,10 @@ def init_schema(conn):
           timezone           TEXT            -- optional override
         );
 
-        -- Schedules (recurring)
-        CREATE TABLE IF NOT EXISTS schedules (
-          id                   INTEGER PRIMARY KEY,
-          site_id              INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-          equipment_type_id     INTEGER NOT NULL REFERENCES equipment_types(id),
-          anchor_date          TEXT NOT NULL,  -- YYYY-MM-DD
-          due_date             TEXT,           -- YYYY-MM-DD (manual due date, optional)
-          lead_weeks           INTEGER,        -- optional override
-          timezone             TEXT,           -- optional override
-          equipment_identifier TEXT,           -- optional equipment identifier
-          notes                TEXT,
-          last_generated_until TEXT,           -- last due date generated (YYYY-MM-DD)
-          completed            INTEGER NOT NULL DEFAULT 0,  -- 0 = active, 1 = completed
-          completed_at         TEXT            -- YYYY-MM-DD HH:MM:SS timestamp when completed
-          -- Note: UNIQUE constraint moved to index on (site_id, equipment_id, anchor_date)
-        );
-
-        -- Work orders (occurrences)
-        CREATE TABLE IF NOT EXISTS work_orders (
-          id           INTEGER PRIMARY KEY,
-          schedule_id  INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
-          due_date     TEXT NOT NULL,          -- YYYY-MM-DD
-          planned_date TEXT,
-          done_date    TEXT,
-          status       TEXT NOT NULL CHECK (status IN ('PLANNED','DUE','DONE')) DEFAULT 'PLANNED',
-          invoice_ref  TEXT,
-          notes        TEXT,
-          UNIQUE(schedule_id, due_date)
-        );
-
         -- Notes & attachments (optional)
         CREATE TABLE IF NOT EXISTS notes (
           id         INTEGER PRIMARY KEY,
-          scope      TEXT NOT NULL CHECK (scope IN ('CLIENT','SITE','WORK_ORDER')),
+          scope      TEXT NOT NULL CHECK (scope IN ('CLIENT','SITE')),
           scope_id   INTEGER NOT NULL,
           body       TEXT NOT NULL,
           created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -146,7 +116,7 @@ def init_schema(conn):
 
         CREATE TABLE IF NOT EXISTS attachments (
           id          INTEGER PRIMARY KEY,
-          scope       TEXT NOT NULL CHECK (scope IN ('CLIENT','SITE','WORK_ORDER')),
+          scope       TEXT NOT NULL CHECK (scope IN ('CLIENT','SITE')),
           scope_id    INTEGER NOT NULL,
           filename    TEXT NOT NULL,
           url_or_path TEXT NOT NULL,
@@ -212,61 +182,7 @@ def init_schema(conn):
     except sqlite3.OperationalError:
         pass  # Column already exists
     
-    try:
-        conn.execute("ALTER TABLE schedules ADD COLUMN equipment_identifier TEXT")
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-    
-    try:
-        conn.execute("ALTER TABLE schedules ADD COLUMN due_date TEXT")
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-    
-    try:
-        conn.execute("ALTER TABLE schedules ADD COLUMN completed INTEGER NOT NULL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-    
-    try:
-        conn.execute("ALTER TABLE schedules ADD COLUMN completed_at TEXT")
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-    
     # Note: equipment_types table is created fresh, no migration needed since database will be recreated
-    
-    # Migrate schedules from test_type_id to equipment_type_id
-    try:
-        # Check if equipment_type_id column exists
-        conn.execute("SELECT equipment_type_id FROM schedules LIMIT 1")
-    except sqlite3.OperationalError:
-        # Add equipment_type_id column if it doesn't exist
-        try:
-            conn.execute("ALTER TABLE schedules ADD COLUMN equipment_type_id INTEGER REFERENCES equipment_types(id)")
-        except sqlite3.OperationalError:
-            pass
-        
-        # Update existing schedules: copy test_type_id to equipment_type_id for migration
-        try:
-            conn.execute("UPDATE schedules SET equipment_type_id = test_type_id WHERE equipment_type_id IS NULL")
-        except sqlite3.OperationalError:
-            pass
-    
-    # Drop old UNIQUE constraint on (site_id, test_type_id, anchor_date) if it exists
-    # SQLite doesn't support dropping constraints directly, but we can recreate the table
-    # For now, we'll rely on the index constraint and handle conflicts in application logic
-    
-    # Create unique index on (site_id, equipment_id, anchor_date) if it doesn't exist
-    # This is the correct constraint since equipment_id is client-specific
-    try:
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_site_equipment_date ON schedules(site_id, equipment_id, anchor_date)")
-    except sqlite3.OperationalError:
-        pass
-    
-    # Drop the old index if it exists (from the table-level UNIQUE constraint)
-    try:
-        conn.execute("DROP INDEX IF EXISTS sqlite_autoindex_schedules_1")
-    except sqlite3.OperationalError:
-        pass
     
     # Migrate equipment_completions table if it doesn't exist
     try:

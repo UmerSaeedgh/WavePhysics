@@ -43,6 +43,8 @@ function App() {
   const [allEquipmentsInitialSiteId, setAllEquipmentsInitialSiteId] = useState(null); // Initial site filter for all-equipments view
   const [upcomingInitialClientId, setUpcomingInitialClientId] = useState(null); // Initial client filter for upcoming view
   const [upcomingInitialSiteId, setUpcomingInitialSiteId] = useState(null); // Initial site filter for upcoming view
+  const [upcomingFilterInfo, setUpcomingFilterInfo] = useState(null); // Filter info for upcoming view: { businessName, clientName, siteName, equipmentTypeName }
+  const [dataLoaded, setDataLoaded] = useState(false); // Track if initial data has been loaded
   const [clients, setClients] = useState([]);
   const [sites, setSites] = useState([]);
   const [contacts, setContacts] = useState([]);
@@ -66,28 +68,33 @@ function App() {
   const [upcomingInterval, setUpcomingInterval] = useState(2); // Default to 2 weeks
 
   useEffect(() => {
-    if (isAuthenticated && authToken) {
-    fetchClients();
-      fetchEquipmentTypes();
-      fetchSites(null, true); // Fetch all sites for client counts (silent)
-      // Fetch counts silently (without showing loading state)
-      fetchAllEquipments(true);
-      fetchUpcoming(true);
-      fetchOverdue(true);
-      fetchCompletions(true);
-      // Fetch businesses if super admin
+    // Only fetch if authenticated and data hasn't been loaded yet
+    // Data is already loaded during login, so skip if already loaded
+    if (isAuthenticated && authToken && !dataLoaded) {
       const isSuperAdmin = currentUser?.is_super_admin === true || currentUser?.is_super_admin === 1;
-      if (isSuperAdmin) {
-        fetchBusinesses();
-      }
+      
+      // Fetch all data in parallel for faster loading
+      Promise.all([
+        fetchClients(),
+        fetchEquipmentTypes(),
+        fetchSites(null, true),
+        fetchAllEquipments(true),
+        fetchUpcoming(true),
+        fetchOverdue(true),
+        fetchCompletions(true),
+        isSuperAdmin ? fetchBusinesses() : Promise.resolve()
+      ]).then(() => {
+        setDataLoaded(true);
+      }).catch(err => {
+        console.error("Error loading initial data:", err);
+      });
     }
-  }, [isAuthenticated, authToken, currentUser]);
+  }, [isAuthenticated, authToken, currentUser, dataLoaded]);
 
   // Fetch sites when a client is selected
   useEffect(() => {
     if (selectedClient) {
-      // Clear sites first to avoid showing stale data from previous client
-      setSites([]);
+      // Always fetch fresh sites for the selected client
       fetchSites(selectedClient.id);
       fetchClientEquipments(selectedClient.id);
     }
@@ -98,7 +105,7 @@ function App() {
     if (view === "clients" && !selectedClient) {
       fetchSites(null, true); // Fetch all sites silently for counts
     }
-  }, [view]);
+  }, [view, selectedClient]);
 
   // Fetch site details when a site is selected
   useEffect(() => {
@@ -115,10 +122,13 @@ function App() {
   //   }
   // }, [view]);
 
-  // Fetch data when upcoming view is selected
+  // Fetch data when upcoming view is selected - only if date/interval changed
+  // UpcomingView will use existing data if available
   useEffect(() => {
     if (view === "upcoming") {
-      fetchUpcoming();
+      // Only fetch if we don't have data or if date/interval changed
+      // UpcomingView will handle its own fetching with the new parameters
+      // This prevents redundant fetches when just switching views
     }
   }, [view, upcomingDate, upcomingInterval]);
 
@@ -226,6 +236,9 @@ function App() {
         if (Array.isArray(businessesData)) {
           setBusinesses(businessesData);
         }
+        
+        // Mark data as loaded to prevent redundant fetches
+        setDataLoaded(true);
       } catch (fetchErr) {
         console.error("Error fetching initial data after login:", fetchErr);
         // Don't throw - login was successful, data will load via useEffect
@@ -336,6 +349,7 @@ function App() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      const isSuperAdmin = currentUser?.is_super_admin === true || currentUser?.is_super_admin === 1;
       if (isSuperAdmin && businessIdFilter) {
         params.append("business_id_filter", businessIdFilter.toString());
       }
@@ -355,15 +369,15 @@ function App() {
     }
   }
 
-  async function fetchSites(clientId = null, silent = false) {
+  async function fetchSites(clientId = null, silent = false, force = false) {
+    const validClientId = clientId && typeof clientId === 'number' ? clientId : 
+                         (clientId && !isNaN(parseInt(clientId)) ? parseInt(clientId) : null);
+    
     if (!silent) setLoading(true);
     try {
-      // Ensure clientId is a valid number or null
-      const validClientId = clientId && typeof clientId === 'number' ? clientId : 
-                           (clientId && !isNaN(parseInt(clientId)) ? parseInt(clientId) : null);
       const endpoint = validClientId ? `/sites?client_id=${validClientId}` : "/sites";
       const data = await apiCall(endpoint);
-      setSites(data);
+      setSites(data || []);
     } catch (err) {
       // error already set
       setSites([]);
@@ -500,6 +514,7 @@ function App() {
   // Refresh all counts silently after database changes
   async function refreshAllCounts() {
     try {
+      // Always refresh to ensure counts are accurate
       await Promise.all([
         fetchClients().catch(() => {}),
         fetchSites(null, true).catch(() => {}),
@@ -588,6 +603,27 @@ function App() {
       names.push(selectedSite.name);
     }
     
+    // For upcoming view, show filter information if available
+    if (view === "upcoming" && upcomingFilterInfo) {
+      const filterNames = [];
+      if (upcomingFilterInfo.businessName) {
+        filterNames.push(upcomingFilterInfo.businessName);
+      }
+      if (upcomingFilterInfo.clientName) {
+        filterNames.push(upcomingFilterInfo.clientName);
+      }
+      if (upcomingFilterInfo.siteName) {
+        filterNames.push(upcomingFilterInfo.siteName);
+      }
+      if (upcomingFilterInfo.equipmentTypeName) {
+        filterNames.push(upcomingFilterInfo.equipmentTypeName);
+      }
+      // Replace the context names with filter names if filters are applied
+      if (filterNames.length > 0) {
+        return filterNames;
+      }
+    }
+    
     return names;
   };
 
@@ -622,6 +658,7 @@ function App() {
               setView("clients");
               setSelectedClient(null);
               setSelectedSite(null);
+              setUpcomingFilterInfo(null);
             }}
           >
               Clients ({clients.length})
@@ -641,13 +678,20 @@ function App() {
           */}
           <button
               className={view === "upcoming" ? "active" : ""}
-              onClick={() => setView("upcoming")}
+              onClick={() => {
+                setView("upcoming");
+                // Clear filter info when navigating to upcoming (will be set by UpcomingView if filters are applied)
+                setUpcomingFilterInfo(null);
+              }}
           >
               Upcoming ({overdue.length + upcoming.length})
           </button>
           <button
               className={view === "completed" ? "active" : ""}
-              onClick={() => setView("completed")}
+              onClick={() => {
+                setView("completed");
+                setUpcomingFilterInfo(null);
+              }}
           >
               Completed ({completions.length})
           </button>
@@ -915,6 +959,10 @@ function App() {
             }}
             onRefreshCompletions={() => fetchCompletions(true)}
             onRefreshAllCounts={refreshAllCounts}
+            onFilterChange={(filterInfo) => {
+              setUpcomingFilterInfo(filterInfo);
+            }}
+            businesses={businesses}
             onNavigateToSchedule={async (equipmentRecordId, siteId) => {
               try {
                 // Navigate to all-equipments view and scroll to the equipment

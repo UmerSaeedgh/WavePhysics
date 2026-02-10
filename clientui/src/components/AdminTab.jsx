@@ -94,6 +94,15 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
       } else {
         alert(message);
       }
+      
+      // Refresh all data after successful import
+      if (onRefresh) {
+        onRefresh();
+      }
+      await fetchEquipmentTypes();
+      if (isSuperAdmin) {
+        await fetchBusinesses();
+      }
     } catch (err) {
       setError(err.message || "Failed to import equipment file");
       alert(err.message || "Failed to import equipment file");
@@ -158,6 +167,15 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
         alert(errorMsg);
       } else {
         alert(message);
+      }
+      
+      // Refresh all data after successful import
+      if (onRefresh) {
+        onRefresh();
+      }
+      await fetchEquipmentTypes();
+      if (isSuperAdmin) {
+        await fetchBusinesses();
       }
     } catch (err) {
       setError(err.message || "Failed to import temporary data file");
@@ -372,8 +390,41 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
   }
 
   async function handleDeleteBusiness(businessId) {
-    if (!window.confirm("Delete this business? All associated data (clients, sites, equipment, etc.) will be deleted.")) return;
     try {
+      // Fetch deletion summary first
+      const summary = await apiCall(`/businesses/${businessId}/deletion-summary`);
+      
+      // Build confirmation message with all counts
+      const counts = summary.counts;
+      const items = [];
+      
+      if (counts.customers > 0) items.push(`${counts.customers} Customer${counts.customers !== 1 ? 's' : ''}`);
+      if (counts.sites > 0) items.push(`${counts.sites} Site${counts.sites !== 1 ? 's' : ''}`);
+      if (counts.contacts > 0) items.push(`${counts.contacts} Contact Link${counts.contacts !== 1 ? 's' : ''}`);
+      if (counts.equipment > 0) items.push(`${counts.equipment} Equipment Record${counts.equipment !== 1 ? 's' : ''}`);
+      if (counts.equipment_types > 0) items.push(`${counts.equipment_types} Equipment Type${counts.equipment_types !== 1 ? 's' : ''}`);
+      if (counts.equipment_completions > 0) items.push(`${counts.equipment_completions} Equipment Completion${counts.equipment_completions !== 1 ? 's' : ''}`);
+      if (counts.client_equipments > 0) items.push(`${counts.client_equipments} Client Equipment${counts.client_equipments !== 1 ? 's' : ''}`);
+      if (counts.notes > 0) items.push(`${counts.notes} Note${counts.notes !== 1 ? 's' : ''}`);
+      if (counts.attachments > 0) items.push(`${counts.attachments} Attachment${counts.attachments !== 1 ? 's' : ''}`);
+      if (counts.users > 0) items.push(`${counts.users} User${counts.users !== 1 ? 's' : ''} (will be unlinked from business)`);
+      
+      const totalCount = Object.values(counts).reduce((sum, count) => sum + count, 0);
+      
+      let message = `Are you sure you want to delete "${summary.business_name}"?\n\n`;
+      message += `This will permanently delete:\n`;
+      if (items.length > 0) {
+        items.forEach(item => {
+          message += `• ${item}\n`;
+        });
+      } else {
+        message += `• No associated data found\n`;
+      }
+      message += `\nTotal: ${totalCount} item${totalCount !== 1 ? 's' : ''} will be deleted.\n\n`;
+      message += `This action cannot be undone.`;
+      
+      if (!window.confirm(message)) return;
+      
       await apiCall(`/businesses/${businessId}`, { method: "DELETE" });
       await fetchBusinesses();
       if (onRefresh) onRefresh();

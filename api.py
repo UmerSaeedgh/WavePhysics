@@ -475,13 +475,125 @@ def list_deleted_records(
     
     return [DeletedRecordRead(**record) for record in deleted_records]
 
+@app.get("/businesses/{business_id}/deletion-summary")
+def get_business_deletion_summary(business_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Get a summary of all data that will be deleted with this business (super admin only)"""
+    business = db.execute("SELECT id, name FROM businesses WHERE id = ?", (business_id,)).fetchone()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    # Get all client IDs for this business
+    client_ids = [row['id'] for row in db.execute("SELECT id FROM clients WHERE business_id = ?", (business_id,)).fetchall()]
+    
+    # Get all site IDs for clients in this business
+    site_ids = []
+    if client_ids:
+        placeholders = ','.join('?' * len(client_ids))
+        site_ids = [row['id'] for row in db.execute(f"SELECT id FROM sites WHERE client_id IN ({placeholders})", client_ids).fetchall()]
+    
+    # Count direct relationships
+    clients_count = len(client_ids)
+    equipment_types_count = db.execute("SELECT COUNT(*) as count FROM equipment_types WHERE business_id = ?", (business_id,)).fetchone()['count']
+    users_count = db.execute("SELECT COUNT(*) as count FROM users WHERE business_id = ?", (business_id,)).fetchone()['count']
+    
+    # Count cascading relationships
+    sites_count = len(site_ids)
+    equipment_records_count = 0
+    equipment_completions_count = 0
+    client_equipments_count = 0
+    
+    if client_ids:
+        placeholders = ','.join('?' * len(client_ids))
+        equipment_records_count = db.execute(f"SELECT COUNT(*) as count FROM equipment_record WHERE client_id IN ({placeholders})", client_ids).fetchone()['count']
+        client_equipments_count = db.execute(f"SELECT COUNT(*) as count FROM client_equipments WHERE client_id IN ({placeholders})", client_ids).fetchone()['count']
+    
+    # Count equipment completions (through equipment_record)
+    if client_ids:
+        placeholders = ','.join('?' * len(client_ids))
+        equipment_record_ids = [row['id'] for row in db.execute(f"SELECT id FROM equipment_record WHERE client_id IN ({placeholders})", client_ids).fetchall()]
+        if equipment_record_ids:
+            ec_placeholders = ','.join('?' * len(equipment_record_ids))
+            equipment_completions_count = db.execute(f"SELECT COUNT(*) as count FROM equipment_completions WHERE equipment_record_id IN ({ec_placeholders})", equipment_record_ids).fetchone()['count']
+    
+    # Count indirect relationships (contact_links, notes, attachments)
+    contact_links_count = 0
+    notes_count = 0
+    attachments_count = 0
+    
+    if client_ids:
+        placeholders = ','.join('?' * len(client_ids))
+        # Contact links for clients
+        contact_links_count += db.execute(f"SELECT COUNT(*) as count FROM contact_links WHERE scope = 'CLIENT' AND scope_id IN ({placeholders})", client_ids).fetchone()['count']
+        # Notes for clients
+        notes_count += db.execute(f"SELECT COUNT(*) as count FROM notes WHERE scope = 'CLIENT' AND scope_id IN ({placeholders})", client_ids).fetchone()['count']
+        # Attachments for clients
+        attachments_count += db.execute(f"SELECT COUNT(*) as count FROM attachments WHERE scope = 'CLIENT' AND scope_id IN ({placeholders})", client_ids).fetchone()['count']
+    
+    if site_ids:
+        placeholders = ','.join('?' * len(site_ids))
+        # Contact links for sites
+        contact_links_count += db.execute(f"SELECT COUNT(*) as count FROM contact_links WHERE scope = 'SITE' AND scope_id IN ({placeholders})", site_ids).fetchone()['count']
+        # Notes for sites
+        notes_count += db.execute(f"SELECT COUNT(*) as count FROM notes WHERE scope = 'SITE' AND scope_id IN ({placeholders})", site_ids).fetchone()['count']
+        # Attachments for sites
+        attachments_count += db.execute(f"SELECT COUNT(*) as count FROM attachments WHERE scope = 'SITE' AND scope_id IN ({placeholders})", site_ids).fetchone()['count']
+    
+    # Count contacts that will be orphaned (contacts linked only to this business's clients/sites)
+    # This is complex, so we'll just count total contact_links
+    # Contacts themselves won't be deleted, but their links will be
+    
+    return {
+        "business_name": business['name'],
+        "counts": {
+            "customers": clients_count,
+            "sites": sites_count,
+            "contacts": contact_links_count,  # Number of contact links (not unique contacts)
+            "equipment": equipment_records_count,
+            "equipment_types": equipment_types_count,
+            "equipment_completions": equipment_completions_count,
+            "client_equipments": client_equipments_count,
+            "notes": notes_count,
+            "attachments": attachments_count,
+            "users": users_count
+        }
+    }
+
 @app.delete("/businesses/{business_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_business(business_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
-    """Delete a business (super admin only)"""
+    """Delete a business and all associated data (super admin only)"""
     business = db.execute("SELECT id FROM businesses WHERE id = ?", (business_id,)).fetchone()
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
     
+    # Get all client IDs for this business
+    client_ids = [row['id'] for row in db.execute("SELECT id FROM clients WHERE business_id = ?", (business_id,)).fetchall()]
+    
+    # Get all site IDs for clients in this business
+    site_ids = []
+    if client_ids:
+        placeholders = ','.join('?' * len(client_ids))
+        site_ids = [row['id'] for row in db.execute(f"SELECT id FROM sites WHERE client_id IN ({placeholders})", client_ids).fetchall()]
+    
+    # Delete indirect relationships that don't have foreign keys (contact_links, notes, attachments)
+    if client_ids:
+        placeholders = ','.join('?' * len(client_ids))
+        # Delete contact links for clients
+        db.execute(f"DELETE FROM contact_links WHERE scope = 'CLIENT' AND scope_id IN ({placeholders})", client_ids)
+        # Delete notes for clients
+        db.execute(f"DELETE FROM notes WHERE scope = 'CLIENT' AND scope_id IN ({placeholders})", client_ids)
+        # Delete attachments for clients
+        db.execute(f"DELETE FROM attachments WHERE scope = 'CLIENT' AND scope_id IN ({placeholders})", client_ids)
+    
+    if site_ids:
+        placeholders = ','.join('?' * len(site_ids))
+        # Delete contact links for sites
+        db.execute(f"DELETE FROM contact_links WHERE scope = 'SITE' AND scope_id IN ({placeholders})", site_ids)
+        # Delete notes for sites
+        db.execute(f"DELETE FROM notes WHERE scope = 'SITE' AND scope_id IN ({placeholders})", site_ids)
+        # Delete attachments for sites
+        db.execute(f"DELETE FROM attachments WHERE scope = 'SITE' AND scope_id IN ({placeholders})", site_ids)
+    
+    # Delete the business (CASCADE will handle: clients, equipment_types, and set users.business_id to NULL)
     db.execute("DELETE FROM businesses WHERE id = ?", (business_id,))
     db.commit()
     return None

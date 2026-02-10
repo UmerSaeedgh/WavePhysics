@@ -504,8 +504,12 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: "1rem" }}>
             <button className="secondary" onClick={fetchAllEquipments}>Refresh</button>
           </div>
-          {loading ? (
-            <p>Loading...</p>
+          {loading && allEquipments.length === 0 ? (
+            <div style={{ padding: "2rem" }}>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="skeleton skeleton-item" style={{ marginBottom: "1rem" }}></div>
+              ))}
+            </div>
           ) : allEquipments.length === 0 ? (
             <p className="empty">No equipments found</p>
           ) : filteredAndSortedEquipments.length === 0 ? (

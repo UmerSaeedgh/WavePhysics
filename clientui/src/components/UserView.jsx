@@ -14,6 +14,10 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
   const [usernamePassword, setUsernamePassword] = useState("");
   const [changingUsername, setChangingUsername] = useState(false);
   const [usernameSuccessMessage, setUsernameSuccessMessage] = useState("");
+  
+  // Collapsible sections state
+  const [showChangeUsername, setShowChangeUsername] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   async function handleChangePassword(e) {
     e.preventDefault();
@@ -104,11 +108,11 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
   return (
     <div>
       <div className="card">
-        <div className="card-header">
+        <div className="card-header" style={{ marginBottom: "0.5rem" }}>
           <h2>User Settings</h2>
         </div>
         
-        <nav className="tabs" style={{ marginBottom: "1rem", padding: "0 1rem", paddingTop: "1rem" }}>
+        <nav className="tabs" style={{ marginBottom: "1rem" }}>
           <button
             className={userTab === "settings" ? "active" : ""}
             onClick={() => setUserTab("settings")}
@@ -142,109 +146,235 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
               </div>
             </div>
 
-            <div style={{ borderTop: "1px solid #8193A4", paddingTop: "2rem" }}>
-              <h3>Change Username</h3>
-              {usernameSuccessMessage && (
-                <div style={{ 
-                  background: "rgba(215, 229, 216, 0.3)", 
-                  border: "1px solid #8193A4", 
-                  color: "#2D3234", 
-                  padding: "0.75rem 1rem", 
-                  borderRadius: "0.5rem", 
-                  marginBottom: "1rem" 
+            <div style={{ borderTop: "1px solid rgba(129, 147, 164, 0.2)", paddingTop: "2rem", marginTop: "2rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  cursor: "pointer",
+                  padding: "1rem 1.25rem",
+                  background: showChangeUsername ? "#ffffff" : "rgba(255, 255, 255, 0.6)",
+                  borderRadius: "0.5rem",
+                  border: showChangeUsername ? "1px solid rgba(129, 147, 164, 0.3)" : "1px solid rgba(129, 147, 164, 0.2)",
+                  boxShadow: showChangeUsername ? "0 2px 4px rgba(0, 0, 0, 0.05)" : "none",
+                  transition: "all 0.2s ease",
+                  userSelect: "none"
+                }}
+                onClick={() => setShowChangeUsername(!showChangeUsername)}
+                onMouseEnter={(e) => {
+                  if (!showChangeUsername) {
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.8)";
+                    e.currentTarget.style.borderColor = "rgba(129, 147, 164, 0.3)";
+                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.05)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!showChangeUsername) {
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.6)";
+                    e.currentTarget.style.borderColor = "rgba(129, 147, 164, 0.2)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }
+                }}
+              >
+                <span style={{ 
+                  transform: showChangeUsername ? "rotate(90deg)" : "rotate(0deg)", 
+                  transition: "transform 0.2s ease", 
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "20px",
+                  height: "20px",
+                  marginRight: "0.75rem",
+                  color: "#8193A4",
+                  fontSize: "0.75rem",
+                  flexShrink: 0
+                }}>▶</span>
+                <h3 style={{ 
+                  margin: 0, 
+                  fontSize: "1rem", 
+                  fontWeight: 600,
+                  color: "#2D3234",
+                  flex: 1
                 }}>
-                  {usernameSuccessMessage}
+                  Change Username
+                </h3>
+              </div>
+              {showChangeUsername && (
+                <div style={{ 
+                  padding: "1.5rem", 
+                  background: "#ffffff", 
+                  borderRadius: "0 0 0.5rem 0.5rem",
+                  border: "1px solid rgba(129, 147, 164, 0.3)",
+                  borderTop: "none",
+                  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.05)",
+                  marginTop: "-0.5rem"
+                }}>
+                  {usernameSuccessMessage && (
+                    <div style={{ 
+                      background: "rgba(215, 229, 216, 0.3)", 
+                      border: "1px solid #8193A4", 
+                      color: "#2D3234", 
+                      padding: "0.75rem 1rem", 
+                      borderRadius: "0.5rem", 
+                      marginBottom: "1rem" 
+                    }}>
+                      {usernameSuccessMessage}
+                    </div>
+                  )}
+                  <form onSubmit={handleChangeUsername} style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "400px", marginBottom: "2rem" }}>
+                    <label>
+                      New Username
+                      <input
+                        type="text"
+                        value={newUsername}
+                        onChange={(e) => setNewUsername(e.target.value)}
+                        placeholder={currentUser?.username}
+                        required
+                        style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                      />
+                    </label>
+                    <label>
+                      Current Password (required for security)
+                      <input
+                        type="password"
+                        value={usernamePassword}
+                        onChange={(e) => setUsernamePassword(e.target.value)}
+                        required
+                        style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="primary"
+                      disabled={changingUsername}
+                      style={{ alignSelf: "flex-start" }}
+                    >
+                      {changingUsername ? "Changing..." : "Change Username"}
+                    </button>
+                  </form>
                 </div>
               )}
-              <form onSubmit={handleChangeUsername} style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "400px", marginBottom: "2rem" }}>
-                <label>
-                  New Username
-                  <input
-                    type="text"
-                    value={newUsername}
-                    onChange={(e) => setNewUsername(e.target.value)}
-                    placeholder={currentUser?.username}
-                    required
-                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
-                  />
-                </label>
-                <label>
-                  Current Password (required for security)
-                  <input
-                    type="password"
-                    value={usernamePassword}
-                    onChange={(e) => setUsernamePassword(e.target.value)}
-                    required
-                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="primary"
-                  disabled={changingUsername}
-                  style={{ alignSelf: "flex-start" }}
-                >
-                  {changingUsername ? "Changing..." : "Change Username"}
-                </button>
-              </form>
             </div>
 
-            <div style={{ borderTop: "1px solid #8193A4", paddingTop: "2rem" }}>
-              <h3>Change Password</h3>
-              {successMessage && (
-                <div style={{ 
-                  background: "rgba(215, 229, 216, 0.3)", 
-                  border: "1px solid #8193A4", 
-                  color: "#2D3234", 
-                  padding: "0.75rem 1rem", 
-                  borderRadius: "0.5rem", 
-                  marginBottom: "1rem" 
+            <div style={{ marginTop: "1.5rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  cursor: "pointer",
+                  padding: "1rem 1.25rem",
+                  background: showChangePassword ? "#ffffff" : "rgba(255, 255, 255, 0.6)",
+                  borderRadius: "0.5rem",
+                  border: showChangePassword ? "1px solid rgba(129, 147, 164, 0.3)" : "1px solid rgba(129, 147, 164, 0.2)",
+                  boxShadow: showChangePassword ? "0 2px 4px rgba(0, 0, 0, 0.05)" : "none",
+                  transition: "all 0.2s ease",
+                  userSelect: "none"
+                }}
+                onClick={() => setShowChangePassword(!showChangePassword)}
+                onMouseEnter={(e) => {
+                  if (!showChangePassword) {
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.8)";
+                    e.currentTarget.style.borderColor = "rgba(129, 147, 164, 0.3)";
+                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.05)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!showChangePassword) {
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.6)";
+                    e.currentTarget.style.borderColor = "rgba(129, 147, 164, 0.2)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }
+                }}
+              >
+                <span style={{ 
+                  transform: showChangePassword ? "rotate(90deg)" : "rotate(0deg)", 
+                  transition: "transform 0.2s ease", 
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "20px",
+                  height: "20px",
+                  marginRight: "0.75rem",
+                  color: "#8193A4",
+                  fontSize: "0.75rem",
+                  flexShrink: 0
+                }}>▶</span>
+                <h3 style={{ 
+                  margin: 0, 
+                  fontSize: "1rem", 
+                  fontWeight: 600,
+                  color: "#2D3234",
+                  flex: 1
                 }}>
-                  {successMessage}
+                  Change Password
+                </h3>
+              </div>
+              {showChangePassword && (
+                <div style={{ 
+                  padding: "1.5rem", 
+                  background: "#ffffff", 
+                  borderRadius: "0 0 0.5rem 0.5rem",
+                  border: "1px solid rgba(129, 147, 164, 0.3)",
+                  borderTop: "none",
+                  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.05)",
+                  marginTop: "-0.5rem"
+                }}>
+                  {successMessage && (
+                    <div style={{ 
+                      background: "rgba(215, 229, 216, 0.3)", 
+                      border: "1px solid #8193A4", 
+                      color: "#2D3234", 
+                      padding: "0.75rem 1rem", 
+                      borderRadius: "0.5rem", 
+                      marginBottom: "1rem" 
+                    }}>
+                      {successMessage}
+                    </div>
+                  )}
+                  <form onSubmit={handleChangePassword} style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "400px" }}>
+                    <label>
+                      Current Password
+                      <input
+                        type="password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        required
+                        style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                      />
+                    </label>
+                    <label>
+                      New Password
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        required
+                        minLength={6}
+                        style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                      />
+                    </label>
+                    <label>
+                      Confirm New Password
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                        minLength={6}
+                        style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="primary"
+                      disabled={changing}
+                      style={{ alignSelf: "flex-start" }}
+                    >
+                      {changing ? "Changing..." : "Change Password"}
+                    </button>
+                  </form>
                 </div>
               )}
-              <form onSubmit={handleChangePassword} style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "400px" }}>
-                <label>
-                  Current Password
-                  <input
-                    type="password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    required
-                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
-                  />
-                </label>
-                <label>
-                  New Password
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    required
-                    minLength={6}
-                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
-                  />
-                </label>
-                <label>
-                  Confirm New Password
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                    minLength={6}
-                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="primary"
-                  disabled={changing}
-                  style={{ alignSelf: "flex-start" }}
-                >
-                  {changing ? "Changing..." : "Change Password"}
-                </button>
-              </form>
             </div>
 
             <div style={{ borderTop: "1px solid #8193A4", paddingTop: "2rem", marginTop: "2rem" }}>

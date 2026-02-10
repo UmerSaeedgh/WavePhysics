@@ -69,7 +69,7 @@ export default function ClientSitesView({ client, sites, clientEquipments, onRef
   return (
     <div>
       <div style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
-        <button className="secondary" onClick={onBack}>← Back to Clients</button>
+        <button className="secondary" onClick={onBack} style={{ padding: "0.5rem 0.75rem", minWidth: "auto" }}>←</button>
         <h2 style={{ margin: 0 }}>{client.name} - Sites</h2>
       </div>
 

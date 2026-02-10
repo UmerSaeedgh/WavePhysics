@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatDate } from "../utils/formatDate";
 
-export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue, onNavigateToAddEquipment, onRefreshCompletions, onRefreshAllCounts, onBack, initialClientId, initialSiteId }) {
+export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue, onNavigateToAddEquipment, onRefreshCompletions, onRefreshAllCounts, onBack, initialClientId, initialSiteId, onFilterChange, businesses }) {
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -39,31 +39,32 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
     setLoading(true);
     setError("");
     try {
-      // Fetch overdue items first (always show these)
-      const overdueData = await apiCall("/equipment-records/overdue").catch(() => []);
-      setOverdue(Array.isArray(overdueData) ? overdueData : []);
-
-      // Fetch upcoming items with date filter
-      let url = "/equipment-records/upcoming";
-      
+      // Calculate date range
       const startDate = upcomingDate || new Date().toISOString().split('T')[0];
       const start = new Date(startDate);
       const end = new Date(start);
       end.setDate(end.getDate() + (upcomingInterval * 7));
       const endDate = end.toISOString().split('T')[0];
       
-      url += `?start_date=${startDate}&end_date=${endDate}`;
+      const upcomingUrl = `/equipment-records/upcoming?start_date=${startDate}&end_date=${endDate}`;
       
-      const data = await apiCall(url).catch(() => []);
-      setUpcoming(Array.isArray(data) ? data : []);
-
-      // Fetch all equipment records to calculate remaining
-      const allRecords = await apiCall("/equipment-records?active_only=true").catch(() => []);
+      // Fetch all data in parallel for faster loading
+      const [overdueData, upcomingData, allRecords] = await Promise.all([
+        apiCall("/equipment-records/overdue").catch(() => []),
+        apiCall(upcomingUrl).catch(() => []),
+        apiCall("/equipment-records?active_only=true").catch(() => [])
+      ]);
+      
+      const overdueArray = Array.isArray(overdueData) ? overdueData : [];
+      const upcomingArray = Array.isArray(upcomingData) ? upcomingData : [];
       const allRecordsArray = Array.isArray(allRecords) ? allRecords : [];
       
+      setOverdue(overdueArray);
+      setUpcoming(upcomingArray);
+      
       // Get IDs of overdue and upcoming items
-      const overdueIds = new Set((Array.isArray(overdueData) ? overdueData : []).map(item => item.id));
-      const upcomingIds = new Set((Array.isArray(data) ? data : []).map(item => item.id));
+      const overdueIds = new Set(overdueArray.map(item => item.id));
+      const upcomingIds = new Set(upcomingArray.map(item => item.id));
       
       // Filter remaining: items that are not overdue and not upcoming
       const remainingItems = allRecordsArray.filter(item => {
@@ -478,6 +479,8 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
     }
     if (initialSiteId !== undefined) {
       setSelectedSiteId(initialSiteId || "");
+      // Expand remaining section when navigating from site click
+      setShowRemaining(true);
     }
     // Show filters if initial values are provided
     if (initialClientId || initialSiteId) {
@@ -504,11 +507,91 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
     }
   }
 
+  // Track if we've initialized to avoid redundant fetches
+  const [initialized, setInitialized] = useState(false);
+
+  // Initialize with existing data from props, only fetch if needed
   useEffect(() => {
-    fetchUpcoming();
-    fetchClients();
-    fetchEquipmentTypes();
+    if (!initialized) {
+      // Use existing data from props immediately
+      if (upcoming && upcoming.length > 0) {
+        setUpcoming(upcoming);
+      }
+      if (overdue && overdue.length > 0) {
+        setOverdue(overdue);
+      }
+      
+      // Fetch clients and equipment types for filters (needed for dropdowns)
+      // Only fetch if we don't have them yet
+      if (clients.length === 0) {
+        fetchClients();
+      }
+      if (equipmentTypes.length === 0) {
+        fetchEquipmentTypes();
+      }
+      
+      // Always fetch to calculate remaining items (even if we have upcoming/overdue from props)
+      // Remaining items need to be calculated from all records
+      fetchUpcoming();
+      
+      setInitialized(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialized]);
+
+  // Fetch data when date/interval changes (but only if initialized)
+  useEffect(() => {
+    if (initialized) {
+      fetchUpcoming();
+    }
   }, [upcomingDate, upcomingInterval]);
+
+  // Update filter info when filters change
+  useEffect(() => {
+    if (onFilterChange) {
+      const filterInfo = {
+        businessName: null,
+        clientName: null,
+        siteName: null,
+        equipmentTypeName: null
+      };
+
+      // Get client name and business name
+      if (selectedClientId) {
+        const client = clients.find(c => c.id === parseInt(selectedClientId));
+        if (client) {
+          filterInfo.clientName = client.name;
+          // Get business name from client's business_id
+          if (client.business_id && businesses) {
+            const business = businesses.find(b => b.id === client.business_id);
+            if (business) {
+              filterInfo.businessName = business.name;
+            }
+          }
+        }
+      }
+
+      // Get site name
+      if (selectedSiteId) {
+        const site = sites.find(s => s.id === parseInt(selectedSiteId));
+        if (site) {
+          filterInfo.siteName = site.name;
+        }
+      }
+
+      // Get equipment type name
+      if (selectedEquipmentTypeId) {
+        const equipmentType = equipmentTypes.find(t => t.id === parseInt(selectedEquipmentTypeId));
+        if (equipmentType) {
+          filterInfo.equipmentTypeName = equipmentType.name;
+        }
+      }
+
+      // Only send filter info if at least one filter is applied
+      const hasFilters = filterInfo.businessName || filterInfo.clientName || filterInfo.siteName || filterInfo.equipmentTypeName;
+      onFilterChange(hasFilters ? filterInfo : null);
+    }
+  }, [selectedClientId, selectedSiteId, selectedEquipmentTypeId, clients, sites, equipmentTypes, businesses, onFilterChange]);
 
   // Count active filters
   const activeFilterCount = [
@@ -524,18 +607,57 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   const filteredRemaining = filterAndSortItems(remaining);
   const totalFilteredCount = filteredOverdue.length + filteredUpcoming.length + (showRemaining ? filteredRemaining.length : 0);
 
-  if (loading) return <div className="card"><p>Loading...</p></div>;
+  // Show skeleton only on initial load when there's no data
+  const showSkeleton = loading && upcoming.length === 0 && overdue.length === 0;
+  
+  const LoadingSkeleton = () => (
+    <div className="card fade-in">
+      <div className="card-header">
+        <div className="skeleton skeleton-title"></div>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <div className="skeleton" style={{ width: "100px", height: "2rem", borderRadius: "0.5rem" }}></div>
+          <div className="skeleton" style={{ width: "80px", height: "2rem", borderRadius: "0.5rem" }}></div>
+        </div>
+      </div>
+      <div style={{ padding: "1rem" }}>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="skeleton skeleton-item"></div>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (showSkeleton) return <LoadingSkeleton />;
 
   return (
     <div>
       {onBack && (
         <div style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
-          <button className="secondary" onClick={onBack}>← Back to Clients</button>
+          <button className="secondary" onClick={onBack} style={{ padding: "0.5rem 0.75rem", minWidth: "auto" }}>←</button>
         </div>
       )}
-      <div className="card">
+      <div className={`card fade-in`} style={{ position: "relative" }}>
+        {loading && !showSkeleton && (
+          <div style={{ 
+            position: "absolute", 
+            top: "1rem", 
+            right: "1rem", 
+            zIndex: 10,
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            background: "rgba(255, 255, 255, 0.95)",
+            padding: "0.5rem 1rem",
+            borderRadius: "0.5rem",
+            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+            border: "1px solid rgba(129, 147, 164, 0.2)"
+          }}>
+            <div className="loading-spinner"></div>
+            <span style={{ fontSize: "0.875rem", color: "#8193A4", fontWeight: 500 }}>Loading...</span>
+          </div>
+        )}
         <div className="card-header">
-          <h2>Upcoming ({totalFilteredCount})</h2>
+          <h2>Upcoming ({loading ? "..." : totalFilteredCount})</h2>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button 
               className="secondary" 

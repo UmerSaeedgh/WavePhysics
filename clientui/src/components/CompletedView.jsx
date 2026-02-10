@@ -16,6 +16,13 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
   const [clients, setClients] = useState([]);
   const [sites, setSites] = useState([]);
   const [equipmentTypes, setEquipmentTypes] = useState([]);
+  
+  // History modal state
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [selectedEquipmentRecordId, setSelectedEquipmentRecordId] = useState(null);
+  const [selectedEquipmentName, setSelectedEquipmentName] = useState("");
+  const [historyCompletions, setHistoryCompletions] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   async function fetchCompletions() {
     setLoading(true);
@@ -76,6 +83,40 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
     }
   }
 
+  async function fetchHistoryForEquipment(equipmentRecordId, equipmentName, allCompletions = null) {
+    setLoadingHistory(true);
+    setError("");
+    try {
+      // If we already have all completions from grouping, use them
+      // Otherwise fetch from API
+      let historyData;
+      if (allCompletions && Array.isArray(allCompletions)) {
+        historyData = allCompletions;
+      } else {
+        const data = await apiCall(`/equipment-completions?equipment_record_id=${equipmentRecordId}`);
+        historyData = Array.isArray(data) ? data : [];
+      }
+      setHistoryCompletions(historyData);
+      setSelectedEquipmentRecordId(equipmentRecordId);
+      setSelectedEquipmentName(equipmentName);
+      setShowHistoryModal(true);
+    } catch (err) {
+      const errorMessage = err.message || "Failed to load completion history";
+      setError(errorMessage);
+      console.error("Error fetching completion history:", err);
+      setHistoryCompletions([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
+
+  function handleCloseHistoryModal() {
+    setShowHistoryModal(false);
+    setSelectedEquipmentRecordId(null);
+    setSelectedEquipmentName("");
+    setHistoryCompletions([]);
+  }
+
   useEffect(() => {
     if (!completions || completions.length === 0) {
       fetchCompletions();
@@ -84,9 +125,54 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
     fetchEquipmentTypes();
   }, []);
 
+  // Group completions by equipment_record_id and get the latest one for each
+  function groupCompletionsByEquipment(items) {
+    const grouped = {};
+    
+    items.forEach(item => {
+      const equipmentId = item.equipment_record_id;
+      if (!grouped[equipmentId]) {
+        grouped[equipmentId] = {
+          completions: [],
+          equipment_record_id: equipmentId,
+          equipment_name: item.equipment_name,
+          equipment_type_id: item.equipment_type_id,
+          equipment_type_name: item.equipment_type_name,
+          client_id: item.client_id,
+          client_name: item.client_name,
+          site_id: item.site_id,
+          site_name: item.site_name,
+          anchor_date: item.anchor_date
+        };
+      }
+      grouped[equipmentId].completions.push(item);
+    });
+    
+    // For each equipment, get the latest completion (most recent completed_at)
+    return Object.values(grouped).map(group => {
+      // Sort completions by completed_at descending to get the latest first
+      const sortedCompletions = [...group.completions].sort((a, b) => {
+        const dateA = new Date(a.completed_at).getTime();
+        const dateB = new Date(b.completed_at).getTime();
+        return dateB - dateA;
+      });
+      
+      const latestCompletion = sortedCompletions[0];
+      
+      return {
+        ...latestCompletion,
+        completion_count: group.completions.length,
+        all_completions: sortedCompletions // Keep all for history modal
+      };
+    });
+  }
+
   // Filter and sort function
   function filterAndSortItems(items) {
-    return items
+    // First group by equipment to get latest completion for each
+    const groupedItems = groupCompletionsByEquipment(items);
+    
+    return groupedItems
       .filter(item => {
         // Search by name
         if (searchTerm) {
@@ -163,7 +249,21 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
 
   const filteredCompletions = filterAndSortItems(completions);
 
-  if (loading) return <div className="card"><p>Loading...</p></div>;
+  // Show skeleton while loading
+  const LoadingSkeleton = () => (
+    <div className="card fade-in">
+      <div className="card-header">
+        <div className="skeleton skeleton-title"></div>
+      </div>
+      <div style={{ padding: "1rem" }}>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="skeleton skeleton-item"></div>
+        ))}
+      </div>
+    </div>
+  );
+  
+  if (loading && completions.length === 0) return <LoadingSkeleton />;
 
   return (
     <div>
@@ -370,10 +470,24 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
         ) : (
           <ul className="list">
             {filteredCompletions.map(completion => (
-              <li key={completion.id} className="list-item">
+              <li 
+                key={completion.equipment_record_id} 
+                className="list-item"
+                style={{ cursor: "pointer" }}
+                onClick={() => fetchHistoryForEquipment(
+                  completion.equipment_record_id, 
+                  completion.equipment_name,
+                  completion.all_completions
+                )}
+              >
                 <div className="list-main">
                   <div className="list-title">
                     {completion.equipment_name || 'Unknown'}
+                    {completion.completion_count > 1 && (
+                      <span style={{ marginLeft: "0.5rem", fontSize: "0.9rem", color: "#8193A4", fontWeight: "normal" }}>
+                        ({completion.completion_count} times)
+                      </span>
+                    )}
                   </div>
                   <div className="list-subtitle">
                     {completion.equipment_type_name && `Type: ${completion.equipment_type_name} • `}
@@ -390,6 +504,100 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
           </ul>
         )}
       </div>
+
+      {/* History Modal */}
+      {showHistoryModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(45, 50, 52, 0.9)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }} onClick={handleCloseHistoryModal}>
+          <div style={{
+            backgroundColor: "#D7E5D8",
+            padding: "2rem",
+            borderRadius: "0.5rem",
+            maxWidth: "800px",
+            width: "90%",
+            maxHeight: "80vh",
+            overflow: "auto",
+            color: "#2D3234"
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <h2 style={{ margin: 0, color: "#2D3234" }}>
+                Completion History: {selectedEquipmentName}
+              </h2>
+              <button 
+                onClick={handleCloseHistoryModal} 
+                style={{ 
+                  color: "#2D3234", 
+                  border: "1px solid #8193A4",
+                  background: "transparent",
+                  padding: "0.5rem 1rem",
+                  borderRadius: "0.25rem",
+                  cursor: "pointer"
+                }}
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            {loadingHistory ? (
+              <div style={{ textAlign: "center", padding: "2rem" }}>
+                <p>Loading history...</p>
+              </div>
+            ) : historyCompletions.length === 0 ? (
+              <p className="empty">No completion history found for this equipment</p>
+            ) : (
+              <div>
+                <p style={{ marginBottom: "1rem", color: "#2D3234", fontSize: "0.9rem" }}>
+                  Total completions: {historyCompletions.length}
+                </p>
+                <ul className="list" style={{ maxHeight: "60vh", overflowY: "auto" }}>
+                  {historyCompletions.map((completion, index) => (
+                    <li key={completion.id} className="list-item">
+                      <div className="list-main">
+                        <div className="list-title" style={{ fontSize: "1rem", fontWeight: "600" }}>
+                          Completion #{historyCompletions.length - index}
+                        </div>
+                        <div className="list-subtitle" style={{ marginTop: "0.5rem" }}>
+                          <div style={{ marginBottom: "0.25rem" }}>
+                            <strong>Due Date:</strong> {formatDate(completion.due_date)}
+                          </div>
+                          <div style={{ marginBottom: "0.25rem" }}>
+                            <strong>Completed:</strong> {formatDate(completion.completed_at)}
+                          </div>
+                          {completion.interval_weeks && (
+                            <div style={{ marginBottom: "0.25rem" }}>
+                              <strong>Interval:</strong> {completion.interval_weeks} week{completion.interval_weeks !== 1 ? 's' : ''}
+                            </div>
+                          )}
+                          {completion.completed_by_user && (
+                            <div style={{ marginBottom: "0.25rem" }}>
+                              <strong>Completed By:</strong> {completion.completed_by_user}
+                            </div>
+                          )}
+                          {completion.anchor_date && (
+                            <div style={{ marginBottom: "0.25rem" }}>
+                              <strong>Previous Anchor Date:</strong> {formatDate(completion.anchor_date)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
