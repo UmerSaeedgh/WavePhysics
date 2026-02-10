@@ -41,6 +41,8 @@ function App() {
   const [scrollToEquipmentId, setScrollToEquipmentId] = useState(null); // Equipment record ID to scroll to in all-equipments view
   const [allEquipmentsInitialClientId, setAllEquipmentsInitialClientId] = useState(null); // Initial client filter for all-equipments view
   const [allEquipmentsInitialSiteId, setAllEquipmentsInitialSiteId] = useState(null); // Initial site filter for all-equipments view
+  const [upcomingInitialClientId, setUpcomingInitialClientId] = useState(null); // Initial client filter for upcoming view
+  const [upcomingInitialSiteId, setUpcomingInitialSiteId] = useState(null); // Initial site filter for upcoming view
   const [clients, setClients] = useState([]);
   const [sites, setSites] = useState([]);
   const [contacts, setContacts] = useState([]);
@@ -744,12 +746,12 @@ function App() {
             onRefreshAllCounts={refreshAllCounts}
             onRefreshEquipments={() => fetchClientEquipments(selectedClient.id)}
             onSiteClick={(site) => {
-              // Navigate to all-equipments view with client and site filters applied
-              setAllEquipmentsInitialClientId(selectedClient.id.toString());
-              setAllEquipmentsInitialSiteId(site.id.toString());
+              // Navigate to upcoming view with client and site filters applied
+              setUpcomingInitialClientId(selectedClient.id.toString());
+              setUpcomingInitialSiteId(site.id.toString());
               // Set selected site for context display
               setSelectedSite(site);
-              setView("all-equipments");
+              setView("upcoming");
             }}
             onAddSite={() => {
               setSiteToEdit(null);
@@ -886,6 +888,8 @@ function App() {
             currentUser={currentUser}
             overdue={overdue}
             setOverdue={setOverdue}
+            initialClientId={upcomingInitialClientId}
+            initialSiteId={upcomingInitialSiteId}
             onBack={() => {
               if (selectedClient) {
                 // Return to client sites page

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { formatDate } from "../utils/formatDate";
 
-export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue, onNavigateToAddEquipment, onRefreshCompletions, onRefreshAllCounts, onBack }) {
+export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue, onNavigateToAddEquipment, onRefreshCompletions, onRefreshAllCounts, onBack, initialClientId, initialSiteId }) {
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedClientId, setSelectedClientId] = useState("");
-  const [selectedSiteId, setSelectedSiteId] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState(initialClientId || "");
+  const [selectedSiteId, setSelectedSiteId] = useState(initialSiteId || "");
   const [selectedEquipmentTypeId, setSelectedEquipmentTypeId] = useState("");
   const [sortBy, setSortBy] = useState("due_date"); // "name" or "due_date"
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
@@ -19,6 +19,8 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   // Remaining equipment state
   const [remaining, setRemaining] = useState([]);
   const [showRemaining, setShowRemaining] = useState(false);
+  const [showOverdue, setShowOverdue] = useState(true);
+  const [showUpcoming, setShowUpcoming] = useState(true);
 
   // Notes editing state
   const [editingNotesId, setEditingNotesId] = useState(null);
@@ -469,6 +471,20 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
     }
   }
 
+  // Update filters when initial props change (e.g., when navigating from ClientSitesView)
+  useEffect(() => {
+    if (initialClientId !== undefined) {
+      setSelectedClientId(initialClientId || "");
+    }
+    if (initialSiteId !== undefined) {
+      setSelectedSiteId(initialSiteId || "");
+    }
+    // Show filters if initial values are provided
+    if (initialClientId || initialSiteId) {
+      setShowFilters(true);
+    }
+  }, [initialClientId, initialSiteId]);
+
   // Fetch sites when client is selected
   useEffect(() => {
     if (selectedClientId) {
@@ -771,18 +787,66 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
           <div>
             {filteredOverdue.length > 0 && (
               <div>
-                <h3 style={{ padding: "1rem 1rem 0.5rem 1rem", margin: 0, fontSize: "1rem", color: "#d32f2f", fontWeight: "bold" }}>
-                  Overdue ({filteredOverdue.length})
-                </h3>
-                {renderEquipmentList(overdue, "overdue", true)}
+                <div 
+                  style={{ 
+                    padding: "1rem", 
+                    margin: 0, 
+                    fontSize: "1rem", 
+                    color: "#d32f2f",
+                    fontWeight: "bold",
+                    cursor: "pointer",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    backgroundColor: showOverdue ? "rgba(211, 47, 47, 0.05)" : "transparent",
+                    transition: "background-color 0.2s ease"
+                  }}
+                  onClick={() => setShowOverdue(!showOverdue)}
+                >
+                  <h3 style={{ margin: 0, fontSize: "1rem", color: "#d32f2f", fontWeight: "bold" }}>
+                    Overdue ({filteredOverdue.length})
+                  </h3>
+                  <span style={{ fontSize: "0.875rem", color: "#d32f2f" }}>
+                    {showOverdue ? "▼" : "▶"}
+                  </span>
+                </div>
+                {showOverdue && (
+                  <div>
+                    {renderEquipmentList(overdue, "overdue", true)}
+                  </div>
+                )}
               </div>
             )}
             {filteredUpcoming.length > 0 && (
               <div>
-                <h3 style={{ padding: "1rem 1rem 0.5rem 1rem", margin: 0, fontSize: "1rem", color: "#2D3234" }}>
-                  Upcoming ({filteredUpcoming.length})
-                </h3>
-                {renderEquipmentList(upcoming, "planned", false)}
+                <div 
+                  style={{ 
+                    padding: "1rem", 
+                    margin: 0, 
+                    fontSize: "1rem", 
+                    color: "#2D3234",
+                    cursor: "pointer",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    borderTop: filteredOverdue.length > 0 ? "1px solid #ddd" : "none",
+                    backgroundColor: showUpcoming ? "rgba(129, 147, 164, 0.05)" : "transparent",
+                    transition: "background-color 0.2s ease"
+                  }}
+                  onClick={() => setShowUpcoming(!showUpcoming)}
+                >
+                  <h3 style={{ margin: 0, fontSize: "1rem", color: "#2D3234" }}>
+                    Upcoming ({filteredUpcoming.length})
+                  </h3>
+                  <span style={{ fontSize: "0.875rem", color: "#8193A4" }}>
+                    {showUpcoming ? "▼" : "▶"}
+                  </span>
+                </div>
+                {showUpcoming && (
+                  <div>
+                    {renderEquipmentList(upcoming, "planned", false)}
+                  </div>
+                )}
               </div>
             )}
             {filteredRemaining.length > 0 && (
