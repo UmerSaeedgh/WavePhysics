@@ -27,7 +27,19 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!authToken);
   const [loginTime, setLoginTime] = useState(null); // Track when user logged in
 
-  const [view, setView] = useState("clients"); // "clients", "client-sites", "all-equipments", "upcoming", "overdue", "completed", "admin", "user", "add-equipment", "edit-client", "edit-site", "edit-contact"
+  // Initialize view from URL hash or default to "clients"
+  const getViewFromHash = () => {
+    const hash = window.location.hash.slice(1); // Remove #
+    const validViews = ["clients", "client-sites", "all-equipments", "upcoming", "overdue", "completed", "admin", "user", "add-equipment", "edit-client", "edit-site", "edit-contact", "deleted-records"];
+    return validViews.includes(hash) ? hash : "clients";
+  };
+
+  const [view, setView] = useState(() => {
+    // Check authToken directly since isAuthenticated might not be initialized yet
+    const token = localStorage.getItem("authToken");
+    if (!token) return "clients";
+    return getViewFromHash();
+  }); // "clients", "client-sites", "all-equipments", "upcoming", "overdue", "completed", "admin", "user", "add-equipment", "edit-client", "edit-site", "edit-contact"
   const [equipmentToEdit, setEquipmentToEdit] = useState(null); // Equipment record to edit when navigating to add-equipment page
   const [initialClientIdForEquipment, setInitialClientIdForEquipment] = useState(null); // Initial client ID when adding new equipment from filtered view
   const [initialSiteIdForEquipment, setInitialSiteIdForEquipment] = useState(null); // Initial site ID when adding new equipment from filtered view
@@ -66,6 +78,36 @@ function App() {
     return new Date().toISOString().split('T')[0];
   });
   const [upcomingInterval, setUpcomingInterval] = useState(2); // Default to 2 weeks
+
+  // Sync view with URL hash and handle browser back/forward buttons
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Initialize URL hash if missing
+    if (!window.location.hash) {
+      window.history.replaceState({ view: "clients" }, "", "#clients");
+      return;
+    }
+
+    // Update URL hash when view changes programmatically (not from popstate)
+    const currentHash = window.location.hash.slice(1);
+    if (currentHash !== view) {
+      window.history.pushState({ view }, "", `#${view}`);
+    }
+
+    // Handle browser back/forward buttons
+    const handlePopState = (event) => {
+      const newView = getViewFromHash();
+      if (newView !== view) {
+        setView(newView);
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [view, isAuthenticated]);
 
   useEffect(() => {
     // Only fetch if authenticated and data hasn't been loaded yet

@@ -120,30 +120,30 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
   doc.text(`Generated: ${formatDateForPDF(new Date().toISOString())}`, headerRightX, yPos + 2, { align: 'right' });
   
   // Title: Equipment Report (centered)
-  yPos = businessNameY + 10;
-  doc.setFontSize(18);
+  yPos = businessNameY + 12;
+  doc.setFontSize(20);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
   doc.text('Equipment Report', pageWidth / 2, yPos, { align: 'center' });
   
-  yPos += 10;
+  yPos += 14;
 
   // ========== SECTION 1: EQUIPMENT OVERVIEW ==========
   const section1StartY = yPos;
-  const section1Height = 48;
+  const section1Height = 55;
   drawSectionBackground(yPos - 2, section1Height);
   
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
   doc.text('Equipment Overview', margin, yPos);
-  yPos += 7;
+  yPos += 9;
 
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   const col1X = margin + 2;
   const col2X = pageWidth / 2 + 2;
   const labelWidth = 42;
   const valueOffset = 45;
-  const rowHeight = 4.5;
+  const rowHeight = 5.5;
   let col1Y = yPos;
   let col2Y = yPos;
 
@@ -166,7 +166,7 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
     const maxValueWidth = col2X - col1X - valueOffset;
     const valueLines = doc.splitTextToSize(value, maxValueWidth);
     doc.text(valueLines, col1X + valueOffset, col1Y);
-    col1Y += Math.max(valueLines.length * 3.5, rowHeight);
+    col1Y += Math.max(valueLines.length * 4, rowHeight);
   });
 
   // Column 2 (last 4 items)
@@ -177,30 +177,30 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
     const maxValueWidth = pageWidth - margin - col2X - valueOffset;
     const valueLines = doc.splitTextToSize(value, maxValueWidth);
     doc.text(valueLines, col2X + valueOffset, col2Y);
-    col2Y += Math.max(valueLines.length * 3.5, rowHeight);
+    col2Y += Math.max(valueLines.length * 4, rowHeight);
   });
 
   // Notes (full width, below columns)
   if (equipment.notes) {
-    const notesY = Math.max(col1Y, col2Y) + 2;
+    const notesY = Math.max(col1Y, col2Y) + 3;
     doc.setFont('helvetica', 'bold');
     doc.text('Notes:', margin + 2, notesY);
     doc.setFont('helvetica', 'normal');
     const notesLines = doc.splitTextToSize(equipment.notes, pageWidth - 2 * margin - 4);
-    doc.text(notesLines, margin + 2, notesY + 3.5);
+    doc.text(notesLines, margin + 2, notesY + 4);
   }
 
-  yPos = section1StartY + section1Height + 5;
+  yPos = section1StartY + section1Height + 8;
 
   // ========== SECTION 2: CLIENT & SITE INFORMATION ==========
   const section2StartY = yPos;
-  const section2Height = 40;
+  const section2Height = 48;
   drawSectionBackground(yPos - 2, section2Height);
   
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
   doc.text('Client & Site Information', margin, yPos);
-  yPos += 7;
+  yPos += 9;
 
   // Client Information (left side)
   const clientCardX = margin + 2;
@@ -208,12 +208,12 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
   const siteCardX = clientCardX + cardWidth + 8;
   const labelOffset = 20;
 
-  doc.setFontSize(9);
+  doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.text('Client Information', clientCardX, yPos);
-  let clientY = yPos + 5;
+  let clientY = yPos + 6;
 
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
 
   if (equipment.client_name) {
@@ -222,7 +222,7 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
     doc.setFont('helvetica', 'normal');
     const nameLines = doc.splitTextToSize(equipment.client_name, cardWidth - labelOffset);
     doc.text(nameLines, clientCardX + labelOffset, clientY);
-    clientY += Math.max(nameLines.length * 3.2, 4);
+    clientY += Math.max(nameLines.length * 3.8, 5);
   }
 
   if (equipment.client_address) {
@@ -231,7 +231,7 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
     doc.setFont('helvetica', 'normal');
     const addrLines = doc.splitTextToSize(equipment.client_address, cardWidth - labelOffset);
     doc.text(addrLines, clientCardX + labelOffset, clientY);
-    clientY += Math.max(addrLines.length * 3.2, 4);
+    clientY += Math.max(addrLines.length * 3.8, 5);
   }
 
   if (equipment.client_billing_info) {
@@ -240,26 +240,26 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
     doc.setFont('helvetica', 'normal');
     const billingLines = doc.splitTextToSize(equipment.client_billing_info, cardWidth - labelOffset);
     doc.text(billingLines, clientCardX + labelOffset, clientY);
-    clientY += Math.max(billingLines.length * 3.2, 4);
+    clientY += Math.max(billingLines.length * 3.8, 5);
   }
 
   if (equipment.client_notes) {
     doc.setFont('helvetica', 'bold');
     doc.text('Notes:', clientCardX, clientY);
-    clientY += 3.5;
+    clientY += 4;
     doc.setFont('helvetica', 'normal');
     const notesLines = doc.splitTextToSize(equipment.client_notes, cardWidth - 2);
     doc.text(notesLines, clientCardX, clientY);
-    clientY += notesLines.length * 3.2;
+    clientY += notesLines.length * 3.8;
   }
 
   // Site Information (right side)
-  let siteY = yPos + 5;
-  doc.setFontSize(9);
+  let siteY = yPos + 6;
+  doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.text('Site Information', siteCardX, yPos);
   
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
 
   if (equipment.site_name) {
@@ -268,7 +268,7 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
     doc.setFont('helvetica', 'normal');
     const nameLines = doc.splitTextToSize(equipment.site_name, cardWidth - labelOffset);
     doc.text(nameLines, siteCardX + labelOffset, siteY);
-    siteY += Math.max(nameLines.length * 3.2, 4);
+    siteY += Math.max(nameLines.length * 3.8, 5);
   }
 
   if (equipment.site_address) {
@@ -277,7 +277,7 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
     doc.setFont('helvetica', 'normal');
     const addrLines = doc.splitTextToSize(equipment.site_address, cardWidth - labelOffset);
     doc.text(addrLines, siteCardX + labelOffset, siteY);
-    siteY += Math.max(addrLines.length * 3.2, 4);
+    siteY += Math.max(addrLines.length * 3.8, 5);
   }
 
   if (equipment.site_timezone) {
@@ -285,39 +285,39 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
     doc.text('Timezone:', siteCardX, siteY);
     doc.setFont('helvetica', 'normal');
     doc.text(equipment.site_timezone, siteCardX + labelOffset, siteY);
-    siteY += 4;
+    siteY += 5;
   }
 
   if (equipment.site_notes) {
     doc.setFont('helvetica', 'bold');
     doc.text('Notes:', siteCardX, siteY);
-    siteY += 3.5;
+    siteY += 4;
     doc.setFont('helvetica', 'normal');
     const notesLines = doc.splitTextToSize(equipment.site_notes, cardWidth - 2);
     doc.text(notesLines, siteCardX, siteY);
-    siteY += notesLines.length * 3.2;
+    siteY += notesLines.length * 3.8;
   }
 
-  yPos = section2StartY + section2Height + 5;
+  yPos = section2StartY + section2Height + 8;
 
   // ========== SECTION 3: TESTING HISTORY ==========
   const section3StartY = yPos;
   const remainingSpace = pageHeight - yPos - 20; // Leave space for footer
   
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
   doc.text('Testing History', margin, yPos);
-  yPos += 7;
+  yPos += 9;
 
   if (!completions || completions.length === 0) {
-    doc.setFontSize(9);
+    doc.setFontSize(10);
     doc.setFont('helvetica', 'italic');
     doc.setTextColor(120, 120, 120);
     doc.text('This equipment has not been tested so far.', margin, yPos);
     doc.setTextColor(0, 0, 0);
   } else {
     // Table header
-    doc.setFontSize(8);
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     const tableTopY = yPos;
     const colWidths = [10, 42, 42, 28, 38];
@@ -329,18 +329,18 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
       doc.text(header, xPos, headerY);
       xPos += colWidths[index];
     });
-    yPos += 4.5;
+    yPos += 5.5;
 
     // Draw header underline
     doc.setLineWidth(0.3);
     doc.setDrawColor(200, 200, 200);
     doc.line(margin + 2, yPos - 1, pageWidth - margin - 2, yPos - 1);
-    yPos += 2;
+    yPos += 3;
 
     // Table rows
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    const maxRows = Math.floor((remainingSpace - 15) / 4.5); // Calculate max rows that fit
+    doc.setFontSize(9);
+    const maxRows = Math.floor((remainingSpace - 15) / 5.5); // Calculate max rows that fit
     const rowsToShow = Math.min(completions.length, maxRows);
     
     completions.slice(0, rowsToShow).forEach((completion, index) => {
@@ -358,13 +358,13 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
         doc.text(cellLines, xPos, yPos);
         xPos += colWidths[cellIndex];
       });
-      yPos += 4.5;
+      yPos += 5.5;
     });
 
     // Summary
-    yPos += 2;
+    yPos += 3;
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
+    doc.setFontSize(10);
     doc.text(`Total Completions: ${completions.length}`, margin, yPos);
     
     if (completions.length > rowsToShow) {
