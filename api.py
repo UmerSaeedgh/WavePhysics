@@ -601,14 +601,31 @@ def delete_business(business_id: int, current_user: dict = Depends(get_current_s
 # User Management Endpoints (Admin only)
 @app.get("/users", response_model=List[UserRead])
 def list_users(current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
-    """List all users (admin only)"""
-    rows = db.execute(
-        """SELECT u.id, u.username, u.is_admin, u.is_super_admin, u.created_at, 
-                  u.business_id, b.name as business_name
-           FROM users u
-           LEFT JOIN businesses b ON u.business_id = b.id
-           ORDER BY u.created_at DESC"""
-    ).fetchall()
+    """List all users (admin only). Super admin can see all users, regular admin only sees users from their business."""
+    is_super_admin = current_user.get("is_super_admin")
+    
+    if is_super_admin:
+        # Super admin can see all users
+        rows = db.execute(
+            """SELECT u.id, u.username, u.is_admin, u.is_super_admin, u.created_at, 
+                      u.business_id, b.name as business_name
+               FROM users u
+               LEFT JOIN businesses b ON u.business_id = b.id
+               ORDER BY u.created_at DESC"""
+        ).fetchall()
+    else:
+        # Regular admin can only see users from their business
+        business_id = get_business_id(current_user)
+        rows = db.execute(
+            """SELECT u.id, u.username, u.is_admin, u.is_super_admin, u.created_at, 
+                      u.business_id, b.name as business_name
+               FROM users u
+               LEFT JOIN businesses b ON u.business_id = b.id
+               WHERE u.business_id = ?
+               ORDER BY u.created_at DESC""",
+            (business_id,)
+        ).fetchall()
+    
     return [UserRead(**dict(row)) for row in rows]
 
 @app.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
@@ -641,18 +658,32 @@ def create_user(payload: UserCreate, current_user: dict = Depends(get_current_ad
 
 @app.delete("/users/{user_id}")
 def delete_user(user_id: int, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
-    """Delete a user (admin only)"""
+    """Delete a user (admin only). Super admin can delete any user, regular admin can only delete users from their business."""
     # Prevent deleting yourself
     if user_id == current_user["user_id"]:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
     
-    # Check if user is a super admin and prevent deletion
-    user = db.execute("SELECT id, is_super_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+    # Get user details
+    user = db.execute("SELECT id, is_super_admin, business_id FROM users WHERE id = ?", (user_id,)).fetchone()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
+    # Prevent deleting super admin users
     if user.get("is_super_admin") == 1 or user.get("is_super_admin") is True:
         raise HTTPException(status_code=400, detail="Cannot delete super admin users")
+    
+    # Check business authorization: regular admins can only delete users from their business
+    is_super_admin = current_user.get("is_super_admin")
+    if not is_super_admin:
+        admin_business_id = get_business_id(current_user)
+        user_business_id = user.get("business_id")
+        
+        # Verify user belongs to the same business as the admin
+        if user_business_id != admin_business_id:
+            raise HTTPException(
+                status_code=403, 
+                detail="You can only delete users from your own business"
+            )
     
     result = db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     db.commit()
@@ -1217,13 +1248,40 @@ def create_site(payload: SiteCreate, current_user: dict = Depends(get_current_us
 
 @app.put("/sites/{site_id}", response_model=SiteRead)
 def update_site(site_id: int, payload: SiteUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    business_id = get_business_id(current_user)
-    row = db.execute(
-        """SELECT s.id FROM sites s 
-           JOIN clients c ON s.client_id = c.id 
-           WHERE s.id = ? AND c.business_id = ?""",
-        (site_id, business_id)
-    ).fetchone()
+    is_super_admin = current_user.get("is_super_admin")
+    # For super admins, business_id can be None (viewing all businesses)
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+    
+    # Verify site exists and belongs to business (and is not deleted)
+    if is_super_admin:
+        if business_id is None:
+            # Super admin viewing all businesses - allow updating any site (including deleted for restore)
+            row = db.execute(
+                """SELECT s.id FROM sites s 
+                   JOIN clients c ON s.client_id = c.id 
+                   WHERE s.id = ?""",
+                (site_id,)
+            ).fetchone()
+        else:
+            # Super admin viewing specific business - exclude deleted records
+            row = db.execute(
+                """SELECT s.id FROM sites s 
+                   JOIN clients c ON s.client_id = c.id 
+                   WHERE s.id = ? AND c.business_id = ? AND s.deleted_at IS NULL""",
+                (site_id, business_id)
+            ).fetchone()
+    else:
+        # Regular user - must filter by business_id and exclude deleted
+        row = db.execute(
+            """SELECT s.id FROM sites s 
+               JOIN clients c ON s.client_id = c.id 
+               WHERE s.id = ? AND c.business_id = ? AND s.deleted_at IS NULL""",
+            (site_id, business_id)
+        ).fetchone()
+    
     if row is None:
         raise HTTPException(status_code=404, detail="Site not found")
 
@@ -1872,6 +1930,7 @@ class EquipmentRecordCreate(BaseModel):
     site_id: int
     equipment_type_id: int
     equipment_name: str
+    make_model_serial: Optional[str] = None
     anchor_date: str  # YYYY-MM-DD
     due_date: Optional[str] = None  # YYYY-MM-DD
     interval_weeks: int = 52
@@ -1885,6 +1944,7 @@ class EquipmentRecordUpdate(BaseModel):
     site_id: Optional[int] = None
     equipment_type_id: Optional[int] = None
     equipment_name: Optional[str] = None
+    make_model_serial: Optional[str] = None
     anchor_date: Optional[str] = None
     due_date: Optional[str] = None
     interval_weeks: Optional[int] = None
@@ -1900,6 +1960,7 @@ class EquipmentRecordRead(BaseModel):
     site_id: int
     equipment_type_id: int
     equipment_name: str
+    make_model_serial: Optional[str] = None
     anchor_date: str
     due_date: Optional[str] = None
     interval_weeks: int
@@ -1908,8 +1969,15 @@ class EquipmentRecordRead(BaseModel):
     notes: Optional[str] = None
     timezone: Optional[str] = None
     client_name: Optional[str] = None
+    client_address: Optional[str] = None
+    client_billing_info: Optional[str] = None
+    client_notes: Optional[str] = None
     site_name: Optional[str] = None
+    site_address: Optional[str] = None
+    site_timezone: Optional[str] = None
+    site_notes: Optional[str] = None
     equipment_type_name: Optional[str] = None
+    business_name: Optional[str] = None
 
 
 @app.get("/equipment-records", response_model=List[EquipmentRecordRead])
@@ -1928,15 +1996,23 @@ def list_equipment_records(
         business_id = get_business_id(current_user)
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                      er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
                       c.name as client_name,
+                      c.address as client_address,
+                      c.billing_info as client_billing_info,
+                      c.notes as client_notes,
                       s.name as site_name,
-                      et.name as equipment_type_name
+                      s.address as site_address,
+                      s.timezone as site_timezone,
+                      s.notes as site_notes,
+                      et.name as equipment_type_name,
+                      b.name as business_name
                FROM equipment_record er
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+               LEFT JOIN businesses b ON c.business_id = b.id
                WHERE er.deleted_at IS NULL"""
     params = []
     
@@ -2010,15 +2086,23 @@ def get_upcoming_equipment_records(
         business_id = get_business_id(current_user)
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                      er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
                       c.name as client_name,
+                      c.address as client_address,
+                      c.billing_info as client_billing_info,
+                      c.notes as client_notes,
                       s.name as site_name,
-                      et.name as equipment_type_name
+                      s.address as site_address,
+                      s.timezone as site_timezone,
+                      s.notes as site_notes,
+                      et.name as equipment_type_name,
+                      b.name as business_name
                FROM equipment_record er
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+               LEFT JOIN businesses b ON c.business_id = b.id
                WHERE er.deleted_at IS NULL
                  AND er.active = 1 
                  AND (er.due_date IS NOT NULL AND er.due_date >= ? AND er.due_date <= ?)"""
@@ -2057,15 +2141,23 @@ def get_overdue_equipment_records(
         business_id = get_business_id(current_user)
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                      er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
                       c.name as client_name,
+                      c.address as client_address,
+                      c.billing_info as client_billing_info,
+                      c.notes as client_notes,
                       s.name as site_name,
-                      et.name as equipment_type_name
+                      s.address as site_address,
+                      s.timezone as site_timezone,
+                      s.notes as site_notes,
+                      et.name as equipment_type_name,
+                      b.name as business_name
                FROM equipment_record er
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+               LEFT JOIN businesses b ON c.business_id = b.id
                WHERE er.deleted_at IS NULL
                  AND er.active = 1 
                  AND er.due_date IS NOT NULL 
@@ -2105,15 +2197,23 @@ def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(
             # Super admin viewing all businesses - allow access to any equipment record
             row = db.execute(
                 """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                          er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                          er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                           er.active, er.notes, er.timezone,
                           c.name as client_name,
+                          c.address as client_address,
+                          c.billing_info as client_billing_info,
+                          c.notes as client_notes,
                           s.name as site_name,
-                          et.name as equipment_type_name
+                          s.address as site_address,
+                          s.timezone as site_timezone,
+                          s.notes as site_notes,
+                          et.name as equipment_type_name,
+                          b.name as business_name
                    FROM equipment_record er
                    LEFT JOIN clients c ON er.client_id = c.id
                    LEFT JOIN sites s ON er.site_id = s.id
                    LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+                   LEFT JOIN businesses b ON c.business_id = b.id
                    WHERE er.id = ?""",
                 (equipment_record_id,),
             ).fetchone()
@@ -2121,15 +2221,23 @@ def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(
             # Super admin viewing specific business
             row = db.execute(
                 """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                          er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                          er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                           er.active, er.notes, er.timezone,
                           c.name as client_name,
+                          c.address as client_address,
+                          c.billing_info as client_billing_info,
+                          c.notes as client_notes,
                           s.name as site_name,
-                          et.name as equipment_type_name
+                          s.address as site_address,
+                          s.timezone as site_timezone,
+                          s.notes as site_notes,
+                          et.name as equipment_type_name,
+                          b.name as business_name
                    FROM equipment_record er
                    LEFT JOIN clients c ON er.client_id = c.id
                    LEFT JOIN sites s ON er.site_id = s.id
                    LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+                   LEFT JOIN businesses b ON c.business_id = b.id
                    WHERE er.id = ? AND c.business_id = ?""",
                 (equipment_record_id, business_id),
             ).fetchone()
@@ -2137,15 +2245,23 @@ def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(
         # Regular user - must filter by business_id and exclude deleted
         row = db.execute(
             """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                      er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
                       c.name as client_name,
+                      c.address as client_address,
+                      c.billing_info as client_billing_info,
+                      c.notes as client_notes,
                       s.name as site_name,
-                      et.name as equipment_type_name
+                      s.address as site_address,
+                      s.timezone as site_timezone,
+                      s.notes as site_notes,
+                      et.name as equipment_type_name,
+                      b.name as business_name
                FROM equipment_record er
                LEFT JOIN clients c ON er.client_id = c.id
                LEFT JOIN sites s ON er.site_id = s.id
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+               LEFT JOIN businesses b ON c.business_id = b.id
                WHERE er.id = ? AND c.business_id = ? AND er.deleted_at IS NULL""",
             (equipment_record_id, business_id),
         ).fetchone()
@@ -2204,8 +2320,8 @@ def create_equipment_record(payload: EquipmentRecordCreate, current_user: dict =
     
     try:
         cur = db.execute(
-            "INSERT INTO equipment_record (client_id, site_id, equipment_type_id, equipment_name, anchor_date, due_date, interval_weeks, lead_weeks, active, notes, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (payload.client_id, payload.site_id, payload.equipment_type_id, payload.equipment_name, payload.anchor_date, payload.due_date, payload.interval_weeks, payload.lead_weeks, 1 if payload.active else 0, payload.notes, payload.timezone),
+            "INSERT INTO equipment_record (client_id, site_id, equipment_type_id, equipment_name, make_model_serial, anchor_date, due_date, interval_weeks, lead_weeks, active, notes, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (payload.client_id, payload.site_id, payload.equipment_type_id, payload.equipment_name, payload.make_model_serial, payload.anchor_date, payload.due_date, payload.interval_weeks, payload.lead_weeks, 1 if payload.active else 0, payload.notes, payload.timezone),
         )
         db.commit()
     except sqlite3.IntegrityError as e:
@@ -2223,21 +2339,22 @@ def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUp
     else:
         business_id = get_business_id(current_user)
     
-    # Get current equipment record to check site_id and equipment_name, and verify it belongs to business
+    # Get current equipment record to check site_id, equipment_name, client_id, and get the client's business_id
     # Use the same pattern as get_equipment_record for consistency
     if is_super_admin:
         if business_id is None:
             # Super admin viewing all businesses - allow access to any equipment record (including deleted)
             current_record = db.execute(
-                """SELECT er.site_id, er.equipment_name, er.client_id 
+                """SELECT er.site_id, er.equipment_name, er.client_id, c.business_id
                    FROM equipment_record er
+                   LEFT JOIN clients c ON er.client_id = c.id
                    WHERE er.id = ?""",
                 (equipment_record_id,)
             ).fetchone()
         else:
             # Super admin viewing specific business - exclude deleted records
             current_record = db.execute(
-                """SELECT er.site_id, er.equipment_name, er.client_id 
+                """SELECT er.site_id, er.equipment_name, er.client_id, c.business_id
                    FROM equipment_record er
                    LEFT JOIN clients c ON er.client_id = c.id
                    WHERE er.id = ? AND c.business_id = ? AND er.deleted_at IS NULL""",
@@ -2246,7 +2363,7 @@ def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUp
     else:
         # Regular user - must filter by business_id and exclude deleted
         current_record = db.execute(
-            """SELECT er.site_id, er.equipment_name, er.client_id 
+            """SELECT er.site_id, er.equipment_name, er.client_id, c.business_id
                FROM equipment_record er
                LEFT JOIN clients c ON er.client_id = c.id
                WHERE er.id = ? AND c.business_id = ? AND er.deleted_at IS NULL""",
@@ -2256,6 +2373,12 @@ def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUp
     if current_record is None:
         raise HTTPException(status_code=404, detail="Equipment record not found")
     
+    # Get the actual business_id from the client (for equipment type validation)
+    # This ensures we use the client's business_id, not just the user's context
+    equipment_business_id = current_record['business_id']
+    if equipment_business_id is None:
+        raise HTTPException(status_code=400, detail="Equipment record's client has no business assigned")
+    
     # Verify equipment type if being updated
     if payload.equipment_type_id is not None:
         if is_super_admin and business_id is None:
@@ -2263,7 +2386,12 @@ def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUp
             equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ?", (payload.equipment_type_id,)).fetchone()
         else:
             # Regular user or super admin viewing specific business
-            equipment_type_row = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ?", (payload.equipment_type_id, business_id)).fetchone()
+            # Allow equipment types that belong to the business OR are global (business_id IS NULL)
+            # Use the equipment's client's business_id for validation
+            equipment_type_row = db.execute(
+                "SELECT id FROM equipment_types WHERE id = ? AND (business_id = ? OR business_id IS NULL) AND deleted_at IS NULL",
+                (payload.equipment_type_id, equipment_business_id)
+            ).fetchone()
         if equipment_type_row is None:
             raise HTTPException(status_code=404, detail="Equipment type not found")
 
@@ -2299,6 +2427,9 @@ def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUp
     if payload.equipment_name is not None:
         fields.append("equipment_name = ?")
         values.append(payload.equipment_name)
+    if payload.make_model_serial is not None:
+        fields.append("make_model_serial = ?")
+        values.append(payload.make_model_serial)
     if payload.anchor_date is not None:
         fields.append("anchor_date = ?")
         values.append(payload.anchor_date)

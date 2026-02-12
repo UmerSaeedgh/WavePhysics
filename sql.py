@@ -96,6 +96,7 @@ def init_schema(conn):
           site_id            INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
           equipment_type_id  INTEGER NOT NULL REFERENCES equipment_types(id),
           equipment_name     TEXT NOT NULL,
+          make_model_serial  TEXT,           -- Make/model/serial number (optional)
           anchor_date        TEXT NOT NULL,  -- YYYY-MM-DD
           due_date           TEXT,           -- YYYY-MM-DD (manual due date, optional)
           interval_weeks     INTEGER NOT NULL DEFAULT 52,
@@ -377,5 +378,19 @@ def init_schema(conn):
         except:
             pass
         print(f"Migration note for consolidating default equipment types: {e}")
+    
+    # Migration: Add make_model_serial column to equipment_record table
+    try:
+        # Check if column exists
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(equipment_record)").fetchall()]
+        if 'make_model_serial' not in columns:
+            conn.execute("ALTER TABLE equipment_record ADD COLUMN make_model_serial TEXT")
+            conn.commit()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except:
+            pass
+        print(f"Migration note for adding make_model_serial column: {e}")
     
     conn.commit()

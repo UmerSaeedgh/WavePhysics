@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { formatDate } from "../utils/formatDate";
+import { generateEquipmentPDF } from "../utils/generateEquipmentPDF";
+import wavePhysicsLogo from "../assets/image.png";
 
 export default function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment, currentUser, onRefreshCompletions, onRefreshAllCounts, initialClientId, initialSiteId }) {
   const equipmentRefs = useRef({});
@@ -622,6 +624,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
                   <div><strong>Equipment Name:</strong> {selectedEquipment.equipment_name || "N/A"}</div>
                   <div><strong>Equipment Type:</strong> {selectedEquipment.equipment_type_name || "N/A"}</div>
+                  {selectedEquipment.make_model_serial && <div style={{ gridColumn: "1 / -1" }}><strong>Make/Model/Serial Number:</strong> {selectedEquipment.make_model_serial}</div>}
                   <div><strong>Anchor Date:</strong> {formatDate(selectedEquipment.anchor_date)}</div>
                   {selectedEquipment.due_date && <div><strong>Due Date:</strong> {formatDate(selectedEquipment.due_date)}</div>}
                   {selectedEquipment.interval_weeks && <div><strong>Interval:</strong> {selectedEquipment.interval_weeks} weeks</div>}
@@ -640,14 +643,30 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
               <div>
                 <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Client Information</h3>
                 <div style={{ fontSize: "0.9rem" }}>
-                  <div><strong>Name:</strong> {selectedEquipment.client_name || "N/A"}</div>
+                  {selectedEquipment.client_name && <div><strong>Name:</strong> {selectedEquipment.client_name}</div>}
+                  {selectedEquipment.client_address && <div><strong>Address:</strong> {selectedEquipment.client_address}</div>}
+                  {selectedEquipment.client_billing_info && <div><strong>Billing Info:</strong> {selectedEquipment.client_billing_info}</div>}
+                  {selectedEquipment.client_notes && (
+                    <div style={{ marginTop: "0.5rem" }}>
+                      <strong>Notes:</strong>
+                      <div style={{ marginTop: "0.25rem", whiteSpace: "pre-wrap" }}>{selectedEquipment.client_notes}</div>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div>
                 <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
                 <div style={{ fontSize: "0.9rem" }}>
-                  <div><strong>Name:</strong> {selectedEquipment.site_name || "N/A"}</div>
+                  {selectedEquipment.site_name && <div><strong>Name:</strong> {selectedEquipment.site_name}</div>}
+                  {selectedEquipment.site_address && <div><strong>Address:</strong> {selectedEquipment.site_address}</div>}
+                  {selectedEquipment.site_timezone && <div><strong>Timezone:</strong> {selectedEquipment.site_timezone}</div>}
+                  {selectedEquipment.site_notes && (
+                    <div style={{ marginTop: "0.5rem" }}>
+                      <strong>Notes:</strong>
+                      <div style={{ marginTop: "0.25rem", whiteSpace: "pre-wrap" }}>{selectedEquipment.site_notes}</div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -662,6 +681,40 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   }}
                 >
                   Edit Equipment
+                </button>
+                <button 
+                  className="secondary" 
+                  onClick={async () => {
+                    try {
+                      // Fetch completion history
+                      const completions = await apiCall(`/equipment-completions?equipment_record_id=${selectedEquipment.id}`);
+                      // Load logo image
+                      const logoImg = new Image();
+                      logoImg.crossOrigin = 'anonymous';
+                      await new Promise((resolve, reject) => {
+                        logoImg.onload = resolve;
+                        logoImg.onerror = reject;
+                        logoImg.src = wavePhysicsLogo;
+                      });
+                      // Generate PDF
+                      await generateEquipmentPDF(
+                        selectedEquipment, 
+                        completions || [], 
+                        selectedEquipment.business_name || null,
+                        apiCall,
+                        logoImg
+                      );
+                    } catch (err) {
+                      setError(err.message || "Failed to generate PDF");
+                    }
+                  }}
+                  style={{ 
+                    color: "#2D3234", 
+                    border: "1px solid #8193A4",
+                    background: "transparent"
+                  }}
+                >
+                  Print PDF
                 </button>
                 <button 
                   className="secondary" 
