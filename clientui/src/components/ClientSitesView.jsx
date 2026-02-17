@@ -37,7 +37,7 @@ export default function ClientSitesView({ client, sites, clientEquipments, onRef
       const searchLower = searchTerm.toLowerCase();
       return (
         site.name?.toLowerCase().includes(searchLower) ||
-        site.address?.toLowerCase().includes(searchLower) ||
+        (site.street?.toLowerCase().includes(searchLower) || site.state?.toLowerCase().includes(searchLower) || site.site_registration_license?.toLowerCase().includes(searchLower)) ||
         site.timezone?.toLowerCase().includes(searchLower)
       );
     })
@@ -159,7 +159,9 @@ export default function ClientSitesView({ client, sites, clientEquipments, onRef
                     </span>
                   </div>
                   <div className="list-subtitle">
-                    {site.address && `${site.address} • `}
+                    {site.street && site.state && `${site.street}, ${site.state} • `}
+                    {site.street && !site.state && `${site.street} • `}
+                    {!site.street && site.state && `${site.state} • `}
                     {site.timezone}
                   </div>
                 </div>

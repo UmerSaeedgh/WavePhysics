@@ -23,6 +23,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
   const [adminPassword, setAdminPassword] = useState("");
 
   const [selectedBusinessForImport, setSelectedBusinessForImport] = useState(null);
+  const [selectedBusinessForExport, setSelectedBusinessForExport] = useState(null);
 
   // Equipment type management state
   const [equipmentTypes, setEquipmentTypes] = useState([]);
@@ -204,6 +205,37 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
       document.body.removeChild(a);
     } catch (err) {
       setError(err.message || "Failed to export equipments");
+    }
+  }
+
+  async function handleExportEquipmentInfo() {
+    try {
+      let url = `${API_BASE}/admin/export/equipment-info`;
+      if (isSuperAdmin && selectedBusinessForExport !== null) {
+        url += `?business_id_filter=${selectedBusinessForExport}`;
+      }
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = 'equipment_info_export.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      document.body.removeChild(a);
+    } catch (err) {
+      setError(err.message || "Failed to export equipment info");
     }
   }
 
@@ -779,6 +811,52 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   style={{ width: "100%" }}
                 >
                   📥 Export Equipments
+                </button>
+              </div>
+
+              {/* Export Equipment Info Section */}
+              <div style={{ 
+                padding: "1.5rem", 
+                backgroundColor: "#f8f9fa", 
+                borderRadius: "0.5rem",
+                border: "1px solid #e0e0e0"
+              }}>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234" }}>Export Equipment Info</h3>
+                <p style={{ color: "#8193A4", fontSize: "0.875rem", marginBottom: "1rem", lineHeight: "1.5" }}>
+                  Export equipment information with testing completion dates. Includes client name, site details, equipment details, and all completion dates. If an equipment is tested multiple times, each date will have a separate entry.
+                </p>
+                {isSuperAdmin && (
+                  <div style={{ marginBottom: "1rem" }}>
+                    <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem", fontWeight: "600", color: "#2D3234" }}>
+                      Business (Optional)
+                    </label>
+                    <select
+                      value={selectedBusinessForExport !== null ? selectedBusinessForExport.toString() : ""}
+                      onChange={(e) => setSelectedBusinessForExport(e.target.value ? parseInt(e.target.value) : null)}
+                      style={{
+                        width: "100%",
+                        padding: "0.5rem",
+                        border: "1px solid #8193A4",
+                        borderRadius: "0.25rem",
+                        fontSize: "0.875rem"
+                      }}
+                    >
+                      <option value="">All Businesses</option>
+                      {businesses.map(business => (
+                        <option key={business.id} value={business.id.toString()}>
+                          {business.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={handleExportEquipmentInfo}
+                  style={{ width: "100%" }}
+                >
+                  📥 Export Equipment Info
                 </button>
               </div>
             </div>

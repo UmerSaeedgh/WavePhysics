@@ -38,12 +38,14 @@ def init_schema(conn):
 
         -- Sites
         CREATE TABLE IF NOT EXISTS sites (
-          id         INTEGER PRIMARY KEY,
-          client_id  INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-          name       TEXT NOT NULL,
-          address    TEXT,
-          timezone   TEXT NOT NULL DEFAULT 'America/Chicago',
-          notes      TEXT,
+          id                      INTEGER PRIMARY KEY,
+          client_id               INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+          name                    TEXT NOT NULL,
+          street                  TEXT,
+          state                   TEXT,
+          site_registration_license TEXT,
+          timezone                TEXT NOT NULL DEFAULT 'America/Chicago',
+          notes                   TEXT,
           UNIQUE(client_id, name)
         );
 
@@ -96,7 +98,9 @@ def init_schema(conn):
           site_id            INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
           equipment_type_id  INTEGER NOT NULL REFERENCES equipment_types(id),
           equipment_name     TEXT NOT NULL,
-          make_model_serial  TEXT,           -- Make/model/serial number (optional)
+          make               TEXT,           -- Make (optional)
+          model              TEXT,           -- Model (optional)
+          serial_number      TEXT,           -- Serial number (optional)
           anchor_date        TEXT NOT NULL,  -- YYYY-MM-DD
           due_date           TEXT,           -- YYYY-MM-DD (manual due date, optional)
           interval_weeks     INTEGER NOT NULL DEFAULT 52,
@@ -379,18 +383,84 @@ def init_schema(conn):
             pass
         print(f"Migration note for consolidating default equipment types: {e}")
     
-    # Migration: Add make_model_serial column to equipment_record table
+    # Migration: Add make, model, serial_number columns to equipment_record table
     try:
-        # Check if column exists
         columns = [row[1] for row in conn.execute("PRAGMA table_info(equipment_record)").fetchall()]
-        if 'make_model_serial' not in columns:
-            conn.execute("ALTER TABLE equipment_record ADD COLUMN make_model_serial TEXT")
+        
+        # Check if old make_model_serial column exists
+        has_old_column = 'make_model_serial' in columns
+        has_make = 'make' in columns
+        has_model = 'model' in columns
+        has_serial = 'serial_number' in columns
+        
+        # Add new columns if they don't exist
+        if not has_make:
+            conn.execute("ALTER TABLE equipment_record ADD COLUMN make TEXT")
+        if not has_model:
+            conn.execute("ALTER TABLE equipment_record ADD COLUMN model TEXT")
+        if not has_serial:
+            conn.execute("ALTER TABLE equipment_record ADD COLUMN serial_number TEXT")
+        
+        # Migrate data from make_model_serial to new columns if old column exists
+        if has_old_column and (not has_make or not has_model or not has_serial):
+            # Try to parse existing make_model_serial data
+            # Format might be "Make / Model / Serial" or similar variations
+            rows_with_data = conn.execute(
+                "SELECT id, make_model_serial FROM equipment_record WHERE make_model_serial IS NOT NULL AND make_model_serial != ''"
+            ).fetchall()
+            
+            for row in rows_with_data:
+                old_value = row['make_model_serial']
+                if old_value:
+                    # Try to split by common delimiters
+                    parts = [p.strip() for p in old_value.split('/') if p.strip()]
+                    if len(parts) >= 1 and not has_make:
+                        conn.execute("UPDATE equipment_record SET make = ? WHERE id = ?", (parts[0], row['id']))
+                    if len(parts) >= 2 and not has_model:
+                        conn.execute("UPDATE equipment_record SET model = ? WHERE id = ?", (parts[1], row['id']))
+                    if len(parts) >= 3 and not has_serial:
+                        conn.execute("UPDATE equipment_record SET serial_number = ? WHERE id = ?", (parts[2], row['id']))
+        
+        conn.commit()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except:
+            pass
+        print(f"Migration note for adding make/model/serial_number columns: {e}")
+    
+    # Migration: Split address into street and state, add site_registration_license
+    try:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(sites)").fetchall()]
+        
+        # Check if migration is needed (old address column exists, new columns don't)
+        has_address = 'address' in columns
+        has_street = 'street' in columns
+        has_state = 'state' in columns
+        has_registration = 'site_registration_license' in columns
+        
+        if has_address and (not has_street or not has_state or not has_registration):
+            # Add new columns
+            if not has_street:
+                conn.execute("ALTER TABLE sites ADD COLUMN street TEXT")
+            if not has_state:
+                conn.execute("ALTER TABLE sites ADD COLUMN state TEXT")
+            if not has_registration:
+                conn.execute("ALTER TABLE sites ADD COLUMN site_registration_license TEXT")
+            
+            # Migrate existing address data (try to split if possible, otherwise put all in street)
+            # For now, we'll move all existing address data to street field
+            # Users can manually update to split into street and state later
+            conn.execute("UPDATE sites SET street = address WHERE address IS NOT NULL AND street IS NULL")
+            
+            # Note: We keep the old address column for now to avoid breaking existing code
+            # It will be removed in a future migration after all code is updated
             conn.commit()
     except Exception as e:
         try:
             conn.rollback()
         except:
             pass
-        print(f"Migration note for adding make_model_serial column: {e}")
+        print(f"Migration note for splitting address into street/state: {e}")
     
     conn.commit()

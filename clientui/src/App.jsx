@@ -320,6 +320,53 @@ function App() {
     }
   }
 
+  // Idle timeout: 30 minutes in milliseconds
+  const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+  // Track idle timeout - automatically log out after 30 minutes of inactivity
+  useEffect(() => {
+    if (!isAuthenticated || !authToken) return;
+
+    let idleTimer = null;
+
+    // Reset the idle timer
+    const resetIdleTimer = () => {
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+      }
+      idleTimer = setTimeout(() => {
+        // Session expired due to inactivity
+        console.warn("Session expired due to inactivity (30 minutes). Logging out.");
+        handleLogout(true); // Skip API call since we're logging out due to inactivity
+      }, IDLE_TIMEOUT_MS);
+    };
+
+    // Track user activity events
+    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click', 'keydown'];
+    
+    const handleActivity = () => {
+      resetIdleTimer();
+    };
+
+    // Add event listeners for user activity
+    activityEvents.forEach(event => {
+      document.addEventListener(event, handleActivity, { passive: true });
+    });
+
+    // Initialize the timer
+    resetIdleTimer();
+
+    // Cleanup
+    return () => {
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+      }
+      activityEvents.forEach(event => {
+        document.removeEventListener(event, handleActivity);
+      });
+    };
+  }, [isAuthenticated, authToken]);
+
   // API Functions
   async function apiCall(endpoint, options = {}, tokenOverride = null) {
     try {

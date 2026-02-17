@@ -9,7 +9,9 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
   const [equipmentForm, setEquipmentForm] = useState({
     equipment_type_id: "",
     equipment_name: "",
-    make_model_serial: "",
+    make: "",
+    model: "",
+    serial_number: "",
     anchor_date: "",
     due_date: "",
     interval_weeks: "",
@@ -30,7 +32,9 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
           setEquipmentForm({
             equipment_type_id: record.equipment_type_id?.toString() || "",
             equipment_name: record.equipment_name || "",
-            make_model_serial: record.make_model_serial || "",
+            make: record.make || "",
+            model: record.model || "",
+            serial_number: record.serial_number || "",
             anchor_date: record.anchor_date || "",
             due_date: record.due_date || "",
             interval_weeks: record.interval_weeks?.toString() || "",
@@ -135,7 +139,9 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
         site_id: parseInt(selectedSiteId),
         equipment_type_id: parseInt(equipmentForm.equipment_type_id),
         equipment_name: equipmentForm.equipment_name,
-        make_model_serial: equipmentForm.make_model_serial || null,
+        make: equipmentForm.make || null,
+        model: equipmentForm.model || null,
+        serial_number: equipmentForm.serial_number || null,
         anchor_date: equipmentForm.anchor_date,
         due_date: equipmentForm.due_date || null,
         interval_weeks: equipmentForm.interval_weeks ? parseInt(equipmentForm.interval_weeks) : 52,
@@ -265,13 +271,35 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
         </label>
 
         <label>
-          Make/Model/Serial Number
+          Make
           <input
             type="text"
-            name="make_model_serial"
-            value={equipmentForm.make_model_serial}
+            name="make"
+            value={equipmentForm.make}
             onChange={handleChange}
-            placeholder="e.g., Brand Model ABC-123, Serial: 12345"
+            placeholder="e.g., Brand Name"
+          />
+        </label>
+
+        <label>
+          Model
+          <input
+            type="text"
+            name="model"
+            value={equipmentForm.model}
+            onChange={handleChange}
+            placeholder="e.g., Model ABC-123"
+          />
+        </label>
+
+        <label>
+          Serial Number
+          <input
+            type="text"
+            name="serial_number"
+            value={equipmentForm.serial_number}
+            onChange={handleChange}
+            placeholder="e.g., 12345"
           />
         </label>
 

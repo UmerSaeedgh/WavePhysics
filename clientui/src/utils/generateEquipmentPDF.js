@@ -150,7 +150,9 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
   const equipmentFields = [
     ['Equipment Name:', equipment.equipment_name || 'N/A'],
     ['Equipment Type:', equipment.equipment_type_name || 'N/A'],
-    ['Make/Model/Serial:', equipment.make_model_serial || 'N/A'],
+    ['Make:', equipment.make || 'N/A'],
+    ['Model:', equipment.model || 'N/A'],
+    ['Serial Number:', equipment.serial_number || 'N/A'],
     ['Anchor Date:', equipment.anchor_date ? formatDateForPDF(equipment.anchor_date) : 'N/A'],
     ['Due Date:', equipment.due_date ? formatDateForPDF(equipment.due_date) : 'N/A'],
     ['Interval:', equipment.interval_weeks ? `${equipment.interval_weeks} weeks` : 'N/A'],
@@ -271,13 +273,30 @@ export async function generateEquipmentPDF(equipment, completions, businessName,
     siteY += Math.max(nameLines.length * 3.8, 5);
   }
 
-  if (equipment.site_address) {
+  if (equipment.site_street) {
     doc.setFont('helvetica', 'bold');
-    doc.text('Address:', siteCardX, siteY);
+    doc.text('Street:', siteCardX, siteY);
     doc.setFont('helvetica', 'normal');
-    const addrLines = doc.splitTextToSize(equipment.site_address, cardWidth - labelOffset);
-    doc.text(addrLines, siteCardX + labelOffset, siteY);
-    siteY += Math.max(addrLines.length * 3.8, 5);
+    const streetLines = doc.splitTextToSize(equipment.site_street, cardWidth - labelOffset);
+    doc.text(streetLines, siteCardX + labelOffset, siteY);
+    siteY += Math.max(streetLines.length * 3.8, 5);
+  }
+
+  if (equipment.site_state) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('State:', siteCardX, siteY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(equipment.site_state, siteCardX + labelOffset, siteY);
+    siteY += 5;
+  }
+
+  if (equipment.site_registration_license) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('Reg/License:', siteCardX, siteY);
+    doc.setFont('helvetica', 'normal');
+    const regLines = doc.splitTextToSize(equipment.site_registration_license, cardWidth - labelOffset);
+    doc.text(regLines, siteCardX + labelOffset, siteY);
+    siteY += Math.max(regLines.length * 3.8, 5);
   }
 
   if (equipment.site_timezone) {

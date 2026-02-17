@@ -624,7 +624,9 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
                   <div><strong>Equipment Name:</strong> {selectedEquipment.equipment_name || "N/A"}</div>
                   <div><strong>Equipment Type:</strong> {selectedEquipment.equipment_type_name || "N/A"}</div>
-                  {selectedEquipment.make_model_serial && <div style={{ gridColumn: "1 / -1" }}><strong>Make/Model/Serial Number:</strong> {selectedEquipment.make_model_serial}</div>}
+                  {selectedEquipment.make && <div><strong>Make:</strong> {selectedEquipment.make}</div>}
+                  {selectedEquipment.model && <div><strong>Model:</strong> {selectedEquipment.model}</div>}
+                  {selectedEquipment.serial_number && <div><strong>Serial Number:</strong> {selectedEquipment.serial_number}</div>}
                   <div><strong>Anchor Date:</strong> {formatDate(selectedEquipment.anchor_date)}</div>
                   {selectedEquipment.due_date && <div><strong>Due Date:</strong> {formatDate(selectedEquipment.due_date)}</div>}
                   {selectedEquipment.interval_weeks && <div><strong>Interval:</strong> {selectedEquipment.interval_weeks} weeks</div>}
@@ -659,7 +661,9 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                 <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
                 <div style={{ fontSize: "0.9rem" }}>
                   {selectedEquipment.site_name && <div><strong>Name:</strong> {selectedEquipment.site_name}</div>}
-                  {selectedEquipment.site_address && <div><strong>Address:</strong> {selectedEquipment.site_address}</div>}
+                  {selectedEquipment.site_street && <div><strong>Street:</strong> {selectedEquipment.site_street}</div>}
+                  {selectedEquipment.site_state && <div><strong>State:</strong> {selectedEquipment.site_state}</div>}
+                  {selectedEquipment.site_registration_license && <div><strong>Site Registration/License:</strong> {selectedEquipment.site_registration_license}</div>}
                   {selectedEquipment.site_timezone && <div><strong>Timezone:</strong> {selectedEquipment.site_timezone}</div>}
                   {selectedEquipment.site_notes && (
                     <div style={{ marginTop: "0.5rem" }}>

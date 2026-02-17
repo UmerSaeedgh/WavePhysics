@@ -4,7 +4,9 @@ import ContactManagementSection from "./ContactManagementSection";
 export default function EditSitePage({ apiCall, setError, siteToEdit, client, contactLinks, onRefreshContacts, onEditContact, onSuccess, onBack }) {
   const [form, setForm] = useState({
     name: "",
-    address: "",
+    street: "",
+    state: "",
+    site_registration_license: "",
     timezone: "America/Chicago",
     notes: "",
   });
@@ -14,7 +16,9 @@ export default function EditSitePage({ apiCall, setError, siteToEdit, client, co
     if (siteToEdit) {
       setForm({
         name: siteToEdit.name || "",
-        address: siteToEdit.address || "",
+        street: siteToEdit.street || "",
+        state: siteToEdit.state || "",
+        site_registration_license: siteToEdit.site_registration_license || "",
         timezone: siteToEdit.timezone || "America/Chicago",
         notes: siteToEdit.notes || "",
       });
@@ -22,7 +26,7 @@ export default function EditSitePage({ apiCall, setError, siteToEdit, client, co
         onRefreshContacts();
       }
     } else {
-      setForm({ name: "", address: "", timezone: "America/Chicago", notes: "" });
+      setForm({ name: "", street: "", state: "", site_registration_license: "", timezone: "America/Chicago", notes: "" });
     }
   }, [siteToEdit?.id]);
 
@@ -74,8 +78,16 @@ export default function EditSitePage({ apiCall, setError, siteToEdit, client, co
             <input type="text" name="name" value={form.name} onChange={handleChange} required />
           </label>
           <label>
-            Address
-            <input type="text" name="address" value={form.address} onChange={handleChange} placeholder="Site address" />
+            Street
+            <input type="text" name="street" value={form.street} onChange={handleChange} placeholder="Street address" />
+          </label>
+          <label>
+            State
+            <input type="text" name="state" value={form.state} onChange={handleChange} placeholder="State" />
+          </label>
+          <label>
+            Site Registration/License
+            <input type="text" name="site_registration_license" value={form.site_registration_license} onChange={handleChange} placeholder="Site registration or license number" />
           </label>
           <label>
             Timezone

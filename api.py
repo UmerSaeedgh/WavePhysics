@@ -1091,14 +1091,18 @@ def restore_client(client_id: int, current_user: dict = Depends(get_current_supe
 class SiteCreate(BaseModel):
     client_id: int
     name: str
-    address: Optional[str] = None
+    street: Optional[str] = None
+    state: Optional[str] = None
+    site_registration_license: Optional[str] = None
     timezone: str = "America/Chicago"
     notes: Optional[str] = None
 
 
 class SiteUpdate(BaseModel):
     name: Optional[str] = None
-    address: Optional[str] = None
+    street: Optional[str] = None
+    state: Optional[str] = None
+    site_registration_license: Optional[str] = None
     timezone: Optional[str] = None
     notes: Optional[str] = None
 
@@ -1107,9 +1111,11 @@ class SiteRead(BaseModel):
     id: int
     client_id: int
     name: str
-    address: Optional[str]
+    street: Optional[str] = None
+    state: Optional[str] = None
+    site_registration_license: Optional[str] = None
     timezone: str
-    notes: Optional[str]
+    notes: Optional[str] = None
 
 
 @app.get("/sites", response_model=List[SiteRead])
@@ -1143,19 +1149,19 @@ def list_sites(
             raise HTTPException(status_code=404, detail="Client not found")
         if include_deleted:
             cur = db.execute(
-                f"SELECT id, client_id, name, address, timezone, notes, deleted_at, deleted_by FROM sites WHERE client_id = ? {deleted_filter} ORDER BY name",
+                f"SELECT id, client_id, name, street, state, site_registration_license, timezone, notes, deleted_at, deleted_by FROM sites WHERE client_id = ? {deleted_filter} ORDER BY name",
                 (client_id,)
             )
         else:
             cur = db.execute(
-                "SELECT id, client_id, name, address, timezone, notes FROM sites WHERE client_id = ? AND deleted_at IS NULL ORDER BY name",
+                "SELECT id, client_id, name, street, state, site_registration_license, timezone, notes FROM sites WHERE client_id = ? AND deleted_at IS NULL ORDER BY name",
                 (client_id,)
             )
     else:
         # Get all sites for clients in this business (or all businesses if business_id is None)
         if business_id is not None:
             cur = db.execute(
-                f"""SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+                f"""SELECT s.id, s.client_id, s.name, s.street, s.state, s.site_registration_license, s.timezone, s.notes 
                    FROM sites s 
                    JOIN clients c ON s.client_id = c.id 
                    WHERE c.business_id = ? {deleted_filter}
@@ -1165,7 +1171,7 @@ def list_sites(
         else:
             # Super admin viewing all businesses
             cur = db.execute(
-                f"""SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+                f"""SELECT s.id, s.client_id, s.name, s.street, s.state, s.site_registration_license, s.timezone, s.notes 
                    FROM sites s 
                    JOIN clients c ON s.client_id = c.id 
                    WHERE 1=1 {deleted_filter}
@@ -1190,7 +1196,7 @@ def get_site(site_id: int, current_user: dict = Depends(get_current_user), db: s
         if business_id is None:
             # Super admin viewing all businesses - allow access to any site
             row = db.execute(
-                """SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+                """SELECT s.id, s.client_id, s.name, s.street, s.state, s.site_registration_license, s.timezone, s.notes 
                    FROM sites s 
                    JOIN clients c ON s.client_id = c.id 
                    WHERE s.id = ?""",
@@ -1199,7 +1205,7 @@ def get_site(site_id: int, current_user: dict = Depends(get_current_user), db: s
         else:
             # Super admin viewing specific business
             row = db.execute(
-                """SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+                """SELECT s.id, s.client_id, s.name, s.street, s.state, s.site_registration_license, s.timezone, s.notes 
                    FROM sites s 
                    JOIN clients c ON s.client_id = c.id 
                    WHERE s.id = ? AND c.business_id = ?""",
@@ -1207,7 +1213,7 @@ def get_site(site_id: int, current_user: dict = Depends(get_current_user), db: s
             ).fetchone()
     else:
         row = db.execute(
-            """SELECT s.id, s.client_id, s.name, s.address, s.timezone, s.notes 
+            """SELECT s.id, s.client_id, s.name, s.street, s.state, s.site_registration_license, s.timezone, s.notes 
                FROM sites s 
                JOIN clients c ON s.client_id = c.id 
                WHERE s.id = ? AND c.business_id = ? AND s.deleted_at IS NULL""",
@@ -1232,15 +1238,15 @@ def create_site(payload: SiteCreate, current_user: dict = Depends(get_current_us
 
     try:
         cur = db.execute(
-            "INSERT INTO sites (client_id, name, address, timezone, notes) VALUES (?, ?, ?, ?, ?)",
-            (payload.client_id, payload.name, payload.address, payload.timezone, payload.notes),
+            "INSERT INTO sites (client_id, name, street, state, site_registration_license, timezone, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (payload.client_id, payload.name, payload.street, payload.state, payload.site_registration_license, payload.timezone, payload.notes),
         )
         db.commit()
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="Site name must be unique per client")
 
     row = db.execute(
-        "SELECT id, client_id, name, address, timezone, notes FROM sites WHERE id = ?",
+        "SELECT id, client_id, name, street, state, site_registration_license, timezone, notes FROM sites WHERE id = ?",
         (cur.lastrowid,),
     ).fetchone()
     return SiteRead(**dict(row))
@@ -1291,9 +1297,15 @@ def update_site(site_id: int, payload: SiteUpdate, current_user: dict = Depends(
     if payload.name is not None:
         fields.append("name = ?")
         values.append(payload.name)
-    if payload.address is not None:
-        fields.append("address = ?")
-        values.append(payload.address)
+    if payload.street is not None:
+        fields.append("street = ?")
+        values.append(payload.street)
+    if payload.state is not None:
+        fields.append("state = ?")
+        values.append(payload.state)
+    if payload.site_registration_license is not None:
+        fields.append("site_registration_license = ?")
+        values.append(payload.site_registration_license)
     if payload.timezone is not None:
         fields.append("timezone = ?")
         values.append(payload.timezone)
@@ -1313,7 +1325,7 @@ def update_site(site_id: int, payload: SiteUpdate, current_user: dict = Depends(
             raise HTTPException(status_code=400, detail="Site name must be unique per client")
 
     row = db.execute(
-        "SELECT id, client_id, name, address, timezone, notes FROM sites WHERE id = ?",
+        "SELECT id, client_id, name, street, state, site_registration_license, timezone, notes FROM sites WHERE id = ?",
         (site_id,),
     ).fetchone()
     return SiteRead(**dict(row))
@@ -1930,7 +1942,9 @@ class EquipmentRecordCreate(BaseModel):
     site_id: int
     equipment_type_id: int
     equipment_name: str
-    make_model_serial: Optional[str] = None
+    make: Optional[str] = None
+    model: Optional[str] = None
+    serial_number: Optional[str] = None
     anchor_date: str  # YYYY-MM-DD
     due_date: Optional[str] = None  # YYYY-MM-DD
     interval_weeks: int = 52
@@ -1944,7 +1958,9 @@ class EquipmentRecordUpdate(BaseModel):
     site_id: Optional[int] = None
     equipment_type_id: Optional[int] = None
     equipment_name: Optional[str] = None
-    make_model_serial: Optional[str] = None
+    make: Optional[str] = None
+    model: Optional[str] = None
+    serial_number: Optional[str] = None
     anchor_date: Optional[str] = None
     due_date: Optional[str] = None
     interval_weeks: Optional[int] = None
@@ -1960,7 +1976,9 @@ class EquipmentRecordRead(BaseModel):
     site_id: int
     equipment_type_id: int
     equipment_name: str
-    make_model_serial: Optional[str] = None
+    make: Optional[str] = None
+    model: Optional[str] = None
+    serial_number: Optional[str] = None
     anchor_date: str
     due_date: Optional[str] = None
     interval_weeks: int
@@ -1973,7 +1991,9 @@ class EquipmentRecordRead(BaseModel):
     client_billing_info: Optional[str] = None
     client_notes: Optional[str] = None
     site_name: Optional[str] = None
-    site_address: Optional[str] = None
+    site_street: Optional[str] = None
+    site_state: Optional[str] = None
+    site_registration_license: Optional[str] = None
     site_timezone: Optional[str] = None
     site_notes: Optional[str] = None
     equipment_type_name: Optional[str] = None
@@ -1996,14 +2016,16 @@ def list_equipment_records(
         business_id = get_business_id(current_user)
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                      er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
                       c.name as client_name,
                       c.address as client_address,
                       c.billing_info as client_billing_info,
                       c.notes as client_notes,
                       s.name as site_name,
-                      s.address as site_address,
+                      s.street as site_street,
+                      s.state as site_state,
+                      s.site_registration_license as site_registration_license,
                       s.timezone as site_timezone,
                       s.notes as site_notes,
                       et.name as equipment_type_name,
@@ -2086,14 +2108,16 @@ def get_upcoming_equipment_records(
         business_id = get_business_id(current_user)
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                      er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
                       c.name as client_name,
                       c.address as client_address,
                       c.billing_info as client_billing_info,
                       c.notes as client_notes,
                       s.name as site_name,
-                      s.address as site_address,
+                      s.street as site_street,
+                      s.state as site_state,
+                      s.site_registration_license as site_registration_license,
                       s.timezone as site_timezone,
                       s.notes as site_notes,
                       et.name as equipment_type_name,
@@ -2141,14 +2165,16 @@ def get_overdue_equipment_records(
         business_id = get_business_id(current_user)
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                      er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
                       c.name as client_name,
                       c.address as client_address,
                       c.billing_info as client_billing_info,
                       c.notes as client_notes,
                       s.name as site_name,
-                      s.address as site_address,
+                      s.street as site_street,
+                      s.state as site_state,
+                      s.site_registration_license as site_registration_license,
                       s.timezone as site_timezone,
                       s.notes as site_notes,
                       et.name as equipment_type_name,
@@ -2197,14 +2223,16 @@ def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(
             # Super admin viewing all businesses - allow access to any equipment record
             row = db.execute(
                 """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                          er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                          er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                           er.active, er.notes, er.timezone,
                           c.name as client_name,
                           c.address as client_address,
                           c.billing_info as client_billing_info,
                           c.notes as client_notes,
                           s.name as site_name,
-                          s.address as site_address,
+                          s.street as site_street,
+                          s.state as site_state,
+                          s.site_registration_license as site_registration_license,
                           s.timezone as site_timezone,
                           s.notes as site_notes,
                           et.name as equipment_type_name,
@@ -2221,14 +2249,16 @@ def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(
             # Super admin viewing specific business
             row = db.execute(
                 """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                          er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                          er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                           er.active, er.notes, er.timezone,
                           c.name as client_name,
                           c.address as client_address,
                           c.billing_info as client_billing_info,
                           c.notes as client_notes,
                           s.name as site_name,
-                          s.address as site_address,
+                          s.street as site_street,
+                          s.state as site_state,
+                          s.site_registration_license as site_registration_license,
                           s.timezone as site_timezone,
                           s.notes as site_notes,
                           et.name as equipment_type_name,
@@ -2245,14 +2275,16 @@ def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(
         # Regular user - must filter by business_id and exclude deleted
         row = db.execute(
             """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
-                      er.make_model_serial, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
+                      er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
                       er.active, er.notes, er.timezone,
                       c.name as client_name,
                       c.address as client_address,
                       c.billing_info as client_billing_info,
                       c.notes as client_notes,
                       s.name as site_name,
-                      s.address as site_address,
+                      s.street as site_street,
+                      s.state as site_state,
+                      s.site_registration_license as site_registration_license,
                       s.timezone as site_timezone,
                       s.notes as site_notes,
                       et.name as equipment_type_name,
@@ -2320,8 +2352,8 @@ def create_equipment_record(payload: EquipmentRecordCreate, current_user: dict =
     
     try:
         cur = db.execute(
-            "INSERT INTO equipment_record (client_id, site_id, equipment_type_id, equipment_name, make_model_serial, anchor_date, due_date, interval_weeks, lead_weeks, active, notes, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (payload.client_id, payload.site_id, payload.equipment_type_id, payload.equipment_name, payload.make_model_serial, payload.anchor_date, payload.due_date, payload.interval_weeks, payload.lead_weeks, 1 if payload.active else 0, payload.notes, payload.timezone),
+            "INSERT INTO equipment_record (client_id, site_id, equipment_type_id, equipment_name, make, model, serial_number, anchor_date, due_date, interval_weeks, lead_weeks, active, notes, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (payload.client_id, payload.site_id, payload.equipment_type_id, payload.equipment_name, payload.make, payload.model, payload.serial_number, payload.anchor_date, payload.due_date, payload.interval_weeks, payload.lead_weeks, 1 if payload.active else 0, payload.notes, payload.timezone),
         )
         db.commit()
     except sqlite3.IntegrityError as e:
@@ -2427,9 +2459,15 @@ def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUp
     if payload.equipment_name is not None:
         fields.append("equipment_name = ?")
         values.append(payload.equipment_name)
-    if payload.make_model_serial is not None:
-        fields.append("make_model_serial = ?")
-        values.append(payload.make_model_serial)
+    if payload.make is not None:
+        fields.append("make = ?")
+        values.append(payload.make)
+    if payload.model is not None:
+        fields.append("model = ?")
+        values.append(payload.model)
+    if payload.serial_number is not None:
+        fields.append("serial_number = ?")
+        values.append(payload.serial_number)
     if payload.anchor_date is not None:
         fields.append("anchor_date = ?")
         values.append(payload.anchor_date)
@@ -3407,8 +3445,8 @@ async def import_excel(
                             site_id = existing['id']
                         else:
                             cur = db.execute(
-                                "INSERT INTO sites (client_id, name, address, timezone) VALUES (?, ?, ?, ?)",
-                                (client_id, site_name, None, "America/Chicago")
+                                "INSERT INTO sites (client_id, name, street, state, site_registration_license, timezone) VALUES (?, ?, ?, ?, ?, ?)",
+                                (client_id, site_name, None, None, None, "America/Chicago")
                             )
                             db.commit()
                             site_id = cur.lastrowid
@@ -4084,8 +4122,8 @@ async def import_temporary_data(
                     else:
                         # Create site
                         cur = db.execute(
-                            "INSERT INTO sites (client_id, name, address, timezone) VALUES (?, ?, ?, ?)",
-                            (client_id, site_name, None, "America/Chicago")
+                            "INSERT INTO sites (client_id, name, street, state, site_registration_license, timezone) VALUES (?, ?, ?, ?, ?, ?)",
+                            (client_id, site_name, None, None, None, "America/Chicago")
                         )
                         db.commit()
                         site_id = cur.lastrowid
@@ -4296,3 +4334,203 @@ async def export_equipments(
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error exporting equipments: {str(e)}")
+
+
+@app.get("/admin/export/equipment-info")
+async def export_equipment_info(
+    business_id_filter: Optional[int] = Query(None, description="Filter by business ID (super admin only)"),
+    current_user: dict = Depends(get_current_admin_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    """
+    Export equipment info with completion dates to Excel format.
+    If an equipment is tested multiple times, all dates will have separate entries.
+    Sorted by client name.
+    """
+    try:
+        is_super_admin = current_user.get("is_super_admin")
+        
+        # Determine business_id to filter by
+        if is_super_admin:
+            if business_id_filter is not None:
+                business_id = business_id_filter
+            else:
+                # Super admin viewing all businesses (business_id can be None)
+                business_id = current_user.get("business_id")
+        else:
+            business_id = get_business_id(current_user)
+        
+        # Query equipment records with related data
+        # Include business name when viewing all businesses (business_id is None)
+        include_business_name = (is_super_admin and business_id is None)
+        
+        if include_business_name:
+            query = """
+                SELECT 
+                    b.name as business_name,
+                    c.name as client_name,
+                    s.name as site_name,
+                    s.street as site_street,
+                    s.state as site_state,
+                    s.site_registration_license as site_registration_license,
+                    er.equipment_name,
+                    et.name as equipment_type,
+                    er.make,
+                    er.model,
+                    er.serial_number,
+                    er.id as equipment_record_id
+                FROM equipment_record er
+                JOIN clients c ON er.client_id = c.id
+                JOIN sites s ON er.site_id = s.id
+                JOIN equipment_types et ON er.equipment_type_id = et.id
+                JOIN businesses b ON c.business_id = b.id
+                WHERE er.deleted_at IS NULL AND er.active = 1
+            """
+        else:
+            query = """
+                SELECT 
+                    c.name as client_name,
+                    s.name as site_name,
+                    s.street as site_street,
+                    s.state as site_state,
+                    s.site_registration_license as site_registration_license,
+                    er.equipment_name,
+                    et.name as equipment_type,
+                    er.make,
+                    er.model,
+                    er.serial_number,
+                    er.id as equipment_record_id
+                FROM equipment_record er
+                JOIN clients c ON er.client_id = c.id
+                JOIN sites s ON er.site_id = s.id
+                JOIN equipment_types et ON er.equipment_type_id = et.id
+                WHERE er.deleted_at IS NULL AND er.active = 1
+            """
+        params = []
+        
+        # Filter by business_id if specified
+        if business_id is not None:
+            query += " AND c.business_id = ?"
+            params.append(business_id)
+        
+        query += " ORDER BY c.name, er.equipment_name"
+        
+        cur = db.execute(query, params)
+        equipment_rows = cur.fetchall()
+        
+        # Query all completions for these equipment records
+        equipment_ids = [row['equipment_record_id'] for row in equipment_rows]
+        
+        completions_data = {}
+        if equipment_ids:
+            placeholders = ','.join('?' * len(equipment_ids))
+            completions_query = f"""
+                SELECT 
+                    equipment_record_id,
+                    completed_at
+                FROM equipment_completions
+                WHERE equipment_record_id IN ({placeholders})
+                ORDER BY completed_at
+            """
+            completions_rows = db.execute(completions_query, equipment_ids).fetchall()
+            
+            # Group completions by equipment_record_id
+            for comp_row in completions_rows:
+                eq_id = comp_row['equipment_record_id']
+                if eq_id not in completions_data:
+                    completions_data[eq_id] = []
+                completions_data[eq_id].append(comp_row['completed_at'])
+        
+        # Build export data - one row per completion, or one row if no completions
+        data = []
+        for eq_row in equipment_rows:
+            eq_id = eq_row['equipment_record_id']
+            completions = completions_data.get(eq_id, [])
+            
+            if completions:
+                # Create a row for each completion date
+                for completed_at in completions:
+                    row_data = {}
+                    # Add business name column first only when viewing all businesses
+                    if include_business_name:
+                        row_data["Business Name"] = eq_row['business_name'] or ""
+                    row_data.update({
+                        "Client Name": eq_row['client_name'] or "",
+                        "Site Name": eq_row['site_name'] or "",
+                        "Street": eq_row['site_street'] or "",
+                        "State": eq_row['site_state'] or "",
+                        "Registration/License": eq_row['site_registration_license'] or "",
+                        "Equipment Name": eq_row['equipment_name'] or "",
+                        "Equipment Type": eq_row['equipment_type'] or "",
+                        "Make": eq_row['make'] or "",
+                        "Model": eq_row['model'] or "",
+                        "Serial Number": eq_row['serial_number'] or "",
+                        "Date of Completed Testing": completed_at
+                    })
+                    data.append(row_data)
+            else:
+                # Equipment with no completions - still include it with empty date
+                row_data = {}
+                # Add business name column first only when viewing all businesses
+                if include_business_name:
+                    row_data["Business Name"] = eq_row['business_name'] or ""
+                row_data.update({
+                    "Client Name": eq_row['client_name'] or "",
+                    "Site Name": eq_row['site_name'] or "",
+                    "Street": eq_row['site_street'] or "",
+                    "State": eq_row['site_state'] or "",
+                    "Registration/License": eq_row['site_registration_license'] or "",
+                    "Equipment Name": eq_row['equipment_name'] or "",
+                    "Equipment Type": eq_row['equipment_type'] or "",
+                    "Make": eq_row['make'] or "",
+                    "Model": eq_row['model'] or "",
+                    "Serial Number": eq_row['serial_number'] or "",
+                    "Date of Completed Testing": ""
+                })
+                data.append(row_data)
+        
+        # Create DataFrame
+        if not data:
+            # If no data, create empty DataFrame with correct columns
+            columns = []
+            if include_business_name:
+                columns.append("Business Name")
+            columns.extend([
+                "Client Name",
+                "Site Name",
+                "Street",
+                "State",
+                "Registration/License",
+                "Equipment Name",
+                "Equipment Type",
+                "Make",
+                "Model",
+                "Serial Number",
+                "Date of Completed Testing"
+            ])
+            df = pd.DataFrame(columns=columns)
+        else:
+            df = pd.DataFrame(data)
+            
+            # Reorder columns to put Business Name first if it exists
+            if include_business_name and "Business Name" in df.columns:
+                cols = ["Business Name"] + [col for col in df.columns if col != "Business Name"]
+                df = df[cols]
+        
+        # Create Excel file in memory
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Equipment Info')
+        
+        output.seek(0)
+        
+        return Response(
+            content=output.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=equipment_info_export.xlsx"}
+        )
+    
+    except Exception as e:
+        import traceback
+        error_detail = f"Error exporting equipment info: {str(e)}\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=error_detail)
