@@ -129,8 +129,8 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
         setError("Client and Site are required");
         return;
       }
-      if (!equipmentForm.equipment_type_id || !equipmentForm.equipment_name || !equipmentForm.anchor_date) {
-        setError("Equipment Type, Equipment Name, and Anchor Date are required");
+      if (!equipmentForm.equipment_type_id || !equipmentForm.equipment_name || !equipmentForm.anchor_date || !equipmentForm.due_date) {
+        setError("Equipment Type, Equipment Name, Anchor Date, and Due Date are required");
         return;
       }
 
@@ -143,7 +143,7 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
         model: equipmentForm.model || null,
         serial_number: equipmentForm.serial_number || null,
         anchor_date: equipmentForm.anchor_date,
-        due_date: equipmentForm.due_date || null,
+        due_date: equipmentForm.due_date,
         interval_weeks: equipmentForm.interval_weeks ? parseInt(equipmentForm.interval_weeks) : 52,
         lead_weeks: equipmentForm.lead_weeks ? parseInt(equipmentForm.lead_weeks) : null,
         timezone: equipmentForm.timezone || null,
@@ -315,12 +315,13 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
         </label>
 
         <label>
-          Due Date
+          Due Date *
           <input
             type="date"
             name="due_date"
             value={equipmentForm.due_date}
             onChange={handleChange}
+            required
           />
         </label>
 

@@ -219,10 +219,15 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
       setError("Due date is required");
       return;
     }
+
+    // We also require the equipment to already have a previous due date,
+    // since that is what we store on the completion record.
+    const previousDueDate = doneEquipment.due_date;
+    if (!previousDueDate) {
+      setError("This equipment does not have an existing due date. Please edit the equipment and set a due date before marking it done.");
+      return;
+    }
     try {
-      // Get the previous due date (before updating)
-      const previousDueDate = doneEquipment.due_date;
-      
       // Create a completion record with the PREVIOUS due date (the one that was completed)
       await apiCall("/equipment-completions", {
         method: "POST",

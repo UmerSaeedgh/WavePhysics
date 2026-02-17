@@ -407,6 +407,14 @@ function App() {
         } catch {
           errorMsg = text || `HTTP ${res.status}: ${res.statusText}`;
         }
+        // Ensure we always throw a string message, not an object
+        if (typeof errorMsg !== "string") {
+          try {
+            errorMsg = JSON.stringify(errorMsg);
+          } catch {
+            errorMsg = `HTTP ${res.status}: ${res.statusText}`;
+          }
+        }
         throw new Error(errorMsg);
       }
       
@@ -425,7 +433,7 @@ function App() {
     } catch (err) {
       console.error(`API Error [${endpoint}]:`, err);
       // Provide more user-friendly error messages
-      let errorMessage = err.message;
+      let errorMessage = err && typeof err.message !== "undefined" ? err.message : String(err);
       if (err.message === "Failed to fetch" || err.message.includes("NetworkError") || err.message.includes("fetch")) {
         errorMessage = "Unable to connect to the server. Please check if the backend is running and try again.";
       }
