@@ -5,7 +5,8 @@ from dateutil.parser import parse as parse_date
 from icalendar import Calendar, Event
 from fastapi.responses import Response
 
-import sqlite3
+import sqlite3  # kept for type hints and backward compatibility
+import psycopg2
 import pandas as pd
 import io
 import hashlib
@@ -15,7 +16,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, 
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
-from sql import connect_db, init_schema
+from sql_postgres import connect_db, init_schema
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -54,6 +55,27 @@ def verify_password(password: str, password_hash: str) -> bool:
     except:
         return False
 
+def parse_db_datetime(value):
+    """Parse datetime from database - handles both PostgreSQL datetime objects and SQLite strings"""
+    if isinstance(value, datetime):
+        return value  # PostgreSQL returns datetime objects directly
+    elif isinstance(value, str):
+        return datetime.fromisoformat(value)  # SQLite returns strings
+    else:
+        raise ValueError(f"Unexpected datetime type: {type(value)}")
+
+def row_to_dict(row):
+    """Convert database row to dict, converting datetime/date objects to ISO format strings for Pydantic"""
+    import datetime as dt_module
+    row_dict = dict(row)
+    # Convert datetime and date objects to ISO format strings (PostgreSQL returns these as objects)
+    for key, value in row_dict.items():
+        if isinstance(value, datetime):
+            row_dict[key] = value.isoformat()
+        elif isinstance(value, dt_module.date):
+            row_dict[key] = value.isoformat()
+    return row_dict
+
 def create_token(user_id: int, username: str, is_admin: bool, is_super_admin: bool, business_id: Optional[int], db: sqlite3.Connection) -> str:
     """Create a session token and store in database"""
     token = secrets.token_urlsafe(32)
@@ -72,22 +94,18 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     """Get current authenticated user from token stored in database"""
     token = credentials.credentials
     
-    # Get token from database
+    # Get token from database (optimized: filter expired tokens in WHERE clause to use index)
+    # Use CURRENT_TIMESTAMP for PostgreSQL compatibility
     row = db.execute(
-        "SELECT user_id, username, is_admin, is_super_admin, business_id, expires_at FROM auth_tokens WHERE token = ?",
+        "SELECT user_id, username, is_admin, is_super_admin, business_id, expires_at FROM auth_tokens WHERE token = ? AND expires_at > CURRENT_TIMESTAMP",
         (token,)
     ).fetchone()
     
     if not row:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     
-    # Check if token expired
-    expires_at = datetime.fromisoformat(row["expires_at"])
-    if datetime.now() > expires_at:
-        # Delete expired token
-        db.execute("DELETE FROM auth_tokens WHERE token = ?", (token,))
-        db.commit()
-        raise HTTPException(status_code=401, detail="Token expired")
+    # Token is already validated as not expired by the query
+    expires_at = parse_db_datetime(row["expires_at"])
     
     row_dict = dict(row)
     return {
@@ -106,22 +124,17 @@ def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials
     
     token = credentials.credentials
     
-    # Get token from database
+    # Get token from database (optimized: check expiration in WHERE clause)
     row = db.execute(
-        "SELECT user_id, username, is_admin, is_super_admin, business_id, expires_at FROM auth_tokens WHERE token = ?",
+        "SELECT user_id, username, is_admin, is_super_admin, business_id, expires_at FROM auth_tokens WHERE token = ? AND expires_at > CURRENT_TIMESTAMP",
         (token,)
     ).fetchone()
     
     if not row:
         return None
     
-    # Check if token expired
-    expires_at = datetime.fromisoformat(row["expires_at"])
-    if datetime.now() > expires_at:
-        # Delete expired token
-        db.execute("DELETE FROM auth_tokens WHERE token = ?", (token,))
-        db.commit()
-        return None
+    # Token is already validated as not expired by the query
+    expires_at = parse_db_datetime(row["expires_at"])
     
     row_dict = dict(row)
     return {
@@ -309,7 +322,7 @@ def list_businesses(current_user: dict = Depends(get_current_super_admin_user), 
     rows = db.execute(
         "SELECT id, name, created_at FROM businesses ORDER BY created_at DESC"
     ).fetchall()
-    return [BusinessRead(**dict(row)) for row in rows]
+    return [BusinessRead(**row_to_dict(row)) for row in rows]
 
 @app.post("/businesses", response_model=BusinessRead, status_code=status.HTTP_201_CREATED)
 def create_business(payload: BusinessCreate, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
@@ -334,15 +347,15 @@ def create_business(payload: BusinessCreate, current_user: dict = Depends(get_cu
                     (payload.admin_username.strip(), password_hash, 1, business_id)
                 )
                 db.commit()
-            except sqlite3.IntegrityError:
+            except (sqlite3.IntegrityError, psycopg2.IntegrityError):
                 # Rollback business creation if user creation fails
                 db.execute("DELETE FROM businesses WHERE id = ?", (business_id,))
                 db.commit()
                 raise HTTPException(status_code=400, detail="Username already exists")
         
         row = db.execute("SELECT id, name, created_at FROM businesses WHERE id = ?", (business_id,)).fetchone()
-        return BusinessRead(**dict(row))
-    except sqlite3.IntegrityError:
+        return BusinessRead(**row_to_dict(row))
+    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
         raise HTTPException(status_code=400, detail="Business name already exists")
 
 @app.put("/businesses/{business_id}", response_model=BusinessRead)
@@ -359,8 +372,8 @@ def update_business(business_id: int, payload: BusinessCreate, current_user: dic
         )
         db.commit()
         row = db.execute("SELECT id, name, created_at FROM businesses WHERE id = ?", (business_id,)).fetchone()
-        return BusinessRead(**dict(row))
-    except sqlite3.IntegrityError:
+        return BusinessRead(**row_to_dict(row))
+    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
         raise HTTPException(status_code=400, detail="Business name already exists")
 
 # Deleted Records View for Super Admin
@@ -392,10 +405,13 @@ def list_deleted_records(
             params.append(business_id)
         rows = db.execute(clients_query, params).fetchall()
         for row in rows:
+            deleted_at = row["deleted_at"]
+            if isinstance(deleted_at, datetime):
+                deleted_at = deleted_at.isoformat()
             deleted_records.append({
                 "id": row["id"],
                 "name": row["name"],
-                "deleted_at": row["deleted_at"],
+                "deleted_at": deleted_at,
                 "deleted_by": row["deleted_by"],
                 "type": "client",
                 "business_id": row["business_id"],
@@ -414,10 +430,13 @@ def list_deleted_records(
             params.append(business_id)
         rows = db.execute(sites_query, params).fetchall()
         for row in rows:
+            deleted_at = row["deleted_at"]
+            if isinstance(deleted_at, datetime):
+                deleted_at = deleted_at.isoformat()
             deleted_records.append({
                 "id": row["id"],
                 "name": row["name"],
-                "deleted_at": row["deleted_at"],
+                "deleted_at": deleted_at,
                 "deleted_by": row["deleted_by"],
                 "type": "site",
                 "business_id": row["business_id"],
@@ -438,10 +457,13 @@ def list_deleted_records(
             params.append(business_id)
         rows = db.execute(equipment_query, params).fetchall()
         for row in rows:
+            deleted_at = row["deleted_at"]
+            if isinstance(deleted_at, datetime):
+                deleted_at = deleted_at.isoformat()
             deleted_records.append({
                 "id": row["id"],
                 "name": row["name"],
-                "deleted_at": row["deleted_at"],
+                "deleted_at": deleted_at,
                 "deleted_by": row["deleted_by"],
                 "type": "equipment_record",
                 "business_id": row["business_id"],
@@ -460,10 +482,13 @@ def list_deleted_records(
             params.append(business_id)
         rows = db.execute(types_query, params).fetchall()
         for row in rows:
+            deleted_at = row["deleted_at"]
+            if isinstance(deleted_at, datetime):
+                deleted_at = deleted_at.isoformat()
             deleted_records.append({
                 "id": row["id"],
                 "name": row["name"],
-                "deleted_at": row["deleted_at"],
+                "deleted_at": deleted_at,
                 "deleted_by": row["deleted_by"],
                 "type": "equipment_type",
                 "business_id": row["business_id"],
@@ -626,7 +651,7 @@ def list_users(current_user: dict = Depends(get_current_admin_user), db: sqlite3
             (business_id,)
         ).fetchall()
     
-    return [UserRead(**dict(row)) for row in rows]
+    return [UserRead(**row_to_dict(row)) for row in rows]
 
 @app.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(payload: UserCreate, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
@@ -647,14 +672,14 @@ def create_user(payload: UserCreate, current_user: dict = Depends(get_current_ad
             (payload.username, password_hash, 1 if payload.is_admin else 0, business_id)
         )
         db.commit()
-    except sqlite3.IntegrityError:
+    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
         raise HTTPException(status_code=400, detail="Username already exists")
     
     row = db.execute(
         "SELECT id, username, is_admin, created_at FROM users WHERE id = ?",
         (cur.lastrowid,)
     ).fetchone()
-    return UserRead(**dict(row))
+    return UserRead(**row_to_dict(row))
 
 @app.delete("/users/{user_id}")
 def delete_user(user_id: int, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
@@ -807,7 +832,7 @@ def change_username(payload: ChangeUsernameRequest, current_user: dict = Depends
             (new_username, current_user["user_id"])
         )
         db.commit()
-    except sqlite3.IntegrityError:
+    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
         raise HTTPException(status_code=400, detail="Username already exists")
     
     return {"message": "Username changed successfully", "new_username": new_username}
@@ -914,7 +939,7 @@ def list_clients(
                 (business_id,)
             )
         rows = cur.fetchall()
-    return [ClientRead(**dict(row)) for row in rows]
+    return [ClientRead(**row_to_dict(row)) for row in rows]
 
 @app.get("/clients/{client_id}", response_model=ClientRead)
 def get_client(client_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
@@ -950,7 +975,7 @@ def get_client(client_id: int, current_user: dict = Depends(get_current_user), d
     if row is None:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    return ClientRead(**dict(row))
+    return ClientRead(**row_to_dict(row))
 
 #Creating Client
 @app.post("/clients", response_model=ClientRead, status_code=status.HTTP_201_CREATED)
@@ -969,14 +994,14 @@ def create_client(payload: ClientCreate, current_user: dict = Depends(get_curren
             (business_id, payload.name, payload.address, payload.billing_info, payload.notes),
         )
         db.commit()
-    except sqlite3.IntegrityError:
+    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
         raise HTTPException(status_code=400, detail="Client name must be unique within business")
 
     row = db.execute(
         "SELECT id, name, address, billing_info, notes FROM clients WHERE id = ?",
         (cur.lastrowid,),
     ).fetchone()
-    return ClientRead(**dict(row))
+    return ClientRead(**row_to_dict(row))
 
 #Update Client
 @app.put("/clients/{client_id}", response_model=ClientRead)
@@ -1027,7 +1052,7 @@ def update_client(client_id: int, payload: ClientUpdate, current_user: dict = De
                 values,
             )
             db.commit()
-        except sqlite3.IntegrityError:
+        except (sqlite3.IntegrityError, psycopg2.IntegrityError):
             raise HTTPException(status_code=400, detail="Client name must be unique")
 
     # return fresh row
@@ -1035,7 +1060,7 @@ def update_client(client_id: int, payload: ClientUpdate, current_user: dict = De
         "SELECT id, name, address, billing_info, notes FROM clients WHERE id = ?",
         (client_id,),
     ).fetchone()
-    return ClientRead(**dict(row))
+    return ClientRead(**row_to_dict(row))
 
 #Delete Client
 @app.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1178,7 +1203,7 @@ def list_sites(
                    ORDER BY s.name"""
             )
     rows = cur.fetchall()
-    return [SiteRead(**dict(row)) for row in rows]
+    return [SiteRead(**row_to_dict(row)) for row in rows]
 
 
 @app.get("/sites/{site_id}", response_model=SiteRead)
@@ -1223,7 +1248,7 @@ def get_site(site_id: int, current_user: dict = Depends(get_current_user), db: s
     if row is None:
         raise HTTPException(status_code=404, detail="Site not found")
 
-    return SiteRead(**dict(row))
+    return SiteRead(**row_to_dict(row))
 
 
 @app.post("/sites", response_model=SiteRead, status_code=status.HTTP_201_CREATED)
@@ -1242,14 +1267,14 @@ def create_site(payload: SiteCreate, current_user: dict = Depends(get_current_us
             (payload.client_id, payload.name, payload.street, payload.state, payload.site_registration_license, payload.timezone, payload.notes),
         )
         db.commit()
-    except sqlite3.IntegrityError:
+    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
         raise HTTPException(status_code=400, detail="Site name must be unique per client")
 
     row = db.execute(
         "SELECT id, client_id, name, street, state, site_registration_license, timezone, notes FROM sites WHERE id = ?",
         (cur.lastrowid,),
     ).fetchone()
-    return SiteRead(**dict(row))
+    return SiteRead(**row_to_dict(row))
 
 
 @app.put("/sites/{site_id}", response_model=SiteRead)
@@ -1321,14 +1346,14 @@ def update_site(site_id: int, payload: SiteUpdate, current_user: dict = Depends(
                 values,
             )
             db.commit()
-        except sqlite3.IntegrityError:
+        except (sqlite3.IntegrityError, psycopg2.IntegrityError):
             raise HTTPException(status_code=400, detail="Site name must be unique per client")
 
     row = db.execute(
         "SELECT id, client_id, name, street, state, site_registration_license, timezone, notes FROM sites WHERE id = ?",
         (site_id,),
     ).fetchone()
-    return SiteRead(**dict(row))
+    return SiteRead(**row_to_dict(row))
 
 
 @app.delete("/sites/{site_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1396,7 +1421,7 @@ class ContactRead(BaseModel):
 def list_contacts(db: sqlite3.Connection = Depends(get_db)):
     cur = db.execute("SELECT id, first_name, last_name, email, phone FROM contacts ORDER BY last_name, first_name")
     rows = cur.fetchall()
-    return [ContactRead(**dict(row)) for row in rows]
+    return [ContactRead(**row_to_dict(row)) for row in rows]
 
 
 @app.get("/contacts/{contact_id}", response_model=ContactRead)
@@ -1409,7 +1434,7 @@ def get_contact(contact_id: int, db: sqlite3.Connection = Depends(get_db)):
     if row is None:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    return ContactRead(**dict(row))
+    return ContactRead(**row_to_dict(row))
 
 
 @app.post("/contacts", response_model=ContactRead, status_code=status.HTTP_201_CREATED)
@@ -1424,7 +1449,7 @@ def create_contact(payload: ContactCreate, db: sqlite3.Connection = Depends(get_
         "SELECT id, first_name, last_name, email, phone FROM contacts WHERE id = ?",
         (cur.lastrowid,),
     ).fetchone()
-    return ContactRead(**dict(row))
+    return ContactRead(**row_to_dict(row))
 
 
 @app.put("/contacts/{contact_id}", response_model=ContactRead)
@@ -1461,7 +1486,7 @@ def update_contact(contact_id: int, payload: ContactUpdate, db: sqlite3.Connecti
         "SELECT id, first_name, last_name, email, phone FROM contacts WHERE id = ?",
         (contact_id,),
     ).fetchone()
-    return ContactRead(**dict(row))
+    return ContactRead(**row_to_dict(row))
 
 
 @app.delete("/contacts/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1518,7 +1543,7 @@ def list_contact_links(
     query += " ORDER BY scope, scope_id, role"
     cur = db.execute(query, params)
     rows = cur.fetchall()
-    return [ContactLinkRead(**dict(row)) for row in rows]
+    return [ContactLinkRead(**row_to_dict(row)) for row in rows]
 
 
 @app.get("/contact-links/{link_id}", response_model=ContactLinkRead)
@@ -1531,7 +1556,7 @@ def get_contact_link(link_id: int, db: sqlite3.Connection = Depends(get_db)):
     if row is None:
         raise HTTPException(status_code=404, detail="Contact link not found")
 
-    return ContactLinkRead(**dict(row))
+    return ContactLinkRead(**row_to_dict(row))
 
 
 @app.post("/contact-links", response_model=ContactLinkRead, status_code=status.HTTP_201_CREATED)
@@ -1559,14 +1584,14 @@ def create_contact_link(payload: ContactLinkCreate, db: sqlite3.Connection = Dep
             (payload.contact_id, payload.scope, payload.scope_id, payload.role, 1 if payload.is_primary else 0),
         )
         db.commit()
-    except sqlite3.IntegrityError:
+    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
         raise HTTPException(status_code=400, detail="Contact link already exists for this scope/role")
 
     row = db.execute(
         "SELECT id, contact_id, scope, scope_id, role, is_primary FROM contact_links WHERE id = ?",
         (cur.lastrowid,),
     ).fetchone()
-    return ContactLinkRead(**dict(row))
+    return ContactLinkRead(**row_to_dict(row))
 
 
 @app.put("/contact-links/{link_id}", response_model=ContactLinkRead)
@@ -1597,7 +1622,7 @@ def update_contact_link(link_id: int, payload: ContactLinkUpdate, db: sqlite3.Co
         "SELECT id, contact_id, scope, scope_id, role, is_primary FROM contact_links WHERE id = ?",
         (link_id,),
     ).fetchone()
-    return ContactLinkRead(**dict(row))
+    return ContactLinkRead(**row_to_dict(row))
 
 
 @app.delete("/contact-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1724,7 +1749,7 @@ def list_equipment_types(
                 (business_id,)
             )
     rows = cur.fetchall()
-    return [EquipmentTypeRead(**dict(row)) for row in rows]
+    return [EquipmentTypeRead(**row_to_dict(row)) for row in rows]
 
 
 @app.get("/equipment-types/{equipment_type_id}", response_model=EquipmentTypeRead)
@@ -1745,7 +1770,7 @@ def get_equipment_type(equipment_type_id: int, current_user: dict = Depends(get_
     if row is None:
         raise HTTPException(status_code=404, detail="Equipment type not found")
 
-    return EquipmentTypeRead(**dict(row))
+    return EquipmentTypeRead(**row_to_dict(row))
 
 
 @app.post("/equipment-types", response_model=EquipmentTypeRead, status_code=status.HTTP_201_CREATED)
@@ -1777,7 +1802,7 @@ def create_equipment_type(payload: EquipmentTypeCreate, current_user: dict = Dep
             (business_id, payload.name, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
         )
         db.commit()
-    except sqlite3.IntegrityError as e:
+    except (sqlite3.IntegrityError, psycopg2.IntegrityError) as e:
         # Check if it's a unique constraint violation
         # If business_id is NULL, name must be unique globally
         # If business_id is set, name must be unique within that business
@@ -1807,7 +1832,7 @@ def create_equipment_type(payload: EquipmentTypeCreate, current_user: dict = Dep
         "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
         (cur.lastrowid,),
     ).fetchone()
-    return EquipmentTypeRead(**dict(row))
+    return EquipmentTypeRead(**row_to_dict(row))
 
 
 @app.put("/equipment-types/{equipment_type_id}", response_model=EquipmentTypeRead)
@@ -1858,14 +1883,14 @@ def update_equipment_type(equipment_type_id: int, payload: EquipmentTypeUpdate, 
                 values,
             )
             db.commit()
-        except sqlite3.IntegrityError:
+        except (sqlite3.IntegrityError, psycopg2.IntegrityError):
             raise HTTPException(status_code=400, detail="Equipment type name must be unique")
 
     row = db.execute(
         "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
         (equipment_type_id,),
     ).fetchone()
-    return EquipmentTypeRead(**dict(row))
+    return EquipmentTypeRead(**row_to_dict(row))
 
 
 @app.delete("/equipment-types/{equipment_type_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -2044,15 +2069,13 @@ def list_equipment_records(
         params.append(business_id)
     
     if client_id:
-        # Verify client belongs to business (or exists if viewing all businesses)
-        if business_id is not None:
-            client = db.execute("SELECT id FROM clients WHERE id = ? AND business_id = ?", (client_id, business_id)).fetchone()
-        else:
-            client = db.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone()
-        if not client:
-            raise HTTPException(status_code=404, detail="Client not found")
+        # Add client_id filter directly to query (no need for separate verification query)
         query += " AND er.client_id = ?"
         params.append(client_id)
+        # Also filter by business_id if specified to ensure client belongs to business
+        if business_id is not None:
+            query += " AND c.business_id = ?"
+            params.append(business_id)
     
     # For non-admin users, always filter to active only
     # For admin users, respect the active_only parameter (default to showing all)
@@ -2072,7 +2095,7 @@ def list_equipment_records(
     rows = cur.fetchall()
     result = []
     for row in rows:
-        record_dict = dict(row)
+        record_dict = row_to_dict(row)
         record_dict['active'] = bool(record_dict.get('active', 1))
         result.append(EquipmentRecordRead(**record_dict))
     return result
@@ -2144,7 +2167,7 @@ def get_upcoming_equipment_records(
     rows = cur.fetchall()
     result = []
     for row in rows:
-        record_dict = dict(row)
+        record_dict = row_to_dict(row)
         record_dict['active'] = bool(record_dict.get('active', 1))
         result.append(EquipmentRecordRead(**record_dict))
     return result
@@ -2202,7 +2225,7 @@ def get_overdue_equipment_records(
     rows = cur.fetchall()
     result = []
     for row in rows:
-        record_dict = dict(row)
+        record_dict = row_to_dict(row)
         record_dict['active'] = bool(record_dict.get('active', 1))
         result.append(EquipmentRecordRead(**record_dict))
     return result
@@ -2301,7 +2324,7 @@ def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(
     if row is None:
         raise HTTPException(status_code=404, detail="Equipment record not found")
 
-    record_dict = dict(row)
+    record_dict = row_to_dict(row)
     record_dict['active'] = bool(record_dict.get('active', 1))
     return EquipmentRecordRead(**record_dict)
 
@@ -2356,7 +2379,7 @@ def create_equipment_record(payload: EquipmentRecordCreate, current_user: dict =
             (payload.client_id, payload.site_id, payload.equipment_type_id, payload.equipment_name, payload.make, payload.model, payload.serial_number, payload.anchor_date, payload.due_date, payload.interval_weeks, payload.lead_weeks, 1 if payload.active else 0, payload.notes, payload.timezone),
         )
         db.commit()
-    except sqlite3.IntegrityError as e:
+    except (sqlite3.IntegrityError, psycopg2.IntegrityError) as e:
         raise HTTPException(status_code=400, detail=f"Database error: {str(e)}")
 
     return get_equipment_record(cur.lastrowid, current_user, db)
@@ -2498,7 +2521,7 @@ def update_equipment_record(equipment_record_id: int, payload: EquipmentRecordUp
                 values,
             )
             db.commit()
-        except sqlite3.IntegrityError as e:
+        except (sqlite3.IntegrityError, psycopg2.IntegrityError) as e:
             raise HTTPException(status_code=400, detail=f"Database error: {str(e)}")
 
     return get_equipment_record(equipment_record_id, current_user, db)
@@ -2645,7 +2668,7 @@ def create_equipment_completion(payload: EquipmentCompletionCreate, current_user
         WHERE ec.id = ?
 """, (cur.lastrowid,)).fetchone()
     
-    return EquipmentCompletionRead(**dict(row))
+    return EquipmentCompletionRead(**row_to_dict(row))
 
 
 @app.get("/equipment-completions", response_model=List[EquipmentCompletionRead])
@@ -2713,7 +2736,7 @@ def list_equipment_completions(
     
     cur = db.execute(query, params)
     rows = cur.fetchall()
-    return [EquipmentCompletionRead(**dict(row)) for row in rows]
+    return [EquipmentCompletionRead(**row_to_dict(row)) for row in rows]
 
 
 @app.delete("/equipment-completions/{completion_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -2883,7 +2906,7 @@ def create_client_equipment(client_id: int, payload: EquipmentCreate, db: sqlite
             (None, payload.name, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
         )
         db.commit()
-    except sqlite3.IntegrityError:
+    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
         raise HTTPException(status_code=400, detail="Equipment type name must be unique for all businesses")
 
     row = db.execute(
@@ -2940,7 +2963,7 @@ def update_equipment(equipment_id: int, payload: EquipmentUpdate, db: sqlite3.Co
                 values,
             )
             db.commit()
-        except sqlite3.IntegrityError:
+        except (sqlite3.IntegrityError, psycopg2.IntegrityError):
             raise HTTPException(status_code=400, detail="Equipment type name must be unique")
 
     row = db.execute(
@@ -3059,7 +3082,7 @@ def list_notes(
     query += " ORDER BY created_at DESC"
     cur = db.execute(query, params)
     rows = cur.fetchall()
-    return [NoteRead(**dict(row)) for row in rows]
+    return [NoteRead(**row_to_dict(row)) for row in rows]
 
 
 @app.post("/notes", response_model=NoteRead, status_code=status.HTTP_201_CREATED)
@@ -3086,7 +3109,7 @@ def create_note(payload: NoteCreate, db: sqlite3.Connection = Depends(get_db)):
         "SELECT id, scope, scope_id, body, created_at FROM notes WHERE id = ?",
         (cur.lastrowid,),
     ).fetchone()
-    return NoteRead(**dict(row))
+    return NoteRead(**row_to_dict(row))
 
 
 @app.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -3137,7 +3160,7 @@ def list_attachments(
     query += " ORDER BY uploaded_at DESC"
     cur = db.execute(query, params)
     rows = cur.fetchall()
-    return [AttachmentRead(**dict(row)) for row in rows]
+    return [AttachmentRead(**row_to_dict(row)) for row in rows]
 
 
 @app.post("/attachments", response_model=AttachmentRead, status_code=status.HTTP_201_CREATED)
@@ -3164,7 +3187,7 @@ def create_attachment(payload: AttachmentCreate, db: sqlite3.Connection = Depend
         "SELECT id, scope, scope_id, filename, url_or_path, uploaded_at FROM attachments WHERE id = ?",
         (cur.lastrowid,),
     ).fetchone()
-    return AttachmentRead(**dict(row))
+    return AttachmentRead(**row_to_dict(row))
 
 
 @app.delete("/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -3212,7 +3235,7 @@ def get_client_contacts(client_id: int, db: sqlite3.Connection = Depends(get_db)
         (client_id, client_id)
     )
     rows = cur.fetchall()
-    return [ContactRollup(**dict(row)) for row in rows]
+    return [ContactRollup(**row_to_dict(row)) for row in rows]
 
 
 @app.get("/contacts/rollup/site/{site_id}", response_model=List[ContactRollup])
@@ -3242,7 +3265,7 @@ def get_site_contacts(site_id: int, db: sqlite3.Connection = Depends(get_db)):
         (client_id, site_id)
     )
     rows = cur.fetchall()
-    return [ContactRollup(**dict(row)) for row in rows]
+    return [ContactRollup(**row_to_dict(row)) for row in rows]
 
 
 # ========== EXCEL IMPORT ==========
@@ -3398,6 +3421,12 @@ async def import_excel(
         client_map = {}  # name -> id
         site_map = {}    # (client_id, site_name) -> id
         equipment_map = {}  # equipment_type_name (uppercase) -> equipment_type_id
+        site_timezone_cache = {}  # site_id -> timezone (cache to avoid N+1 queries)
+        equipment_type_cache = {}  # equipment_type_id -> {interval_weeks, default_lead_weeks} (cache to avoid N+1 queries)
+        
+        # Batch commits for better performance (commit every 50 rows or at the end)
+        commit_batch_size = 50
+        rows_since_commit = 0
         
         for idx, row in df.iterrows():
             try:
@@ -3422,8 +3451,13 @@ async def import_excel(
                                 "INSERT INTO clients (business_id, name, address) VALUES (?, ?, ?)",
                                 (business_id, client_name, str(row[address_col]).strip() if address_col and pd.notna(row.get(address_col)) else None)
                             )
-                            db.commit()
+                            # Get ID from RETURNING clause (no commit needed yet)
                             client_id = cur.lastrowid
+                            rows_since_commit += 1
+                            # Commit in batches for better performance
+                            if rows_since_commit >= commit_batch_size:
+                                db.commit()
+                                rows_since_commit = 0
                             stats["clients_created"] += 1
                         
                         client_map[client_name] = client_id
@@ -3448,8 +3482,13 @@ async def import_excel(
                                 "INSERT INTO sites (client_id, name, street, state, site_registration_license, timezone) VALUES (?, ?, ?, ?, ?, ?)",
                                 (client_id, site_name, None, None, None, "America/Chicago")
                             )
-                            db.commit()
+                            # Get ID from RETURNING clause (no commit needed yet)
                             site_id = cur.lastrowid
+                            rows_since_commit += 1
+                            # Commit in batches for better performance
+                            if rows_since_commit >= commit_batch_size:
+                                db.commit()
+                                rows_since_commit = 0
                             stats["sites_created"] += 1
                         
                         site_map[site_key] = site_id
@@ -3476,8 +3515,13 @@ async def import_excel(
                             "INSERT INTO equipment_types (name, interval_weeks, rrule, default_lead_weeks) VALUES (?, ?, ?, ?)",
                             (equipment_type_name, 52, "FREQ=WEEKLY;INTERVAL=52", 4)
                         )
-                        db.commit()
+                        # Get ID from RETURNING clause (no commit needed yet)
                         equipment_type_id = cur.lastrowid
+                        rows_since_commit += 1
+                        # Commit in batches for better performance
+                        if rows_since_commit >= commit_batch_size:
+                            db.commit()
+                            rows_since_commit = 0
                         stats["equipments_created"] += 1
                     equipment_map[equipment_type_key] = equipment_type_id
                 equipment_type_id = equipment_map[equipment_type_key]
@@ -3553,19 +3597,25 @@ async def import_excel(
                         if equipment_identifier and equipment_identifier.lower() in ['nan', 'none', '']:
                             equipment_identifier = None
                 
-                # Get default timezone from site if not provided
+                # Get default timezone from site if not provided (use cache to avoid N+1 queries)
                 if not timezone:
-                    site_row = db.execute("SELECT timezone FROM sites WHERE id = ?", (site_id,)).fetchone()
-                    timezone = site_row['timezone'] if site_row and site_row['timezone'] else "America/Chicago"
+                    if site_id not in site_timezone_cache:
+                        site_row = db.execute("SELECT timezone FROM sites WHERE id = ?", (site_id,)).fetchone()
+                        site_timezone_cache[site_id] = site_row['timezone'] if site_row and site_row['timezone'] else "America/Chicago"
+                    timezone = site_timezone_cache[site_id]
                 
-                # Get default lead_weeks from equipment_type if not provided
+                # Get default lead_weeks and interval_weeks from equipment_type (use cache to avoid N+1 queries)
+                if equipment_type_id not in equipment_type_cache:
+                    eq_type_row = db.execute("SELECT interval_weeks, default_lead_weeks FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
+                    equipment_type_cache[equipment_type_id] = {
+                        'interval_weeks': eq_type_row['interval_weeks'] if eq_type_row and eq_type_row['interval_weeks'] else 52,
+                        'default_lead_weeks': eq_type_row['default_lead_weeks'] if eq_type_row and eq_type_row['default_lead_weeks'] else 4
+                    }
+                
+                eq_type_data = equipment_type_cache[equipment_type_id]
                 if lead_weeks is None:
-                    eq_type_row = db.execute("SELECT default_lead_weeks FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
-                    lead_weeks = eq_type_row['default_lead_weeks'] if eq_type_row and eq_type_row['default_lead_weeks'] else 4
-                
-                # Get interval_weeks from equipment_type
-                eq_type_row = db.execute("SELECT interval_weeks FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
-                interval_weeks = eq_type_row['interval_weeks'] if eq_type_row and eq_type_row['interval_weeks'] else 52
+                    lead_weeks = eq_type_data['default_lead_weeks']
+                interval_weeks = eq_type_data['interval_weeks']
                 
                 # Use equipment_identifier as equipment_name, or fallback to equipment_type_name
                 equipment_name = equipment_identifier if equipment_identifier else equipment_type_name
@@ -3577,7 +3627,7 @@ async def import_excel(
                     )
                     db.commit()
                     stats["equipment_records_created"] += 1
-                except sqlite3.IntegrityError as e:
+                except (sqlite3.IntegrityError, psycopg2.IntegrityError) as e:
                     error_str = str(e)
                     if "UNIQUE constraint" in error_str:
                         stats["duplicates_skipped"] += 1
@@ -3588,6 +3638,10 @@ async def import_excel(
                 
             except:
                 continue
+        
+        # Final commit for any remaining uncommitted rows
+        if rows_since_commit > 0:
+            db.commit()
         
         return {
             "message": "Import completed",
@@ -3894,7 +3948,7 @@ async def import_equipments(
                     )
                     db.commit()
                     stats["equipment_records_created"] += 1
-                except sqlite3.IntegrityError as e:
+                except (sqlite3.IntegrityError, psycopg2.IntegrityError) as e:
                     error_str = str(e)
                     if "UNIQUE constraint" in error_str:
                         stats["duplicates_skipped"] += 1
@@ -4241,7 +4295,7 @@ async def import_temporary_data(
                     )
                     db.commit()
                     stats["equipment_records_created"] += 1
-                except sqlite3.IntegrityError as e:
+                except (sqlite3.IntegrityError, psycopg2.IntegrityError) as e:
                     error_str = str(e)
                     if "UNIQUE constraint" in error_str:
                         stats["duplicates_skipped"] += 1
