@@ -74,14 +74,29 @@ def _attach_sqlite_compatible_execute(conn):
         
         # For INSERT statements, add RETURNING id to get the inserted ID (for lastrowid compatibility)
         is_insert = query.strip().upper().startswith("INSERT")
+        original_query = query
         if is_insert and "RETURNING" not in query.upper():
             # Add RETURNING id to the INSERT statement
             query = query.rstrip(";").rstrip() + " RETURNING id"
         
-        if params is not None:
-            cur.execute(query, params)
-        else:
-            cur.execute(query)
+        # Try to execute with RETURNING id, but fall back if the table doesn't have an id column
+        try:
+            if params is not None:
+                cur.execute(query, params)
+            else:
+                cur.execute(query)
+        except Exception as e:
+            # If RETURNING id fails (e.g., table doesn't have id column), retry without it
+            error_str = str(e).lower()
+            if is_insert and "RETURNING" in query.upper() and ("column" in error_str and "id" in error_str and "does not exist" in error_str):
+                # Retry with original query (without RETURNING id)
+                if params is not None:
+                    cur.execute(original_query, params)
+                else:
+                    cur.execute(original_query)
+            else:
+                # Re-raise if it's a different error
+                raise
         
         # Store the returned ID for lastrowid access (PostgreSQL compatibility)
         if is_insert:
@@ -93,7 +108,7 @@ def _attach_sqlite_compatible_execute(conn):
                 else:
                     cur.lastrowid = None
             except Exception:
-                # If fetchone fails, set to None
+                # If fetchone fails (e.g., no RETURNING clause), set to None
                 cur.lastrowid = None
         else:
             cur.lastrowid = None
