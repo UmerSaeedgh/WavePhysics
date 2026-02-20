@@ -1666,14 +1666,30 @@ class EquipmentTypeRead(BaseModel):
     business_name: Optional[str] = None
 
 
-@app.get("/equipment-types", response_model=List[EquipmentTypeRead])
+class EquipmentTypeGroupedRead(BaseModel):
+    """Grouped equipment type for superadmin view - shows name once with all businesses it belongs to"""
+    name: str
+    interval_weeks: int
+    rrule: str
+    default_lead_weeks: int
+    active: bool
+    businesses: List[dict]  # List of {id: int, name: str} for each business, or [{id: None, name: "All Businesses"}] if in all
+    equipment_type_ids: List[int]  # List of all equipment type IDs with this name
+
+
+@app.get("/equipment-types")
 def list_equipment_types(
     active_only: bool = Query(False, description="Filter to active only"),
+    grouped: bool = Query(False, description="Group by name for superadmin (shows businesses per name)"),
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
     is_super_admin = current_user.get("is_super_admin")
     business_id = current_user.get("business_id") if is_super_admin else get_business_id(current_user)
+    
+    # If grouped=True and superadmin viewing all businesses, return grouped view
+    if grouped and is_super_admin and business_id is None:
+        return list_equipment_types_grouped(active_only, current_user, db)
     
     # Build query based on whether we're filtering by business_id
     if business_id is None:
@@ -1685,7 +1701,7 @@ def list_equipment_types(
                           CASE WHEN et.business_id IS NULL THEN 'All Businesses' ELSE b.name END as business_name
                    FROM equipment_types et
                    LEFT JOIN businesses b ON et.business_id = b.id
-                   WHERE et.active = 1 
+                   WHERE et.active = 1 AND et.deleted_at IS NULL
                    ORDER BY CASE WHEN et.business_id IS NULL THEN 0 ELSE 1 END, b.name, et.name"""
             )
         else:
@@ -1695,6 +1711,7 @@ def list_equipment_types(
                           CASE WHEN et.business_id IS NULL THEN 'All Businesses' ELSE b.name END as business_name
                    FROM equipment_types et
                    LEFT JOIN businesses b ON et.business_id = b.id
+                   WHERE et.deleted_at IS NULL
                    ORDER BY CASE WHEN et.business_id IS NULL THEN 0 ELSE 1 END, b.name, et.name"""
             )
     else:
@@ -1750,6 +1767,100 @@ def list_equipment_types(
             )
     rows = cur.fetchall()
     return [EquipmentTypeRead(**row_to_dict(row)) for row in rows]
+
+
+def list_equipment_types_grouped(
+    active_only: bool,
+    current_user: dict,
+    db: sqlite3.Connection
+) -> List[EquipmentTypeGroupedRead]:
+    """Group equipment types by name and show which businesses each belongs to"""
+    from collections import defaultdict
+    
+    # Get all equipment types
+    if active_only:
+        cur = db.execute(
+            """SELECT et.id, et.name, et.interval_weeks, et.rrule, et.default_lead_weeks, et.active, 
+                      et.business_id, 
+                      CASE WHEN et.business_id IS NULL THEN 'All Businesses' ELSE b.name END as business_name
+               FROM equipment_types et
+               LEFT JOIN businesses b ON et.business_id = b.id
+               WHERE et.active = 1 AND et.deleted_at IS NULL
+               ORDER BY et.name"""
+        )
+    else:
+        cur = db.execute(
+            """SELECT et.id, et.name, et.interval_weeks, et.rrule, et.default_lead_weeks, et.active,
+                      et.business_id,
+                      CASE WHEN et.business_id IS NULL THEN 'All Businesses' ELSE b.name END as business_name
+               FROM equipment_types et
+               LEFT JOIN businesses b ON et.business_id = b.id
+               WHERE et.deleted_at IS NULL
+               ORDER BY et.name"""
+        )
+    
+    rows = cur.fetchall()
+    
+    # Group by name
+    grouped = defaultdict(lambda: {
+        'name': None,
+        'interval_weeks': None,
+        'rrule': None,
+        'default_lead_weeks': None,
+        'active': None,
+        'businesses': [],
+        'equipment_type_ids': []
+    })
+    
+    # Get all businesses count to check if "all businesses" means all
+    all_businesses_count = db.execute("SELECT COUNT(*) as count FROM businesses").fetchone()['count']
+    
+    for row in rows:
+        row_dict = row_to_dict(row)
+        name = row_dict['name']
+        
+        if grouped[name]['name'] is None:
+            grouped[name]['name'] = name
+            grouped[name]['interval_weeks'] = row_dict['interval_weeks']
+            grouped[name]['rrule'] = row_dict['rrule']
+            grouped[name]['default_lead_weeks'] = row_dict['default_lead_weeks']
+            grouped[name]['active'] = row_dict['active']
+        
+        # Add business info
+        if row_dict['business_id'] is None:
+            # Check if "All Businesses" is already in the list
+            if not any(b['id'] is None for b in grouped[name]['businesses']):
+                grouped[name]['businesses'].append({'id': None, 'name': 'All Businesses'})
+        else:
+            # Add specific business if not already added
+            if not any(b['id'] == row_dict['business_id'] for b in grouped[name]['businesses']):
+                grouped[name]['businesses'].append({
+                    'id': row_dict['business_id'],
+                    'name': row_dict['business_name']
+                })
+        
+        # Add equipment type ID
+        if row_dict['id'] not in grouped[name]['equipment_type_ids']:
+            grouped[name]['equipment_type_ids'].append(row_dict['id'])
+    
+    # Convert to list and check if "All Businesses" means all businesses
+    result = []
+    for name, data in grouped.items():
+        # Check if this equipment type is in all businesses
+        # If it has "All Businesses" OR it's in every business individually
+        has_all_businesses = any(b['id'] is None for b in data['businesses'])
+        if not has_all_businesses:
+            # Check if it's in all businesses individually
+            specific_businesses_count = len([b for b in data['businesses'] if b['id'] is not None])
+            if specific_businesses_count == all_businesses_count:
+                # Replace with "All Businesses"
+                data['businesses'] = [{'id': None, 'name': 'All Businesses'}]
+        
+        result.append(EquipmentTypeGroupedRead(**data))
+    
+    # Sort by name
+    result.sort(key=lambda x: x.name)
+    return result
 
 
 @app.get("/equipment-types/{equipment_type_id}", response_model=EquipmentTypeRead)
@@ -1894,31 +2005,125 @@ def update_equipment_type(equipment_type_id: int, payload: EquipmentTypeUpdate, 
 
 
 @app.delete("/equipment-types/{equipment_type_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_equipment_type(equipment_type_id: int, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
-    """Delete equipment type (admin/superadmin only)"""
-    is_super_admin = current_user.get("is_super_admin")
-    if is_super_admin:
-        business_id = current_user.get("business_id")
-    else:
-        business_id = get_business_id(current_user)
-    # Verify equipment type belongs to business and is not deleted
-    if is_super_admin and business_id is None:
-        # Superadmin viewing all businesses - allow deleting any equipment type
-        et = db.execute("SELECT id FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
-    else:
-        et = db.execute("SELECT id FROM equipment_types WHERE id = ? AND business_id = ? AND deleted_at IS NULL", (equipment_type_id, business_id)).fetchone()
-    if not et:
-        raise HTTPException(status_code=404, detail="Equipment type not found")
+def delete_equipment_type(
+    equipment_type_id: int, 
+    business_id: Optional[int] = Query(None, description="Specific business to delete from (superadmin only). If None, deletes the specific equipment type."),
+    delete_from_all: bool = Query(False, description="Delete from all businesses with this name (superadmin only)"),
+    current_user: dict = Depends(get_current_admin_user), 
+    db: sqlite3.Connection = Depends(get_db)
+):
+    """Delete equipment type (admin/superadmin only)
     
-    # Soft delete: mark as deleted
+    For superadmin:
+    - If business_id is provided: delete only from that business
+    - If delete_from_all=True: delete all equipment types with the same name from all businesses
+    - Otherwise: delete the specific equipment type by ID
+    
+    For regular admin: delete only from their business
+    """
+    is_super_admin = current_user.get("is_super_admin")
     username = current_user.get("username", "unknown")
     deleted_at = datetime.now().isoformat()
-    db.execute(
-        "UPDATE equipment_types SET deleted_at = ?, deleted_by = ? WHERE id = ?",
-        (deleted_at, username, equipment_type_id)
-    )
-    db.commit()
-    return
+    
+    if is_super_admin:
+        if delete_from_all:
+            # Delete all equipment types with the same name
+            # First get the name of the equipment type
+            et_row = db.execute("SELECT name FROM equipment_types WHERE id = ? AND deleted_at IS NULL", (equipment_type_id,)).fetchone()
+            if not et_row:
+                raise HTTPException(status_code=404, detail="Equipment type not found")
+            
+            equipment_name = et_row['name']
+            # Delete all equipment types with this name
+            db.execute(
+                "UPDATE equipment_types SET deleted_at = ?, deleted_by = ? WHERE name = ? AND deleted_at IS NULL",
+                (deleted_at, username, equipment_name)
+            )
+            db.commit()
+            return
+        
+        elif business_id is not None:
+            # Delete from specific business
+            # First verify the equipment type exists and get its details
+            et = db.execute(
+                "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active, business_id FROM equipment_types WHERE id = ? AND deleted_at IS NULL", 
+                (equipment_type_id,)
+            ).fetchone()
+            if not et:
+                raise HTTPException(status_code=404, detail="Equipment type not found")
+            
+            equipment_name = et['name']
+            
+            # Check if this equipment type is in "All Businesses" (business_id IS NULL)
+            if et['business_id'] is None:
+                # This is an "All Businesses" equipment type
+                # We need to create entries for all businesses EXCEPT the one being deleted
+                # Then delete the "All Businesses" entry
+                
+                # Get all businesses
+                all_businesses = db.execute("SELECT id FROM businesses").fetchall()
+                
+                # Create equipment type entries for all businesses except the one being deleted
+                for biz_row in all_businesses:
+                    biz_id = biz_row['id']
+                    if biz_id != business_id:
+                        # Check if this business already has this equipment type
+                        existing = db.execute(
+                            "SELECT id FROM equipment_types WHERE name = ? AND business_id = ? AND deleted_at IS NULL",
+                            (equipment_name, biz_id)
+                        ).fetchone()
+                        
+                        if not existing:
+                            # Create the equipment type for this business
+                            db.execute(
+                                """INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks, active)
+                                   VALUES (?, ?, ?, ?, ?, ?)""",
+                                (biz_id, equipment_name, et['interval_weeks'], et['rrule'], 
+                                 et['default_lead_weeks'], et['active'])
+                            )
+                
+                # Delete the "All Businesses" entry
+                db.execute(
+                    "UPDATE equipment_types SET deleted_at = ?, deleted_by = ? WHERE name = ? AND business_id IS NULL AND deleted_at IS NULL",
+                    (deleted_at, username, equipment_name)
+                )
+            else:
+                # This is a business-specific equipment type, just delete it from that business
+                db.execute(
+                    "UPDATE equipment_types SET deleted_at = ?, deleted_by = ? WHERE name = ? AND business_id = ? AND deleted_at IS NULL",
+                    (deleted_at, username, equipment_name, business_id)
+                )
+            
+            db.commit()
+            return
+        else:
+            # Delete specific equipment type by ID
+            et = db.execute("SELECT id FROM equipment_types WHERE id = ? AND deleted_at IS NULL", (equipment_type_id,)).fetchone()
+            if not et:
+                raise HTTPException(status_code=404, detail="Equipment type not found")
+            
+            db.execute(
+                "UPDATE equipment_types SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+                (deleted_at, username, equipment_type_id)
+            )
+            db.commit()
+            return
+    else:
+        # Regular admin - can only delete from their business
+        business_id = get_business_id(current_user)
+        et = db.execute(
+            "SELECT id FROM equipment_types WHERE id = ? AND business_id = ? AND deleted_at IS NULL", 
+            (equipment_type_id, business_id)
+        ).fetchone()
+        if not et:
+            raise HTTPException(status_code=404, detail="Equipment type not found")
+        
+        db.execute(
+            "UPDATE equipment_types SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+            (deleted_at, username, equipment_type_id)
+        )
+        db.commit()
+        return
 
 @app.post("/equipment-types/{equipment_type_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
 def restore_equipment_type(equipment_type_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):

@@ -30,6 +30,9 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
   const [showAddEquipmentType, setShowAddEquipmentType] = useState(false);
   const [editingEquipmentType, setEditingEquipmentType] = useState(null);
   const [equipmentTypesExpanded, setEquipmentTypesExpanded] = useState(true);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [equipmentTypeToDelete, setEquipmentTypeToDelete] = useState(null);
+  const [deleteFromBusiness, setDeleteFromBusiness] = useState("all");
   const [equipmentTypeForm, setEquipmentTypeForm] = useState({
     name: "",
     interval_weeks: "52",
@@ -271,11 +274,39 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
 
   async function fetchEquipmentTypes() {
     try {
-      const types = await apiCall("/equipment-types");
+      // For superadmin viewing all businesses, use grouped view
+      const url = isSuperAdmin && selectedBusinessId === null 
+        ? "/equipment-types?grouped=true" 
+        : "/equipment-types";
+      const types = await apiCall(url);
       setEquipmentTypes(types || []);
     } catch (err) {
       console.error("Failed to fetch equipment types:", err);
       setEquipmentTypes([]);
+    }
+  }
+
+  async function handleDeleteEquipmentType(equipmentTypeId, businessId = null, deleteFromAll = false) {
+    try {
+      let url = `/equipment-types/${equipmentTypeId}`;
+      const params = new URLSearchParams();
+      if (businessId !== null) {
+        params.append("business_id", businessId.toString());
+      }
+      if (deleteFromAll) {
+        params.append("delete_from_all", "true");
+      }
+      if (params.toString()) {
+        url += "?" + params.toString();
+      }
+      
+      await apiCall(url, { method: "DELETE" });
+      await fetchEquipmentTypes();
+      if (onRefresh) onRefresh();
+      setShowDeleteDialog(false);
+      setEquipmentTypeToDelete(null);
+    } catch (err) {
+      setError(err.message || "Failed to delete equipment type");
     }
   }
 
@@ -600,48 +631,80 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                 ) : (
                   <div style={{ maxHeight: "500px", overflowY: "auto", border: "1px solid #e0e0e0", borderRadius: "0.25rem", padding: "0.5rem" }}>
                     <ul className="list" style={{ margin: 0 }}>
-                      {equipmentTypes.map(type => (
-                        <li key={type.id} className="list-item">
-                          <div className="list-main" style={{ flex: 1 }}>
-                            <div className="list-title">
-                              {type.name}
-                              {!type.active && (
-                                <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#8193A4", fontStyle: "italic" }}>
-                                  (Inactive)
-                                </span>
+                      {equipmentTypes.map((type, index) => {
+                        // Check if this is a grouped type (has businesses array)
+                        const isGrouped = Array.isArray(type.businesses);
+                        const key = isGrouped ? `grouped-${type.name}-${index}` : type.id;
+                        
+                        return (
+                          <li key={key} className="list-item">
+                            <div className="list-main" style={{ flex: 1 }}>
+                              <div className="list-title">
+                                {type.name}
+                                {!type.active && (
+                                  <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#8193A4", fontStyle: "italic" }}>
+                                    (Inactive)
+                                  </span>
+                                )}
+                              </div>
+                              <div className="list-subtitle">
+                                {isGrouped ? (
+                                  <>
+                                    <strong>Businesses:</strong> {type.businesses.map(b => b.name).join(", ")} • 
+                                  </>
+                                ) : (
+                                  <>
+                                    {type.business_name && `Business: ${type.business_name} • `}
+                                  </>
+                                )}
+                                Interval: {type.interval_weeks} weeks • Default Lead: {type.default_lead_weeks} weeks
+                              </div>
+                            </div>
+                            <div className="list-actions" onClick={(e) => e.stopPropagation()}>
+                              {!isGrouped && (
+                                <button onClick={() => {
+                                  setEditingEquipmentType(type);
+                                  setEquipmentTypeForm({
+                                    name: type.name,
+                                    interval_weeks: type.interval_weeks.toString(),
+                                    rrule: type.rrule,
+                                    default_lead_weeks: type.default_lead_weeks.toString(),
+                                    active: type.active,
+                                    business_id: null // Don't allow changing business when editing
+                                  });
+                                  setShowAddEquipmentType(true);
+                                }}>Edit</button>
                               )}
+                              <button className="danger" onClick={() => {
+                                if (isGrouped && isSuperAdmin && selectedBusinessId === null) {
+                                  // Show delete dialog for grouped types
+                                  setEquipmentTypeToDelete(type);
+                                  // Set default selection: "all" if multiple businesses, otherwise first business
+                                  const isInAllBusinesses = type.businesses && type.businesses.some(b => b.id === null);
+                                  let businessesToShow = [];
+                                  if (isInAllBusinesses) {
+                                    businessesToShow = businesses.filter(b => b.id !== null);
+                                  } else {
+                                    businessesToShow = type.businesses.filter(b => b.id !== null);
+                                  }
+                                  const hasMultipleBusinesses = businessesToShow.length > 1 || isInAllBusinesses;
+                                  setDeleteFromBusiness(hasMultipleBusinesses ? "all" : (businessesToShow[0]?.id?.toString() || "all"));
+                                  setShowDeleteDialog(true);
+                                } else {
+                                  // Regular delete for non-grouped or when viewing specific business
+                                  if (!window.confirm(`Are you sure you want to delete "${type.name}"?`)) return;
+                                  const equipmentTypeId = isGrouped && type.equipment_type_ids 
+                                    ? type.equipment_type_ids[0] 
+                                    : type.id;
+                                  if (equipmentTypeId) {
+                                    handleDeleteEquipmentType(equipmentTypeId);
+                                  }
+                                }
+                              }}>Delete</button>
                             </div>
-                            <div className="list-subtitle">
-                              {type.business_name && `Business: ${type.business_name} • `}
-                              Interval: {type.interval_weeks} weeks • Default Lead: {type.default_lead_weeks} weeks
-                            </div>
-                          </div>
-                          <div className="list-actions" onClick={(e) => e.stopPropagation()}>
-                            <button onClick={() => {
-                              setEditingEquipmentType(type);
-                              setEquipmentTypeForm({
-                                name: type.name,
-                                interval_weeks: type.interval_weeks.toString(),
-                                rrule: type.rrule,
-                                default_lead_weeks: type.default_lead_weeks.toString(),
-                                active: type.active,
-                                business_id: null // Don't allow changing business when editing
-                              });
-                              setShowAddEquipmentType(true);
-                            }}>Edit</button>
-                            <button className="danger" onClick={async () => {
-                              if (!window.confirm(`Are you sure you want to delete "${type.name}"?`)) return;
-                              try {
-                                await apiCall(`/equipment-types/${type.id}`, { method: "DELETE" });
-                                await fetchEquipmentTypes();
-                                if (onRefresh) onRefresh();
-                              } catch (err) {
-                                setError(err.message || "Failed to delete equipment type");
-                              }
-                            }}>Delete</button>
-                          </div>
-                        </li>
-                      ))}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 )}
@@ -1517,6 +1580,147 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   Cancel
                 </button>
               </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {showDeleteDialog && equipmentTypeToDelete && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: "#fff",
+            padding: "2rem",
+            borderRadius: "0.5rem",
+            maxWidth: "500px",
+            width: "90%",
+            maxHeight: "80vh",
+            overflowY: "auto"
+          }}>
+            <h2 style={{ marginTop: 0, marginBottom: "1rem", color: "#2D3234" }}>
+              Delete Equipment Type: {equipmentTypeToDelete.name}
+            </h2>
+            
+            <p style={{ color: "#8193A4", marginBottom: "1.5rem" }}>
+              {equipmentTypeToDelete.businesses && equipmentTypeToDelete.businesses.some(b => b.id === null) ? (
+                <>This equipment type is available to <strong>All Businesses</strong>. You can delete it from all businesses or from a specific business.</>
+              ) : (
+                <>This equipment type exists in the following businesses:</>
+              )}
+            </p>
+            
+            {equipmentTypeToDelete.businesses && equipmentTypeToDelete.businesses.length > 0 && (
+              <div style={{ marginBottom: "1.5rem" }}>
+                <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                  {equipmentTypeToDelete.businesses.map((business, idx) => (
+                    <li key={idx} style={{ 
+                      padding: "0.5rem", 
+                      marginBottom: "0.5rem", 
+                      backgroundColor: "#f8f9fa",
+                      borderRadius: "0.25rem"
+                    }}>
+                      {business.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            <p style={{ color: "#2D3234", marginBottom: "1rem", fontWeight: "600" }}>
+              How would you like to delete this equipment type?
+            </p>
+            
+            <div style={{ marginBottom: "1.5rem" }}>
+              <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                Delete from:
+              </label>
+              <select
+                value={deleteFromBusiness}
+                onChange={(e) => setDeleteFromBusiness(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "0.5rem",
+                  border: "1px solid #8193A4",
+                  borderRadius: "0.25rem",
+                  fontSize: "0.875rem",
+                  backgroundColor: "#fff",
+                  color: "#2D3234"
+                }}
+              >
+                {(() => {
+                  // If equipment type is in "All Businesses", show all businesses for deletion
+                  // Otherwise, show only the specific businesses it's in
+                  const isInAllBusinesses = equipmentTypeToDelete.businesses && 
+                    equipmentTypeToDelete.businesses.some(b => b.id === null);
+                  
+                  let businessesToShow = [];
+                  
+                  if (isInAllBusinesses) {
+                    // Show all businesses (from businesses list)
+                    businessesToShow = businesses.filter(b => b.id !== null);
+                  } else {
+                    // Show only specific businesses it's in
+                    businessesToShow = equipmentTypeToDelete.businesses.filter(b => b.id !== null);
+                  }
+                  
+                  // Only show "All Businesses" option if there are multiple businesses
+                  const hasMultipleBusinesses = businessesToShow.length > 1 || isInAllBusinesses;
+                  
+                  return (
+                    <>
+                      {hasMultipleBusinesses && <option value="all">All Businesses</option>}
+                      {businessesToShow.map((business) => (
+                        <option key={business.id} value={business.id.toString()}>
+                          {business.name}
+                        </option>
+                      ))}
+                    </>
+                  );
+                })()}
+              </select>
+            </div>
+            
+            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setShowDeleteDialog(false);
+                  setEquipmentTypeToDelete(null);
+                  setDeleteFromBusiness("all");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="danger"
+                onClick={() => {
+                  if (deleteFromBusiness === "all") {
+                    handleDeleteEquipmentType(
+                      equipmentTypeToDelete.equipment_type_ids[0],
+                      null,
+                      true
+                    );
+                  } else {
+                    handleDeleteEquipmentType(
+                      equipmentTypeToDelete.equipment_type_ids[0],
+                      parseInt(deleteFromBusiness),
+                      false
+                    );
+                  }
+                }}
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
