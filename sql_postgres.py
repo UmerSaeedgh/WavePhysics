@@ -92,6 +92,13 @@ def _attach_sqlite_compatible_execute(conn):
             # If we modified the query to add RETURNING id and it failed, retry without it
             # This handles tables like auth_tokens that don't have an id column
             if query_was_modified:
+                # Rollback the failed transaction before retrying
+                # PostgreSQL aborts transactions on error, so we need to rollback first
+                try:
+                    self.rollback()
+                except Exception:
+                    pass  # Ignore rollback errors
+                
                 # Retry with original query (without RETURNING id)
                 if params is not None:
                     cur.execute(original_query, params)
