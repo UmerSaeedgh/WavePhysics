@@ -127,6 +127,7 @@ def init_schema(conn):
           name                    TEXT NOT NULL,
           street                  TEXT,
           state                   TEXT,
+          zip_code                TEXT,
           site_registration_license TEXT,
           timezone                TEXT NOT NULL DEFAULT 'America/Chicago',
           notes                   TEXT,

@@ -1125,6 +1125,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   {selectedEquipment.site_name && <div><strong>Name:</strong> {selectedEquipment.site_name}</div>}
                   {selectedEquipment.site_street && <div><strong>Street:</strong> {selectedEquipment.site_street}</div>}
                   {selectedEquipment.site_state && <div><strong>State:</strong> {selectedEquipment.site_state}</div>}
+                  {selectedEquipment.site_zip_code && <div><strong>Zip Code:</strong> {selectedEquipment.site_zip_code}</div>}
                   {selectedEquipment.site_registration_license && <div><strong>Site Registration/License:</strong> {selectedEquipment.site_registration_license}</div>}
                   {selectedEquipment.site_timezone && <div><strong>Timezone:</strong> {selectedEquipment.site_timezone}</div>}
                   {selectedEquipment.site_notes && (

@@ -43,6 +43,7 @@ def init_schema(conn):
           name                    TEXT NOT NULL,
           street                  TEXT,
           state                   TEXT,
+          zip_code                TEXT,
           site_registration_license TEXT,
           timezone                TEXT NOT NULL DEFAULT 'America/Chicago',
           notes                   TEXT,
@@ -429,7 +430,7 @@ def init_schema(conn):
             pass
         print(f"Migration note for adding make/model/serial_number columns: {e}")
     
-    # Migration: Split address into street and state, add site_registration_license
+    # Migration: Split address into street and state, add site_registration_license and zip_code
     try:
         columns = [row[1] for row in conn.execute("PRAGMA table_info(sites)").fetchall()]
         
@@ -438,8 +439,9 @@ def init_schema(conn):
         has_street = 'street' in columns
         has_state = 'state' in columns
         has_registration = 'site_registration_license' in columns
+        has_zip = 'zip_code' in columns
         
-        if has_address and (not has_street or not has_state or not has_registration):
+        if has_address and (not has_street or not has_state or not has_registration or not has_zip):
             # Add new columns
             if not has_street:
                 conn.execute("ALTER TABLE sites ADD COLUMN street TEXT")
@@ -447,6 +449,8 @@ def init_schema(conn):
                 conn.execute("ALTER TABLE sites ADD COLUMN state TEXT")
             if not has_registration:
                 conn.execute("ALTER TABLE sites ADD COLUMN site_registration_license TEXT")
+            if not has_zip:
+                conn.execute("ALTER TABLE sites ADD COLUMN zip_code TEXT")
             
             # Migrate existing address data (try to split if possible, otherwise put all in street)
             # For now, we'll move all existing address data to street field

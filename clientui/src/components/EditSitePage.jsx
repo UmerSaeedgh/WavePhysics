@@ -6,6 +6,7 @@ export default function EditSitePage({ apiCall, setError, siteToEdit, client, co
     name: "",
     street: "",
     state: "",
+    zip_code: "",
     site_registration_license: "",
     timezone: "America/Chicago",
     notes: "",
@@ -18,6 +19,7 @@ export default function EditSitePage({ apiCall, setError, siteToEdit, client, co
         name: siteToEdit.name || "",
         street: siteToEdit.street || "",
         state: siteToEdit.state || "",
+        zip_code: siteToEdit.zip_code || "",
         site_registration_license: siteToEdit.site_registration_license || "",
         timezone: siteToEdit.timezone || "America/Chicago",
         notes: siteToEdit.notes || "",
@@ -26,7 +28,7 @@ export default function EditSitePage({ apiCall, setError, siteToEdit, client, co
         onRefreshContacts();
       }
     } else {
-      setForm({ name: "", street: "", state: "", site_registration_license: "", timezone: "America/Chicago", notes: "" });
+      setForm({ name: "", street: "", state: "", zip_code: "", site_registration_license: "", timezone: "America/Chicago", notes: "" });
     }
   }, [siteToEdit?.id]);
 
@@ -84,6 +86,10 @@ export default function EditSitePage({ apiCall, setError, siteToEdit, client, co
           <label>
             State
             <input type="text" name="state" value={form.state} onChange={handleChange} placeholder="State" />
+          </label>
+          <label>
+            Zip Code
+            <input type="text" name="zip_code" value={form.zip_code} onChange={handleChange} placeholder="Zip / Postal code" />
           </label>
           <label>
             Site Registration/License

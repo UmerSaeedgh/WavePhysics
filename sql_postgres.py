@@ -233,6 +233,7 @@ def init_schema(conn):
       name                    TEXT NOT NULL,
       street                  TEXT,
       state                   TEXT,
+      zip_code                TEXT,
       site_registration_license TEXT,
       timezone                TEXT NOT NULL DEFAULT 'America/Chicago',
       notes                   TEXT,
@@ -445,7 +446,7 @@ def _run_migrations(conn):
         conn.rollback()
         print(f"Migration note for businesses: {e}")
     
-    # Migration: Add soft delete columns (deleted_at, deleted_by) to relevant tables
+    # Migration: Add soft delete columns (deleted_at, deleted_by) and zip_code to relevant tables
     soft_delete_tables = ["clients", "sites", "equipment_record", "equipment_types"]
     for table in soft_delete_tables:
         try:
@@ -465,6 +466,14 @@ def _run_migrations(conn):
             )
         except Exception:
             pass
+
+    # Migration: Add zip_code column to sites if it doesn't exist
+    try:
+        cursor.execute(
+            "ALTER TABLE sites ADD COLUMN IF NOT EXISTS zip_code TEXT"
+        )
+    except Exception:
+        pass
     
     conn.commit()
     cursor.close()

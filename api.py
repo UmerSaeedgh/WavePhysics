@@ -1118,6 +1118,7 @@ class SiteCreate(BaseModel):
     name: str
     street: Optional[str] = None
     state: Optional[str] = None
+    zip_code: Optional[str] = None
     site_registration_license: Optional[str] = None
     timezone: str = "America/Chicago"
     notes: Optional[str] = None
@@ -1127,6 +1128,7 @@ class SiteUpdate(BaseModel):
     name: Optional[str] = None
     street: Optional[str] = None
     state: Optional[str] = None
+    zip_code: Optional[str] = None
     site_registration_license: Optional[str] = None
     timezone: Optional[str] = None
     notes: Optional[str] = None
@@ -1138,6 +1140,7 @@ class SiteRead(BaseModel):
     name: str
     street: Optional[str] = None
     state: Optional[str] = None
+    zip_code: Optional[str] = None
     site_registration_license: Optional[str] = None
     timezone: str
     notes: Optional[str] = None
@@ -1174,19 +1177,19 @@ def list_sites(
             raise HTTPException(status_code=404, detail="Client not found")
         if include_deleted:
             cur = db.execute(
-                f"SELECT id, client_id, name, street, state, site_registration_license, timezone, notes, deleted_at, deleted_by FROM sites WHERE client_id = ? {deleted_filter} ORDER BY name",
+                f"SELECT id, client_id, name, street, state, zip_code, site_registration_license, timezone, notes, deleted_at, deleted_by FROM sites WHERE client_id = ? {deleted_filter} ORDER BY name",
                 (client_id,)
             )
         else:
             cur = db.execute(
-                "SELECT id, client_id, name, street, state, site_registration_license, timezone, notes FROM sites WHERE client_id = ? AND deleted_at IS NULL ORDER BY name",
+                "SELECT id, client_id, name, street, state, zip_code, site_registration_license, timezone, notes FROM sites WHERE client_id = ? AND deleted_at IS NULL ORDER BY name",
                 (client_id,)
             )
     else:
         # Get all sites for clients in this business (or all businesses if business_id is None)
         if business_id is not None:
             cur = db.execute(
-                f"""SELECT s.id, s.client_id, s.name, s.street, s.state, s.site_registration_license, s.timezone, s.notes 
+                f"""SELECT s.id, s.client_id, s.name, s.street, s.state, s.zip_code, s.site_registration_license, s.timezone, s.notes 
                    FROM sites s 
                    JOIN clients c ON s.client_id = c.id 
                    WHERE c.business_id = ? {deleted_filter}
@@ -1196,7 +1199,7 @@ def list_sites(
         else:
             # Super admin viewing all businesses
             cur = db.execute(
-                f"""SELECT s.id, s.client_id, s.name, s.street, s.state, s.site_registration_license, s.timezone, s.notes 
+                f"""SELECT s.id, s.client_id, s.name, s.street, s.state, s.zip_code, s.site_registration_license, s.timezone, s.notes 
                    FROM sites s 
                    JOIN clients c ON s.client_id = c.id 
                    WHERE 1=1 {deleted_filter}
@@ -1221,7 +1224,7 @@ def get_site(site_id: int, current_user: dict = Depends(get_current_user), db: s
         if business_id is None:
             # Super admin viewing all businesses - allow access to any site
             row = db.execute(
-                """SELECT s.id, s.client_id, s.name, s.street, s.state, s.site_registration_license, s.timezone, s.notes 
+                """SELECT s.id, s.client_id, s.name, s.street, s.state, s.zip_code, s.site_registration_license, s.timezone, s.notes 
                    FROM sites s 
                    JOIN clients c ON s.client_id = c.id 
                    WHERE s.id = ?""",
@@ -1230,7 +1233,7 @@ def get_site(site_id: int, current_user: dict = Depends(get_current_user), db: s
         else:
             # Super admin viewing specific business
             row = db.execute(
-                """SELECT s.id, s.client_id, s.name, s.street, s.state, s.site_registration_license, s.timezone, s.notes 
+                """SELECT s.id, s.client_id, s.name, s.street, s.state, s.zip_code, s.site_registration_license, s.timezone, s.notes 
                    FROM sites s 
                    JOIN clients c ON s.client_id = c.id 
                    WHERE s.id = ? AND c.business_id = ?""",
@@ -1238,7 +1241,7 @@ def get_site(site_id: int, current_user: dict = Depends(get_current_user), db: s
             ).fetchone()
     else:
         row = db.execute(
-            """SELECT s.id, s.client_id, s.name, s.street, s.state, s.site_registration_license, s.timezone, s.notes 
+            """SELECT s.id, s.client_id, s.name, s.street, s.state, s.zip_code, s.site_registration_license, s.timezone, s.notes 
                FROM sites s 
                JOIN clients c ON s.client_id = c.id 
                WHERE s.id = ? AND c.business_id = ? AND s.deleted_at IS NULL""",
@@ -1263,15 +1266,24 @@ def create_site(payload: SiteCreate, current_user: dict = Depends(get_current_us
 
     try:
         cur = db.execute(
-            "INSERT INTO sites (client_id, name, street, state, site_registration_license, timezone, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (payload.client_id, payload.name, payload.street, payload.state, payload.site_registration_license, payload.timezone, payload.notes),
+            "INSERT INTO sites (client_id, name, street, state, zip_code, site_registration_license, timezone, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                payload.client_id,
+                payload.name,
+                payload.street,
+                payload.state,
+                payload.zip_code,
+                payload.site_registration_license,
+                payload.timezone,
+                payload.notes,
+            ),
         )
         db.commit()
     except (sqlite3.IntegrityError, psycopg2.IntegrityError):
         raise HTTPException(status_code=400, detail="Site name must be unique per client")
 
     row = db.execute(
-        "SELECT id, client_id, name, street, state, site_registration_license, timezone, notes FROM sites WHERE id = ?",
+        "SELECT id, client_id, name, street, state, zip_code, site_registration_license, timezone, notes FROM sites WHERE id = ?",
         (cur.lastrowid,),
     ).fetchone()
     return SiteRead(**row_to_dict(row))
@@ -1328,6 +1340,9 @@ def update_site(site_id: int, payload: SiteUpdate, current_user: dict = Depends(
     if payload.state is not None:
         fields.append("state = ?")
         values.append(payload.state)
+    if payload.zip_code is not None:
+        fields.append("zip_code = ?")
+        values.append(payload.zip_code)
     if payload.site_registration_license is not None:
         fields.append("site_registration_license = ?")
         values.append(payload.site_registration_license)
@@ -1350,7 +1365,7 @@ def update_site(site_id: int, payload: SiteUpdate, current_user: dict = Depends(
             raise HTTPException(status_code=400, detail="Site name must be unique per client")
 
     row = db.execute(
-        "SELECT id, client_id, name, street, state, site_registration_license, timezone, notes FROM sites WHERE id = ?",
+        "SELECT id, client_id, name, street, state, zip_code, site_registration_license, timezone, notes FROM sites WHERE id = ?",
         (site_id,),
     ).fetchone()
     return SiteRead(**row_to_dict(row))
@@ -2223,6 +2238,7 @@ class EquipmentRecordRead(BaseModel):
     site_name: Optional[str] = None
     site_street: Optional[str] = None
     site_state: Optional[str] = None
+    site_zip_code: Optional[str] = None
     site_registration_license: Optional[str] = None
     site_timezone: Optional[str] = None
     site_notes: Optional[str] = None
@@ -2252,9 +2268,10 @@ def list_equipment_records(
                       c.address as client_address,
                       c.billing_info as client_billing_info,
                       c.notes as client_notes,
-                      s.name as site_name,
-                      s.street as site_street,
-                      s.state as site_state,
+                     s.name as site_name,
+                     s.street as site_street,
+                     s.state as site_state,
+                     s.zip_code as site_zip_code,
                       s.site_registration_license as site_registration_license,
                       s.timezone as site_timezone,
                       s.notes as site_notes,
@@ -3684,8 +3701,8 @@ async def import_excel(
                             site_id = existing['id']
                         else:
                             cur = db.execute(
-                                "INSERT INTO sites (client_id, name, street, state, site_registration_license, timezone) VALUES (?, ?, ?, ?, ?, ?)",
-                                (client_id, site_name, None, None, None, "America/Chicago")
+                                "INSERT INTO sites (client_id, name, street, state, zip_code, site_registration_license, timezone) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                (client_id, site_name, None, None, None, None, "America/Chicago")
                             )
                             # Get ID from RETURNING clause (no commit needed yet)
                             site_id = cur.lastrowid
@@ -4381,8 +4398,8 @@ async def import_temporary_data(
                     else:
                         # Create site
                         cur = db.execute(
-                            "INSERT INTO sites (client_id, name, street, state, site_registration_license, timezone) VALUES (?, ?, ?, ?, ?, ?)",
-                            (client_id, site_name, None, None, None, "America/Chicago")
+                            "INSERT INTO sites (client_id, name, street, state, zip_code, site_registration_license, timezone) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (client_id, site_name, None, None, None, None, "America/Chicago")
                         )
                         db.commit()
                         site_id = cur.lastrowid
@@ -4718,6 +4735,7 @@ async def export_equipment_info(
                         "Site Name": eq_row['site_name'] or "",
                         "Street": eq_row['site_street'] or "",
                         "State": eq_row['site_state'] or "",
+                        "Zip Code": eq_row.get('site_zip_code') or "",
                         "Registration/License": eq_row['site_registration_license'] or "",
                         "Equipment Name": eq_row['equipment_name'] or "",
                         "Equipment Type": eq_row['equipment_type'] or "",
@@ -4738,6 +4756,7 @@ async def export_equipment_info(
                     "Site Name": eq_row['site_name'] or "",
                     "Street": eq_row['site_street'] or "",
                     "State": eq_row['site_state'] or "",
+                    "Zip Code": eq_row.get('site_zip_code') or "",
                     "Registration/License": eq_row['site_registration_license'] or "",
                     "Equipment Name": eq_row['equipment_name'] or "",
                     "Equipment Type": eq_row['equipment_type'] or "",
