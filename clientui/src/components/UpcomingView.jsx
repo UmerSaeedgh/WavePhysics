@@ -157,18 +157,22 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
 
   function getTodayDate() {
     const today = new Date();
-    return today.toISOString().split('T')[0];
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    const d = String(today.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
   }
 
   function calculateDueDate(completionDateStr, intervalWeeks) {
     if (!completionDateStr || !intervalWeeks) return "";
-    const completion = new Date(completionDateStr);
-    const intervalDays = parseInt(intervalWeeks) * 7;
-    
-    // Simple rule: Next due date = last completed test date + interval
-    const newDate = new Date(completion);
-    newDate.setDate(newDate.getDate() + intervalDays);
-    return newDate.toISOString().split('T')[0];
+    // Parse as local time by splitting the string, avoiding UTC offset issues
+    const [year, month, day] = completionDateStr.split("-").map(Number);
+    const newDate = new Date(year, month - 1, day);
+    newDate.setDate(newDate.getDate() + parseInt(intervalWeeks) * 7);
+    const y = newDate.getFullYear();
+    const m = String(newDate.getMonth() + 1).padStart(2, "0");
+    const d = String(newDate.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
   }
 
   function recalculateDueDate(completionDateStr, intervalWeeks) {

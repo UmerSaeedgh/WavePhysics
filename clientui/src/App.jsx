@@ -651,7 +651,7 @@ function App() {
 
   // Get current business name
   const currentBusiness = businesses.find(b => b.id === currentUser?.business_id);
-  let businessName = currentBusiness?.name;
+  let businessName = currentUser?.business_name || currentBusiness?.name;
 
   // Get context names based on current view
   const getContextNames = () => {
@@ -730,12 +730,22 @@ function App() {
     <div className="app">
       <header className="topbar">
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <img 
-            src={wavePhysicsLogo} 
-            alt="WAVE PHYSICS" 
+          <img
+            src={wavePhysicsLogo}
+            alt="WAVE PHYSICS"
             className="logo"
             style={{ height: "50px", maxWidth: "200px", objectFit: "contain" }}
           />
+          <div style={{ display: "flex", flexDirection: "column", color: "#D7E5D8", fontSize: "0.82rem", lineHeight: "1.3", borderLeft: "1px solid rgba(215,229,216,0.3)", paddingLeft: "1rem" }}>
+            {isSuperAdmin ? (
+              <span style={{ fontWeight: "600", fontSize: "0.88rem" }}>Superadmin</span>
+            ) : (
+              <>
+                <span style={{ fontWeight: "600" }}>{currentUser?.username}</span>
+                {businessName && <span style={{ opacity: 0.75 }}>{businessName}</span>}
+              </>
+            )}
+          </div>
           {contextNames.length > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#D7E5D8", fontSize: "0.95rem" }}>
               {contextNames.map((name, index) => (
@@ -776,9 +786,10 @@ function App() {
           <button
               className={view === "upcoming" ? "active" : ""}
               onClick={() => {
-                setView("upcoming");
-                // Clear filter info when navigating to upcoming (will be set by UpcomingView if filters are applied)
+                setUpcomingInitialClientId(null);
+                setUpcomingInitialSiteId(null);
                 setUpcomingFilterInfo(null);
+                setView("upcoming");
               }}
           >
               Upcoming ({overdue.length + upcoming.length})

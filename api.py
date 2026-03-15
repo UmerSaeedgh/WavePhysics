@@ -226,7 +226,10 @@ class UserRead(BaseModel):
 def login(payload: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
     """Login and get authentication token"""
     user = db.execute(
-        "SELECT id, username, password_hash, is_admin, is_super_admin, business_id FROM users WHERE username = ?",
+        """SELECT u.id, u.username, u.password_hash, u.is_admin, u.is_super_admin, u.business_id,
+                  b.name as business_name
+           FROM users u LEFT JOIN businesses b ON u.business_id = b.id
+           WHERE u.username = ?""",
         (payload.username,)
     ).fetchone()
     
@@ -256,7 +259,8 @@ def login(payload: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
             "username": user["username"],
             "is_admin": bool(user["is_admin"]),
             "is_super_admin": bool(user["is_super_admin"]),
-            "business_id": business_id
+            "business_id": business_id,
+            "business_name": user["business_name"] if not user["is_super_admin"] else None
         }
     )
 
