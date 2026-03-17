@@ -2332,6 +2332,7 @@ def get_upcoming_equipment_records(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     weeks: Optional[int] = Query(None, description="Number of weeks from today"),
+    show_inactive: bool = Query(False, description="Show inactive equipment only (admins only)"),
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
@@ -2377,9 +2378,14 @@ def get_upcoming_equipment_records(
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
                LEFT JOIN businesses b ON c.business_id = b.id
                WHERE er.deleted_at IS NULL
-                 AND er.active = 1 
                  AND (er.due_date IS NOT NULL AND er.due_date >= ? AND er.due_date <= ?)"""
-    
+
+    is_admin = current_user.get("is_admin")
+    if (is_admin or is_super_admin) and show_inactive:
+        query += " AND er.active = 0"
+    else:
+        query += " AND er.active = 1"
+
     params = [start_date_obj.isoformat(), end_date_obj.isoformat()]
     
     # Filter by business_id if specified (None means all businesses for super admin)
@@ -2401,6 +2407,7 @@ def get_upcoming_equipment_records(
 
 @app.get("/equipment-records/overdue", response_model=List[EquipmentRecordRead])
 def get_overdue_equipment_records(
+    show_inactive: bool = Query(False, description="Show inactive equipment only (admins only)"),
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
@@ -2434,12 +2441,17 @@ def get_overdue_equipment_records(
                LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
                LEFT JOIN businesses b ON c.business_id = b.id
                WHERE er.deleted_at IS NULL
-                 AND er.active = 1 
-                 AND er.due_date IS NOT NULL 
+                 AND er.due_date IS NOT NULL
                  AND er.due_date < ?"""
-    
+
+    is_admin = current_user.get("is_admin")
+    if (is_admin or is_super_admin) and show_inactive:
+        query += " AND er.active = 0"
+    else:
+        query += " AND er.active = 1"
+
     params = [today.isoformat()]
-    
+
     # Filter by business_id if specified (None means all businesses for super admin)
     if business_id is not None:
         query += " AND c.business_id = ?"

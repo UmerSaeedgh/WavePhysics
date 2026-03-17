@@ -13,6 +13,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   const [selectedState, setSelectedState] = useState("");
   const [sortBy, setSortBy] = useState("due_date"); // "name" or "due_date"
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
+  const [showInactive, setShowInactive] = useState(false);
   
   // Data for dropdowns
   const [clients, setClients] = useState([]);
@@ -49,13 +50,16 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
       end.setDate(end.getDate() + (upcomingInterval * 7));
       const endDate = end.toISOString().split('T')[0];
       
-      const upcomingUrl = `/equipment-records/upcoming?start_date=${startDate}&end_date=${endDate}`;
-      
+      const isAdmin = currentUser && (currentUser.is_admin === true || currentUser.is_admin === 1);
+      const isSuperAdmin = currentUser && (currentUser.is_super_admin === true || currentUser.is_super_admin === 1);
+      const inactiveParam = (isAdmin || isSuperAdmin) && showInactive ? "&show_inactive=true" : "";
+      const upcomingUrl = `/equipment-records/upcoming?start_date=${startDate}&end_date=${endDate}${inactiveParam}`;
+
       // Fetch all data in parallel for faster loading
       const [overdueData, upcomingData, allRecords] = await Promise.all([
-        apiCall("/equipment-records/overdue").catch(() => []),
+        apiCall(`/equipment-records/overdue${inactiveParam ? `?show_inactive=true` : ""}`).catch(() => []),
         apiCall(upcomingUrl).catch(() => []),
-        apiCall("/equipment-records?active_only=true").catch(() => [])
+        apiCall(`/equipment-records?active_only=${showInactive ? "false" : "true"}`).catch(() => [])
       ]);
       
       const overdueArray = Array.isArray(overdueData) ? overdueData : [];
@@ -558,12 +562,12 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialized]);
 
-  // Fetch data when date/interval changes (but only if initialized)
+  // Fetch data when date/interval/status filter changes (but only if initialized)
   useEffect(() => {
     if (initialized) {
       fetchUpcoming();
     }
-  }, [upcomingDate, upcomingInterval]);
+  }, [upcomingDate, upcomingInterval, showInactive]);
 
   // Update filter info when filters change
   useEffect(() => {
@@ -616,13 +620,17 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   const allEquipmentRecords = [...(upcoming || []), ...(overdue || []), ...(remaining || [])];
   const uniqueStates = [...new Set(allEquipmentRecords.map(item => item.site_state).filter(Boolean))].sort();
 
+  const isAdmin = currentUser && (currentUser.is_admin === true || currentUser.is_admin === 1);
+  const isSuperAdminUser = currentUser && (currentUser.is_super_admin === true || currentUser.is_super_admin === 1);
+
   // Count active filters
   const activeFilterCount = [
     searchTerm,
     selectedClientId,
     selectedSiteId,
     selectedEquipmentTypeId,
-    selectedState
+    selectedState,
+    (isAdmin || isSuperAdminUser) && showInactive ? "inactive" : ""
   ].filter(Boolean).length;
 
   // Get filtered counts
@@ -721,6 +729,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   setSelectedState("");
                   setSortBy("due_date");
                   setSortOrder("asc");
+                  setShowInactive(false);
                 }}
                 style={{ 
                   padding: "0.5rem 1rem",
@@ -852,6 +861,32 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                 </select>
               </div>
               
+              {(isAdmin || isSuperAdminUser) && (
+                <div>
+                  <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                    Status
+                  </label>
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <button
+                      type="button"
+                      className={!showInactive ? "primary" : "secondary"}
+                      onClick={() => setShowInactive(false)}
+                      style={{ padding: "0.5rem 1rem", fontSize: "0.85rem", whiteSpace: "nowrap", flex: 1 }}
+                    >
+                      Active
+                    </button>
+                    <button
+                      type="button"
+                      className={showInactive ? "primary" : "secondary"}
+                      onClick={() => setShowInactive(true)}
+                      style={{ padding: "0.5rem 1rem", fontSize: "0.85rem", whiteSpace: "nowrap", flex: 1 }}
+                    >
+                      Inactive
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
                   Sort By
