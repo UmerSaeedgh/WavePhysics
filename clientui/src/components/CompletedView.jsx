@@ -608,7 +608,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
                             )}
                           </div>
                         </div>
-                        {(currentUser?.is_admin || currentUser?.is_super_admin) && (
+                        {index === 0 && (currentUser?.is_admin || currentUser?.is_super_admin) && (
                           <button
                             onClick={() => handleUncomplete(completion.id)}
                             style={{
