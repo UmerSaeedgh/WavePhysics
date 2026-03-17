@@ -73,9 +73,13 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
       const overdueIds = new Set(overdueArray.map(item => item.id));
       const upcomingIds = new Set(upcomingArray.map(item => item.id));
       
-      // Filter remaining: items that are not overdue and not upcoming
+      // Filter remaining: items that are not overdue and not upcoming, matching the active/inactive filter
       const remainingItems = allRecordsArray.filter(item => {
-        return !overdueIds.has(item.id) && !upcomingIds.has(item.id);
+        if (!overdueIds.has(item.id) && !upcomingIds.has(item.id)) {
+          if (showInactive) return item.active === false || item.active === 0;
+          return item.active === true || item.active === 1;
+        }
+        return false;
       });
       
       setRemaining(remainingItems);
