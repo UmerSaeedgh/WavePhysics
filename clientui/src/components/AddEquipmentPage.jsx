@@ -107,16 +107,58 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
     }
   }
 
+  function addWeeksToDate(dateStr, weeks) {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const date = new Date(y, m - 1, d);
+    date.setDate(date.getDate() + weeks * 7);
+    const yr = date.getFullYear();
+    const mo = String(date.getMonth() + 1).padStart(2, "0");
+    const dy = String(date.getDate()).padStart(2, "0");
+    return `${yr}-${mo}-${dy}`;
+  }
+
+  function daysBetween(dateStrA, dateStrB) {
+    const [y1, m1, d1] = dateStrA.split("-").map(Number);
+    const [y2, m2, d2] = dateStrB.split("-").map(Number);
+    const a = new Date(y1, m1 - 1, d1);
+    const b = new Date(y2, m2 - 1, d2);
+    return Math.round((b - a) / (1000 * 60 * 60 * 24));
+  }
+
   function handleChange(e) {
     const { name, value, type, checked } = e.target;
     setEquipmentForm(prev => {
       const updated = { ...prev, [name]: type === "checkbox" ? checked : value };
+
       if (name === "equipment_type_id" && value) {
         const selectedType = equipmentTypes.find(t => t.id === parseInt(value));
         if (selectedType && selectedType.interval_weeks) {
           updated.interval_weeks = selectedType.interval_weeks.toString();
+          // Recalculate due date if anchor date is set
+          if (prev.anchor_date) {
+            updated.due_date = addWeeksToDate(prev.anchor_date, selectedType.interval_weeks);
+          }
         }
       }
+
+      // anchor_date changed: recalculate due_date if interval_weeks is set
+      if (name === "anchor_date" && value && prev.interval_weeks) {
+        updated.due_date = addWeeksToDate(value, parseInt(prev.interval_weeks));
+      }
+
+      // interval_weeks changed: recalculate due_date if anchor_date is set
+      if (name === "interval_weeks" && value && prev.anchor_date) {
+        updated.due_date = addWeeksToDate(prev.anchor_date, parseInt(value));
+      }
+
+      // due_date changed manually: back-calculate interval_weeks if anchor_date is set
+      if (name === "due_date" && value && prev.anchor_date) {
+        const days = daysBetween(prev.anchor_date, value);
+        if (days > 0) {
+          updated.interval_weeks = Math.round(days / 7).toString();
+        }
+      }
+
       return updated;
     });
   }

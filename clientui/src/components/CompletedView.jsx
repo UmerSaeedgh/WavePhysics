@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatDate } from "../utils/formatDate";
 
-export default function CompletedView({ apiCall, setError, loading, setLoading, currentUser, completions, setCompletions, onRefresh }) {
+export default function CompletedView({ apiCall, setError, loading, setLoading, currentUser, completions, setCompletions, onRefresh, onRefreshAllCounts }) {
   
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
@@ -115,6 +115,23 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
     setSelectedEquipmentRecordId(null);
     setSelectedEquipmentName("");
     setHistoryCompletions([]);
+  }
+
+  async function handleUncomplete(completionId) {
+    if (!window.confirm("Are you sure you want to uncomplete this record? The equipment's due date will be restored to the previous due date.")) return;
+    try {
+      await apiCall(`/equipment-completions/${completionId}/uncomplete`, { method: "POST" });
+      // Remove from history list
+      const updated = historyCompletions.filter(c => c.id !== completionId);
+      setHistoryCompletions(updated);
+      // Refresh the main list
+      await fetchCompletions();
+      if (onRefresh) onRefresh();
+      if (onRefreshAllCounts) onRefreshAllCounts();
+      if (updated.length === 0) handleCloseHistoryModal();
+    } catch (err) {
+      setError(err.message || "Failed to uncomplete equipment");
+    }
   }
 
   useEffect(() => {
@@ -562,33 +579,54 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
                 <ul className="list" style={{ maxHeight: "60vh", overflowY: "auto" }}>
                   {historyCompletions.map((completion, index) => (
                     <li key={completion.id} className="list-item">
-                      <div className="list-main">
-                        <div className="list-title" style={{ fontSize: "1rem", fontWeight: "600" }}>
-                          Completion #{historyCompletions.length - index}
-                        </div>
-                        <div className="list-subtitle" style={{ marginTop: "0.5rem" }}>
-                          <div style={{ marginBottom: "0.25rem" }}>
-                            <strong>Due Date:</strong> {formatDate(completion.due_date)}
+                      <div className="list-main" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div style={{ flex: 1 }}>
+                          <div className="list-title" style={{ fontSize: "1rem", fontWeight: "600" }}>
+                            Completion #{historyCompletions.length - index}
                           </div>
-                          <div style={{ marginBottom: "0.25rem" }}>
-                            <strong>Completed:</strong> {formatDate(completion.completed_at)}
+                          <div className="list-subtitle" style={{ marginTop: "0.5rem" }}>
+                            <div style={{ marginBottom: "0.25rem" }}>
+                              <strong>Due Date:</strong> {formatDate(completion.due_date)}
+                            </div>
+                            <div style={{ marginBottom: "0.25rem" }}>
+                              <strong>Completed:</strong> {formatDate(completion.completed_at)}
+                            </div>
+                            {completion.interval_weeks && (
+                              <div style={{ marginBottom: "0.25rem" }}>
+                                <strong>Interval:</strong> {completion.interval_weeks} week{completion.interval_weeks !== 1 ? 's' : ''}
+                              </div>
+                            )}
+                            {completion.completed_by_user && (
+                              <div style={{ marginBottom: "0.25rem" }}>
+                                <strong>Completed By:</strong> {completion.completed_by_user}
+                              </div>
+                            )}
+                            {completion.anchor_date && (
+                              <div style={{ marginBottom: "0.25rem" }}>
+                                <strong>Previous Anchor Date:</strong> {formatDate(completion.anchor_date)}
+                              </div>
+                            )}
                           </div>
-                          {completion.interval_weeks && (
-                            <div style={{ marginBottom: "0.25rem" }}>
-                              <strong>Interval:</strong> {completion.interval_weeks} week{completion.interval_weeks !== 1 ? 's' : ''}
-                            </div>
-                          )}
-                          {completion.completed_by_user && (
-                            <div style={{ marginBottom: "0.25rem" }}>
-                              <strong>Completed By:</strong> {completion.completed_by_user}
-                            </div>
-                          )}
-                          {completion.anchor_date && (
-                            <div style={{ marginBottom: "0.25rem" }}>
-                              <strong>Previous Anchor Date:</strong> {formatDate(completion.anchor_date)}
-                            </div>
-                          )}
                         </div>
+                        {(currentUser?.is_admin || currentUser?.is_super_admin) && (
+                          <button
+                            onClick={() => handleUncomplete(completion.id)}
+                            style={{
+                              marginLeft: "1rem",
+                              padding: "0.35rem 0.75rem",
+                              fontSize: "0.8rem",
+                              background: "transparent",
+                              border: "1px solid #c0392b",
+                              color: "#c0392b",
+                              borderRadius: "0.25rem",
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                              flexShrink: 0
+                            }}
+                          >
+                            Uncomplete
+                          </button>
+                        )}
                       </div>
                     </li>
                   ))}

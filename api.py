@@ -2999,6 +2999,57 @@ def delete_equipment_completion(completion_id: int, current_user: dict = Depends
     return
 
 
+@app.post("/equipment-completions/{completion_id}/uncomplete", status_code=status.HTTP_200_OK)
+def uncomplete_equipment_completion(completion_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    is_super_admin = current_user.get("is_super_admin")
+    is_admin = current_user.get("is_admin")
+    if not is_super_admin and not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins can uncomplete equipment")
+
+    if is_super_admin:
+        business_id = current_user.get("business_id")
+    else:
+        business_id = get_business_id(current_user)
+
+    # Fetch the completion record along with the equipment record id
+    if is_super_admin and business_id is None:
+        completion = db.execute(
+            """SELECT ec.id, ec.equipment_record_id, ec.due_date, ec.interval_weeks
+               FROM equipment_completions ec
+               WHERE ec.id = ?""",
+            (completion_id,)
+        ).fetchone()
+    else:
+        completion = db.execute(
+            """SELECT ec.id, ec.equipment_record_id, ec.due_date, ec.interval_weeks
+               FROM equipment_completions ec
+               JOIN equipment_record er ON ec.equipment_record_id = er.id
+               LEFT JOIN clients c ON er.client_id = c.id
+               WHERE ec.id = ? AND c.business_id = ?""",
+            (completion_id, business_id)
+        ).fetchone()
+
+    if not completion:
+        raise HTTPException(status_code=404, detail="Completion record not found")
+
+    completion_dict = row_to_dict(completion)
+    equipment_record_id = completion_dict["equipment_record_id"]
+    old_due_date = completion_dict["due_date"]
+    old_interval_weeks = completion_dict["interval_weeks"]
+
+    # Restore the equipment record's due_date (and interval_weeks) to what they were before completion
+    db.execute(
+        "UPDATE equipment_record SET due_date = ?, interval_weeks = ? WHERE id = ?",
+        (old_due_date, old_interval_weeks, equipment_record_id)
+    )
+
+    # Delete the completion record
+    db.execute("DELETE FROM equipment_completions WHERE id = ?", (completion_id,))
+    db.commit()
+
+    return {"detail": "Equipment uncompleted successfully"}
+
+
 # ========== CLIENT EQUIPMENTS ==========
 
 # Default equipment list

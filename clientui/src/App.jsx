@@ -1137,6 +1137,7 @@ function App() {
             completions={completions}
             setCompletions={setCompletions}
             onRefresh={() => fetchCompletions()}
+            onRefreshAllCounts={refreshAllCounts}
           />
         )}
 
