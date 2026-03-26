@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { formatDate } from "../utils/formatDate";
 
 export default function DeletedRecordsView({ apiCall, currentUser, businesses, onRefresh }) {
+  const isSuperAdmin = currentUser?.is_super_admin === true || currentUser?.is_super_admin === 1;
   const [deletedRecords, setDeletedRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -114,21 +115,23 @@ export default function DeletedRecordsView({ apiCall, currentUser, businesses, o
               <option value="equipment_type">Equipment Types</option>
             </select>
           </label>
-          <label>
-            Filter by Business:
-            <select
-              value={filterBusinessId}
-              onChange={(e) => setFilterBusinessId(e.target.value)}
-              style={{ marginLeft: "0.5rem", padding: "0.5rem" }}
-            >
-              <option value="">All Businesses</option>
-              {businesses.map(business => (
-                <option key={business.id} value={business.id.toString()}>
-                  {business.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {isSuperAdmin && (
+            <label>
+              Filter by Business:
+              <select
+                value={filterBusinessId}
+                onChange={(e) => setFilterBusinessId(e.target.value)}
+                style={{ marginLeft: "0.5rem", padding: "0.5rem" }}
+              >
+                <option value="">All Businesses</option>
+                {businesses.map(business => (
+                  <option key={business.id} value={business.id.toString()}>
+                    {business.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             Sort by:
             <select

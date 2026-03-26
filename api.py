@@ -394,10 +394,13 @@ class DeletedRecordRead(BaseModel):
 def list_deleted_records(
     record_type: Optional[str] = Query(None, description="Filter by type: client, site, equipment_record, equipment_type"),
     business_id: Optional[int] = Query(None, description="Filter by business"),
-    current_user: dict = Depends(get_current_super_admin_user),
+    current_user: dict = Depends(get_current_admin_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
-    """List all deleted records (super admin only)"""
+    """List all deleted records (admin/superadmin). Regular admins only see their own business."""
+    is_super_admin = current_user.get("is_super_admin")
+    if not is_super_admin:
+        business_id = get_business_id(current_user)
     deleted_records = []
     
     # Get deleted clients
@@ -622,7 +625,16 @@ def delete_business(business_id: int, current_user: dict = Depends(get_current_s
         # Delete attachments for sites
         db.execute(f"DELETE FROM attachments WHERE scope = 'SITE' AND scope_id IN ({placeholders})", site_ids)
     
-    # Delete the business (CASCADE will handle: clients, equipment_types, and set users.business_id to NULL)
+    # Explicitly hard-delete any soft-deleted records so the business name can be reused cleanly
+    db.execute("DELETE FROM equipment_types WHERE business_id = ?", (business_id,))
+    if client_ids:
+        placeholders = ','.join('?' * len(client_ids))
+        if site_ids:
+            site_placeholders = ','.join('?' * len(site_ids))
+            db.execute(f"DELETE FROM sites WHERE id IN ({site_placeholders})", site_ids)
+        db.execute(f"DELETE FROM clients WHERE id IN ({placeholders})", client_ids)
+
+    # Delete the business (CASCADE will handle any remaining references, and set users.business_id to NULL)
     db.execute("DELETE FROM businesses WHERE id = ?", (business_id,))
     db.commit()
     return None
@@ -1095,23 +1107,21 @@ def delete_client(client_id: int, current_user: dict = Depends(get_current_user)
     )
     db.commit()
 
-# Restore endpoints for super admin
 @app.post("/clients/{client_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
-def restore_client(client_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
-    """Restore a deleted client (super admin only)"""
-    client = db.execute("SELECT id, deleted_at FROM clients WHERE id = ?", (client_id,)).fetchone()
+def restore_client(client_id: int, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Restore a deleted client (admin/superadmin). Regular admins can only restore from their own business."""
+    is_super_admin = current_user.get("is_super_admin")
+    if is_super_admin:
+        client = db.execute("SELECT id, deleted_at FROM clients WHERE id = ?", (client_id,)).fetchone()
+    else:
+        admin_business_id = get_business_id(current_user)
+        client = db.execute("SELECT id, deleted_at FROM clients WHERE id = ? AND business_id = ?", (client_id, admin_business_id)).fetchone()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     if not client.get("deleted_at"):
         raise HTTPException(status_code=400, detail="Client is not deleted")
-    
     db.execute("UPDATE clients SET deleted_at = NULL, deleted_by = NULL WHERE id = ?", (client_id,))
     db.commit()
-    return
-
-    if cur.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Client not found")
-
     return
 
 
@@ -1399,14 +1409,21 @@ def delete_site(site_id: int, current_user: dict = Depends(get_current_user), db
     return
 
 @app.post("/sites/{site_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
-def restore_site(site_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
-    """Restore a deleted site (super admin only)"""
-    site = db.execute("SELECT id, deleted_at FROM sites WHERE id = ?", (site_id,)).fetchone()
+def restore_site(site_id: int, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Restore a deleted site (admin/superadmin). Regular admins can only restore from their own business."""
+    is_super_admin = current_user.get("is_super_admin")
+    if is_super_admin:
+        site = db.execute("SELECT id, deleted_at FROM sites WHERE id = ?", (site_id,)).fetchone()
+    else:
+        admin_business_id = get_business_id(current_user)
+        site = db.execute(
+            "SELECT s.id, s.deleted_at FROM sites s JOIN clients c ON s.client_id = c.id WHERE s.id = ? AND c.business_id = ?",
+            (site_id, admin_business_id)
+        ).fetchone()
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
     if not site.get("deleted_at"):
         raise HTTPException(status_code=400, detail="Site is not deleted")
-    
     db.execute("UPDATE sites SET deleted_at = NULL, deleted_by = NULL WHERE id = ?", (site_id,))
     db.commit()
     return
@@ -1926,37 +1943,52 @@ def create_equipment_type(payload: EquipmentTypeCreate, current_user: dict = Dep
         if business_id is None:
             raise HTTPException(status_code=400, detail="No business context available")
     
-    try:
-        cur = db.execute(
-            "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?, ?)",
-            (business_id, payload.name, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
+    # Before inserting, check if a soft-deleted record with the same name exists.
+    # If so, restore it with the new values instead of inserting (avoids UNIQUE constraint conflict).
+    if business_id is None:
+        existing_deleted = db.execute(
+            "SELECT id FROM equipment_types WHERE name = ? AND business_id IS NULL AND deleted_at IS NOT NULL",
+            (payload.name,)
+        ).fetchone()
+    else:
+        existing_deleted = db.execute(
+            "SELECT id FROM equipment_types WHERE name = ? AND business_id = ? AND deleted_at IS NOT NULL",
+            (payload.name, business_id)
+        ).fetchone()
+
+    if existing_deleted:
+        # Restore the soft-deleted record with the new payload values
+        record_id = existing_deleted["id"] if isinstance(existing_deleted, dict) else existing_deleted[0]
+        db.execute(
+            "UPDATE equipment_types SET interval_weeks = ?, rrule = ?, default_lead_weeks = ?, active = ?, deleted_at = NULL, deleted_by = NULL WHERE id = ?",
+            (payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0, record_id)
         )
         db.commit()
-    except (sqlite3.IntegrityError, psycopg2.IntegrityError) as e:
-        # Check if it's a unique constraint violation
-        # If business_id is NULL, name must be unique globally
-        # If business_id is set, name must be unique within that business
-        error_msg = str(e)
-        if "UNIQUE" in error_msg.upper() or "unique" in error_msg:
-            # Check for existing record with same name
-            if business_id is None:
-                # For "all businesses", check if name exists globally (with NULL business_id)
-                existing = db.execute(
-                    "SELECT id FROM equipment_types WHERE name = ? AND business_id IS NULL",
-                    (payload.name,)
-                ).fetchone()
-                if existing:
-                    raise HTTPException(status_code=400, detail="Equipment type name must be unique for all businesses")
-            else:
-                # For specific business, check if name exists for this business OR for all businesses
-                existing = db.execute(
-                    "SELECT id FROM equipment_types WHERE name = ? AND (business_id = ? OR business_id IS NULL)",
-                    (payload.name, business_id)
-                ).fetchone()
-                if existing:
-                    raise HTTPException(status_code=400, detail="Equipment type name must be unique within business")
-        # If it's a different constraint error, provide a generic message
-        raise HTTPException(status_code=400, detail=f"Database error: {error_msg}")
+        row = db.execute(
+            "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
+            (record_id,)
+        ).fetchone()
+        return EquipmentTypeRead(**row_to_dict(row))
+
+    # Check if an active (non-deleted) record with the same name already exists
+    if business_id is None:
+        active_existing = db.execute(
+            "SELECT id FROM equipment_types WHERE name = ? AND business_id IS NULL AND deleted_at IS NULL",
+            (payload.name,)
+        ).fetchone()
+    else:
+        active_existing = db.execute(
+            "SELECT id FROM equipment_types WHERE name = ? AND (business_id = ? OR business_id IS NULL) AND deleted_at IS NULL",
+            (payload.name, business_id)
+        ).fetchone()
+    if active_existing:
+        raise HTTPException(status_code=400, detail="Equipment type name already exists")
+
+    cur = db.execute(
+        "INSERT INTO equipment_types (business_id, name, interval_weeks, rrule, default_lead_weeks, active) VALUES (?, ?, ?, ?, ?, ?)",
+        (business_id, payload.name, payload.interval_weeks, payload.rrule, payload.default_lead_weeks, 1 if payload.active else 0),
+    )
+    db.commit()
 
     row = db.execute(
         "SELECT id, name, interval_weeks, rrule, default_lead_weeks, active FROM equipment_types WHERE id = ?",
@@ -2145,14 +2177,18 @@ def delete_equipment_type(
         return
 
 @app.post("/equipment-types/{equipment_type_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
-def restore_equipment_type(equipment_type_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
-    """Restore a deleted equipment type (super admin only)"""
-    et = db.execute("SELECT id, deleted_at FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
+def restore_equipment_type(equipment_type_id: int, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Restore a deleted equipment type (admin/superadmin). Regular admins can only restore from their own business."""
+    is_super_admin = current_user.get("is_super_admin")
+    if is_super_admin:
+        et = db.execute("SELECT id, deleted_at FROM equipment_types WHERE id = ?", (equipment_type_id,)).fetchone()
+    else:
+        admin_business_id = get_business_id(current_user)
+        et = db.execute("SELECT id, deleted_at FROM equipment_types WHERE id = ? AND business_id = ?", (equipment_type_id, admin_business_id)).fetchone()
     if not et:
         raise HTTPException(status_code=404, detail="Equipment type not found")
     if not et.get("deleted_at"):
         raise HTTPException(status_code=400, detail="Equipment type is not deleted")
-    
     db.execute("UPDATE equipment_types SET deleted_at = NULL, deleted_by = NULL WHERE id = ?", (equipment_type_id,))
     db.commit()
     return
@@ -2805,14 +2841,21 @@ def delete_equipment_record(equipment_record_id: int, current_user: dict = Depen
     return
 
 @app.post("/equipment-records/{equipment_record_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
-def restore_equipment_record(equipment_record_id: int, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
-    """Restore a deleted equipment record (super admin only)"""
-    er = db.execute("SELECT id, deleted_at FROM equipment_record WHERE id = ?", (equipment_record_id,)).fetchone()
+def restore_equipment_record(equipment_record_id: int, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    """Restore a deleted equipment record (admin/superadmin). Regular admins can only restore from their own business."""
+    is_super_admin = current_user.get("is_super_admin")
+    if is_super_admin:
+        er = db.execute("SELECT id, deleted_at FROM equipment_record WHERE id = ?", (equipment_record_id,)).fetchone()
+    else:
+        admin_business_id = get_business_id(current_user)
+        er = db.execute(
+            "SELECT er.id, er.deleted_at FROM equipment_record er JOIN clients c ON er.client_id = c.id WHERE er.id = ? AND c.business_id = ?",
+            (equipment_record_id, admin_business_id)
+        ).fetchone()
     if not er:
         raise HTTPException(status_code=404, detail="Equipment record not found")
     if not er.get("deleted_at"):
         raise HTTPException(status_code=400, detail="Equipment record is not deleted")
-    
     db.execute("UPDATE equipment_record SET deleted_at = NULL, deleted_by = NULL WHERE id = ?", (equipment_record_id,))
     db.commit()
     return

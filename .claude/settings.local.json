@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl -s -X POST \"https://wavefastapi-hedneehwcqdjgha7.canadacentral-01.azurewebsites.net/auth/login\" -H \"Content-Type: application/json\" -d '{\"\"username\"\":\"\"superadmin\"\",\"\"password\"\":\"\"superadmin\"\"}')"
+      "Bash(curl -s -X POST \"https://wavefastapi-hedneehwcqdjgha7.canadacentral-01.azurewebsites.net/auth/login\" -H \"Content-Type: application/json\" -d '{\"\"username\"\":\"\"superadmin\"\",\"\"password\"\":\"\"superadmin\"\"}')",
+      "Bash(git pull:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }

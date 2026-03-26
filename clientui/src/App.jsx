@@ -643,6 +643,7 @@ function App() {
   }
 
   const isSuperAdmin = currentUser?.is_super_admin === true || currentUser?.is_super_admin === 1;
+  const isAdmin = isSuperAdmin || currentUser?.is_admin === true || currentUser?.is_admin === 1;
 
   // Login Component
   if (!isAuthenticated) {
@@ -803,7 +804,7 @@ function App() {
           >
               Completed ({completions.length})
           </button>
-            {isSuperAdmin && (
+            {isAdmin && (
           <button
                 className={view === "deleted-records" ? "active" : ""}
                 onClick={() => setView("deleted-records")}
@@ -1141,7 +1142,7 @@ function App() {
           />
         )}
 
-        {view === "deleted-records" && isSuperAdmin && (
+        {view === "deleted-records" && isAdmin && (
           <DeletedRecordsView
             apiCall={apiCall}
             currentUser={currentUser}
