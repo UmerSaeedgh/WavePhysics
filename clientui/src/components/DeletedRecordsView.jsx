@@ -42,8 +42,14 @@ export default function DeletedRecordsView({ apiCall, currentUser, businesses, o
       return;
     }
 
+    const typeToPath = {
+      client: "clients",
+      site: "sites",
+      equipment_record: "equipment-records",
+      equipment_type: "equipment-types",
+    };
     try {
-      const endpoint = `/${record.type}s/${record.id}/restore`;
+      const endpoint = `/${typeToPath[record.type]}/${record.id}/restore`;
       await apiCall(endpoint, { method: "POST" });
       setError("");
       // Refresh the list
