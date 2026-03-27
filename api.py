@@ -629,14 +629,18 @@ def delete_business(business_id: int, current_user: dict = Depends(get_current_s
     # Delete all users (and their auth tokens via CASCADE) belonging to this business
     db.execute("DELETE FROM users WHERE business_id = ?", (business_id,))
 
-    # Hard-delete equipment types (including any soft-deleted ones)
-    db.execute("DELETE FROM equipment_types WHERE business_id = ?", (business_id,))
+    # Delete sites first — cascades to equipment_records and equipment_completions
+    if site_ids:
+        site_placeholders = ','.join('?' * len(site_ids))
+        db.execute(f"DELETE FROM sites WHERE id IN ({site_placeholders})", site_ids)
+
+    # Delete clients — cascades to any remaining equipment_records and client_equipments
     if client_ids:
         placeholders = ','.join('?' * len(client_ids))
-        if site_ids:
-            site_placeholders = ','.join('?' * len(site_ids))
-            db.execute(f"DELETE FROM sites WHERE id IN ({site_placeholders})", site_ids)
         db.execute(f"DELETE FROM clients WHERE id IN ({placeholders})", client_ids)
+
+    # Now safe to delete equipment_types — no equipment_records reference them anymore
+    db.execute("DELETE FROM equipment_types WHERE business_id = ?", (business_id,))
 
     # Delete the business — CASCADE handles any remaining FK references
     db.execute("DELETE FROM businesses WHERE id = ?", (business_id,))
