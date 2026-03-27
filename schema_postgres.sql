@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash  TEXT NOT NULL,
   is_admin       INTEGER NOT NULL DEFAULT 0,
   is_super_admin INTEGER NOT NULL DEFAULT 0,
-  business_id    INTEGER REFERENCES businesses(id) ON DELETE SET NULL,
+  business_id    INTEGER REFERENCES businesses(id) ON DELETE CASCADE,
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
   username       TEXT NOT NULL,
   is_admin       INTEGER NOT NULL DEFAULT 0,
   is_super_admin INTEGER NOT NULL DEFAULT 0,
-  business_id    INTEGER REFERENCES businesses(id) ON DELETE SET NULL,
+  business_id    INTEGER REFERENCES businesses(id) ON DELETE CASCADE,
   expires_at     TIMESTAMP NOT NULL,
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

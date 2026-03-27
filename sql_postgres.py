@@ -345,7 +345,7 @@ def init_schema(conn):
       password_hash  TEXT NOT NULL,
       is_admin       INTEGER NOT NULL DEFAULT 0,
       is_super_admin INTEGER NOT NULL DEFAULT 0,
-      business_id    INTEGER REFERENCES businesses(id) ON DELETE SET NULL,
+      business_id    INTEGER REFERENCES businesses(id) ON DELETE CASCADE,
       created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -356,7 +356,7 @@ def init_schema(conn):
       username       TEXT NOT NULL,
       is_admin       INTEGER NOT NULL DEFAULT 0,
       is_super_admin INTEGER NOT NULL DEFAULT 0,
-      business_id    INTEGER REFERENCES businesses(id) ON DELETE SET NULL,
+      business_id    INTEGER REFERENCES businesses(id) ON DELETE CASCADE,
       expires_at     TIMESTAMP NOT NULL,
       created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -474,7 +474,49 @@ def _run_migrations(conn):
         )
     except Exception:
         pass
-    
+
+    # Migration: Change users.business_id and auth_tokens.business_id FK from
+    # ON DELETE SET NULL to ON DELETE CASCADE, and clean up orphaned non-superadmin users.
+    try:
+        cursor.execute("""
+            DO $$
+            DECLARE
+                v_constraint TEXT;
+            BEGIN
+                -- Fix users.business_id FK
+                SELECT conname INTO v_constraint
+                FROM pg_constraint c
+                JOIN pg_attribute a ON a.attnum = ANY(c.conkey) AND a.attrelid = c.conrelid
+                WHERE c.conrelid = 'users'::regclass
+                  AND c.contype = 'f'
+                  AND a.attname = 'business_id';
+                IF v_constraint IS NOT NULL THEN
+                    EXECUTE format('ALTER TABLE users DROP CONSTRAINT %I', v_constraint);
+                END IF;
+                ALTER TABLE users ADD CONSTRAINT users_business_id_fkey
+                    FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE;
+
+                -- Fix auth_tokens.business_id FK
+                SELECT conname INTO v_constraint
+                FROM pg_constraint c
+                JOIN pg_attribute a ON a.attnum = ANY(c.conkey) AND a.attrelid = c.conrelid
+                WHERE c.conrelid = 'auth_tokens'::regclass
+                  AND c.contype = 'f'
+                  AND a.attname = 'business_id';
+                IF v_constraint IS NOT NULL THEN
+                    EXECUTE format('ALTER TABLE auth_tokens DROP CONSTRAINT %I', v_constraint);
+                END IF;
+                ALTER TABLE auth_tokens ADD CONSTRAINT auth_tokens_business_id_fkey
+                    FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE;
+
+                -- Clean up orphaned non-superadmin users left over from previously deleted businesses
+                DELETE FROM users WHERE business_id IS NULL AND is_super_admin = 0;
+            END $$;
+        """)
+    except Exception as e:
+        conn.rollback()
+        print(f"Migration note for users/auth_tokens cascade FK: {e}")
+
     conn.commit()
     cursor.close()
 

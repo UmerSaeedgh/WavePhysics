@@ -331,35 +331,36 @@ def list_businesses(current_user: dict = Depends(get_current_super_admin_user), 
 @app.post("/businesses", response_model=BusinessRead, status_code=status.HTTP_201_CREATED)
 def create_business(payload: BusinessCreate, current_user: dict = Depends(get_current_super_admin_user), db: sqlite3.Connection = Depends(get_db)):
     """Create a new business (super admin only). Optionally create an admin user for the business."""
+    # Pre-check: validate admin username uniqueness before modifying the DB.
+    # When a business is deleted, its users are NOT deleted (business_id is SET NULL),
+    # so their usernames remain taken and would cause the business INSERT to be orphaned.
+    if payload.create_admin_user and payload.admin_username and payload.admin_password:
+        if not payload.admin_username.strip() or not payload.admin_password.strip():
+            raise HTTPException(status_code=400, detail="Admin username and password are required when creating admin user")
+        existing = db.execute("SELECT id FROM users WHERE username = ?", (payload.admin_username.strip(),)).fetchone()
+        if existing:
+            raise HTTPException(status_code=400, detail="Username already exists")
+
     try:
         cur = db.execute(
             "INSERT INTO businesses (name) VALUES (?)",
             (payload.name,)
         )
         business_id = cur.lastrowid
-        db.commit()
-        
-        # Optionally create admin user for the business
+
+        # Insert the admin user in the same transaction so both succeed or both fail atomically
         if payload.create_admin_user and payload.admin_username and payload.admin_password:
-            if not payload.admin_username.strip() or not payload.admin_password.strip():
-                raise HTTPException(status_code=400, detail="Admin username and password are required when creating admin user")
-            
             password_hash = hash_password(payload.admin_password)
-            try:
-                db.execute(
-                    "INSERT INTO users (username, password_hash, is_admin, business_id) VALUES (?, ?, ?, ?)",
-                    (payload.admin_username.strip(), password_hash, 1, business_id)
-                )
-                db.commit()
-            except (sqlite3.IntegrityError, psycopg2.IntegrityError):
-                # Rollback business creation if user creation fails
-                db.execute("DELETE FROM businesses WHERE id = ?", (business_id,))
-                db.commit()
-                raise HTTPException(status_code=400, detail="Username already exists")
-        
+            db.execute(
+                "INSERT INTO users (username, password_hash, is_admin, business_id) VALUES (?, ?, ?, ?)",
+                (payload.admin_username.strip(), password_hash, 1, business_id)
+            )
+
+        db.commit()
         row = db.execute("SELECT id, name, created_at FROM businesses WHERE id = ?", (business_id,)).fetchone()
         return BusinessRead(**row_to_dict(row))
     except (sqlite3.IntegrityError, psycopg2.IntegrityError):
+        db.rollback()
         raise HTTPException(status_code=400, detail="Business name already exists")
 
 @app.put("/businesses/{business_id}", response_model=BusinessRead)
@@ -625,7 +626,10 @@ def delete_business(business_id: int, current_user: dict = Depends(get_current_s
         # Delete attachments for sites
         db.execute(f"DELETE FROM attachments WHERE scope = 'SITE' AND scope_id IN ({placeholders})", site_ids)
     
-    # Explicitly hard-delete any soft-deleted records so the business name can be reused cleanly
+    # Delete all users (and their auth tokens via CASCADE) belonging to this business
+    db.execute("DELETE FROM users WHERE business_id = ?", (business_id,))
+
+    # Hard-delete equipment types (including any soft-deleted ones)
     db.execute("DELETE FROM equipment_types WHERE business_id = ?", (business_id,))
     if client_ids:
         placeholders = ','.join('?' * len(client_ids))
@@ -634,7 +638,7 @@ def delete_business(business_id: int, current_user: dict = Depends(get_current_s
             db.execute(f"DELETE FROM sites WHERE id IN ({site_placeholders})", site_ids)
         db.execute(f"DELETE FROM clients WHERE id IN ({placeholders})", client_ids)
 
-    # Delete the business (CASCADE will handle any remaining references, and set users.business_id to NULL)
+    # Delete the business — CASCADE handles any remaining FK references
     db.execute("DELETE FROM businesses WHERE id = ?", (business_id,))
     db.commit()
     return None
