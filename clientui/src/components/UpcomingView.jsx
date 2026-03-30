@@ -246,7 +246,8 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
         body: JSON.stringify({
           equipment_record_id: doneEquipment.id,
           due_date: previousDueDate, // Use the old due_date, not the new calculated one
-          interval_weeks: doneInterval ? parseInt(doneInterval) : doneEquipment.interval_weeks
+          interval_weeks: doneInterval ? parseInt(doneInterval) : doneEquipment.interval_weeks,
+          completed_at: completionDate || undefined
         })
       });
       

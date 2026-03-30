@@ -2876,6 +2876,7 @@ class EquipmentCompletionCreate(BaseModel):
     due_date: str
     interval_weeks: Optional[int] = None
     completed_by_user: Optional[str] = None
+    completed_at: Optional[str] = None  # ISO date string; defaults to now if not provided
 
 
 class EquipmentCompletionRead(BaseModel):
@@ -2936,10 +2937,16 @@ def create_equipment_completion(payload: EquipmentCompletionCreate, current_user
     # Get username from current_user
     username = current_user.get("username", "unknown")
     
-    cur = db.execute(
-        "INSERT INTO equipment_completions (equipment_record_id, due_date, interval_weeks, completed_by_user) VALUES (?, ?, ?, ?)",
-        (payload.equipment_record_id, payload.due_date, payload.interval_weeks, username)
-    )
+    if payload.completed_at:
+        cur = db.execute(
+            "INSERT INTO equipment_completions (equipment_record_id, due_date, interval_weeks, completed_by_user, completed_at) VALUES (?, ?, ?, ?, ?)",
+            (payload.equipment_record_id, payload.due_date, payload.interval_weeks, username, payload.completed_at)
+        )
+    else:
+        cur = db.execute(
+            "INSERT INTO equipment_completions (equipment_record_id, due_date, interval_weeks, completed_by_user) VALUES (?, ?, ?, ?)",
+            (payload.equipment_record_id, payload.due_date, payload.interval_weeks, username)
+        )
     db.commit()
     
     # Fetch the completion with joined equipment data

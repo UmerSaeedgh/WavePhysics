@@ -11,6 +11,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
   const [doneEquipment, setDoneEquipment] = useState(null);
   const [calculatedDueDate, setCalculatedDueDate] = useState("");
   const [doneInterval, setDoneInterval] = useState("");
+  const [completionDate, setCompletionDate] = useState("");
   
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -221,9 +222,9 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     setDoneEquipment(equipment);
     const initialInterval = equipment.interval_weeks?.toString() || "";
     setDoneInterval(initialInterval);
-    
-    // Use today's date (completion date) + interval for next due date
+
     const today = getTodayDate();
+    setCompletionDate(today);
     if (initialInterval) {
       setCalculatedDueDate(calculateDueDate(today, initialInterval));
     } else {
@@ -232,12 +233,19 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     setShowDoneModal(true);
   }
 
+  function handleCompletionDateChange(newDate) {
+    setCompletionDate(newDate);
+    if (newDate && doneInterval) {
+      setCalculatedDueDate(calculateDueDate(newDate, doneInterval));
+    } else {
+      setCalculatedDueDate("");
+    }
+  }
+
   function handleIntervalChange(newInterval) {
     setDoneInterval(newInterval);
-    // Recalculate using today's date (completion date) + new interval
-    const today = getTodayDate();
-    if (newInterval) {
-      setCalculatedDueDate(calculateDueDate(today, newInterval));
+    if (completionDate && newInterval) {
+      setCalculatedDueDate(calculateDueDate(completionDate, newInterval));
     }
   }
 
@@ -261,7 +269,8 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
         body: JSON.stringify({
           equipment_record_id: doneEquipment.id,
           due_date: previousDueDate, // Use the old due_date, not the new calculated one
-          interval_weeks: doneInterval ? parseInt(doneInterval) : doneEquipment.interval_weeks
+          interval_weeks: doneInterval ? parseInt(doneInterval) : doneEquipment.interval_weeks,
+          completed_at: completionDate || undefined
         })
       });
       
@@ -770,6 +779,24 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
             </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  Completion Date
+                </label>
+                <input
+                  type="date"
+                  value={completionDate}
+                  onChange={(e) => handleCompletionDateChange(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    border: "1px solid #8193A4",
+                    borderRadius: "0.25rem",
+                    backgroundColor: "#fff",
+                    color: "#2D3234"
+                  }}
+                />
+              </div>
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
                   Interval (weeks)

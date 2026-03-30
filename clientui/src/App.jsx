@@ -1113,7 +1113,7 @@ function App() {
               setView(returnView);
             }}
             onSuccess={async () => {
-              const returnView = previousView || "all-equipments";
+              const returnView = previousView || "upcoming";
               setEquipmentToEdit(null);
               setInitialClientIdForEquipment(null);
               setInitialSiteIdForEquipment(null);
