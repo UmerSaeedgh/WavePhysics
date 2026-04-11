@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { formatDate } from "../utils/formatDate";
 import { generateEquipmentPDF } from "../utils/generateEquipmentPDF";
 import wavePhysicsLogo from "../assets/image.png";
+import CalendarView from "./CalendarView";
 
 export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue, onNavigateToAddEquipment, onRefreshCompletions, onRefreshAllCounts, onBack, initialClientId, initialSiteId, onFilterChange, businesses }) {
   // Filter states
@@ -25,6 +26,9 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   const [showRemaining, setShowRemaining] = useState(false);
   const [showOverdue, setShowOverdue] = useState(true);
   const [showUpcoming, setShowUpcoming] = useState(true);
+
+  // View mode: "list" or "calendar"
+  const [viewMode, setViewMode] = useState("list");
 
   // Notes editing state
   const [editingNotesId, setEditingNotesId] = useState(null);
@@ -695,9 +699,17 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
         )}
         <div className="card-header">
           <h2>Upcoming ({loading ? "..." : totalFilteredCount})</h2>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button 
-              className="secondary" 
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <div className="view-toggle">
+              <button className={viewMode === "list" ? "active" : ""} onClick={() => setViewMode("list")}>
+                List
+              </button>
+              <button className={viewMode === "calendar" ? "active" : ""} onClick={() => setViewMode("calendar")}>
+                Calendar
+              </button>
+            </div>
+            <button
+              className="secondary"
               onClick={() => setShowFilters(!showFilters)}
             >
               {showFilters ? "Hide Filters" : `Filter${activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}`}
@@ -948,6 +960,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
             </div>
           </div>
         )}
+        {viewMode === "list" && (
         <div style={{ padding: "1rem", borderBottom: "1px solid #ddd" }}>
           <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
@@ -988,10 +1001,22 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
             </div>
           </div>
         </div>
-        {filteredOverdue.length === 0 && filteredUpcoming.length === 0 && filteredRemaining.length === 0 ? (
+        )}
+        {viewMode === "calendar" ? (
+          <CalendarView
+            items={[...filterAndSortItems(overdue), ...filterAndSortItems(upcoming)]}
+            currentUser={currentUser}
+            apiCall={apiCall}
+            onRefresh={fetchUpcoming}
+            onItemClick={(item) => {
+              setSelectedEquipment(item);
+              setShowDetailsModal(true);
+            }}
+          />
+        ) : filteredOverdue.length === 0 && filteredUpcoming.length === 0 && filteredRemaining.length === 0 ? (
           <p className="empty">
             {overdue.length === 0 && upcoming.length === 0 && remaining.length === 0
-              ? "No upcoming equipment records" 
+              ? "No upcoming equipment records"
               : "No equipment records match your filters"}
           </p>
         ) : (
