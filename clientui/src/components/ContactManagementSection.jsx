@@ -45,9 +45,23 @@ export default function ContactManagementSection({ site, client, contactLinks, o
             {contactLinks.map((link, index) => (
               <li key={link.contact_id || link.id || index} className="list-item">
                 <div className="list-main">
-                  <div className="list-title">
-                    {link.first_name} {link.last_name} - {link.role}
-                    {link.is_primary && " (Primary)"}
+                  <div className="list-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <span>{link.first_name} {link.last_name}</span>
+                    <span style={{ color: "#8193A4", fontWeight: 400 }}>· {link.role}</span>
+                    {link.is_primary && (
+                      <span style={{
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        letterSpacing: "0.03em",
+                        textTransform: "uppercase",
+                        padding: "0.15rem 0.55rem",
+                        borderRadius: "999px",
+                        background: "#10b981",
+                        color: "#fff",
+                      }}>
+                        Primary
+                      </span>
+                    )}
                   </div>
                   <div className="list-subtitle">
                     {link.scope_name && `${link.scope}: ${link.scope_name} • `}

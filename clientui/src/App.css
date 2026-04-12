@@ -280,8 +280,8 @@ select:focus {
 
 input::placeholder,
 textarea::placeholder {
-  color: var(--primary);
-  opacity: 0.6;
+  color: var(--dark-light);
+  opacity: 0.55;
 }
 
 button {
@@ -383,7 +383,8 @@ button:disabled {
 }
 
 .empty {
-  color: var(--primary);
+  color: var(--dark-light);
+  opacity: 0.7;
   font-style: italic;
   padding: 3rem 0;
   text-align: center;
@@ -529,7 +530,8 @@ ul.list li.list-item.inactive-equipment {
 
 .list-subtitle {
   font-size: 0.875rem;
-  color: var(--primary);
+  color: var(--dark-light);
+  opacity: 0.8;
   font-weight: 400;
   line-height: 1.5;
 }
@@ -814,7 +816,8 @@ ul.list li.list-item.inactive-equipment {
 
 .calendar-date-number {
   font-size: 0.8rem;
-  color: #999;
+  color: var(--dark-light);
+  font-weight: 500;
   padding: 0.15rem 0.3rem;
   text-align: right;
 }
@@ -860,6 +863,33 @@ ul.list li.list-item.inactive-equipment {
   border-left-color: #d32f2f;
 }
 
+.calendar-item-status-tentative {
+  background: rgba(245, 158, 11, 0.18);
+  border-left-color: #f59e0b;
+}
+
+.calendar-item-status-confirmed {
+  background: rgba(59, 130, 246, 0.18);
+  border-left-color: #3b82f6;
+}
+
+.calendar-item-status-completed {
+  background: rgba(16, 185, 129, 0.2);
+  border-left-color: #10b981;
+}
+
+.calendar-item-status-rescheduled {
+  background: rgba(139, 92, 246, 0.18);
+  border-left-color: #8b5cf6;
+}
+
+.calendar-item-status-cancelled {
+  background: rgba(107, 114, 128, 0.18);
+  border-left-color: #6b7280;
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
 .calendar-item-name {
   display: block;
   font-weight: 600;
@@ -872,8 +902,9 @@ ul.list li.list-item.inactive-equipment {
 
 .calendar-item-client {
   display: block;
-  font-size: 0.65rem;
-  color: #888;
+  font-size: 0.7rem;
+  color: var(--dark-light);
+  opacity: 0.75;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -886,7 +917,7 @@ ul.list li.list-item.inactive-equipment {
   gap: 1rem;
   padding: 0.75rem 0.5rem 0;
   font-size: 0.8rem;
-  color: #666;
+  color: var(--dark);
 }
 
 .calendar-legend-item {

@@ -3,6 +3,23 @@ import { formatDate } from "../utils/formatDate";
 import { generateEquipmentPDF } from "../utils/generateEquipmentPDF";
 import wavePhysicsLogo from "../assets/image.png";
 import CalendarView from "./CalendarView";
+import SendEmailModal from "./SendEmailModal";
+
+const EMAIL_STATUS_LABEL = {
+  TENTATIVE: "Tentative",
+  CONFIRMED: "Confirmed",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
+  RESCHEDULED: "Rescheduled",
+};
+
+const EMAIL_STATUS_COLORS = {
+  TENTATIVE: "#f59e0b",
+  CONFIRMED: "#3b82f6",
+  COMPLETED: "#10b981",
+  CANCELLED: "#6b7280",
+  RESCHEDULED: "#8b5cf6",
+};
 
 export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue, onNavigateToAddEquipment, onRefreshCompletions, onRefreshAllCounts, onBack, initialClientId, initialSiteId, onFilterChange, businesses }) {
   // Filter states
@@ -37,6 +54,8 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   // Modal states
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
   const [showDoneModal, setShowDoneModal] = useState(false);
   const [doneEquipment, setDoneEquipment] = useState(null);
   const [completionDate, setCompletionDate] = useState("");
@@ -1004,7 +1023,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
         )}
         {viewMode === "calendar" ? (
           <CalendarView
-            items={[...filterAndSortItems(overdue), ...filterAndSortItems(upcoming)]}
+            items={[...filterAndSortItems(overdue), ...filterAndSortItems(upcoming), ...filterAndSortItems(remaining)]}
             currentUser={currentUser}
             apiCall={apiCall}
             onRefresh={fetchUpcoming}
@@ -1206,9 +1225,83 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
-                <button 
-                  className="primary" 
+              <div style={{
+                padding: "0.85rem 1rem",
+                borderRadius: "0.5rem",
+                background: "rgba(129,147,164,0.12)",
+                border: "1px solid #8193A4",
+                display: "flex",
+                alignItems: "center",
+                gap: "1rem",
+                flexWrap: "wrap",
+              }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                  <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Appointment Email</span>
+                  {selectedEquipment.email_sent_at ? (
+                    <span style={{ fontSize: "0.8rem", opacity: 0.75 }}>
+                      Sent {formatDate(selectedEquipment.email_sent_at)}
+                      {selectedEquipment.contact_email_snapshot ? ` to ${selectedEquipment.contact_email_snapshot}` : ""}
+                      {selectedEquipment.appointment_at ? ` · appt ${formatDate(selectedEquipment.appointment_at)} ${selectedEquipment.appointment_at.slice(11,16) || ""}` : ""}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: "0.8rem", opacity: 0.75 }}>No appointment email has been sent yet.</span>
+                  )}
+                </div>
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    padding: "0.2rem 0.6rem",
+                    borderRadius: "999px",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.03em",
+                    background: selectedEquipment.email_status ? EMAIL_STATUS_COLORS[selectedEquipment.email_status] : "#cbd5e1",
+                    color: selectedEquipment.email_status ? "#fff" : "#2D3234",
+                  }}>
+                    {selectedEquipment.email_status ? EMAIL_STATUS_LABEL[selectedEquipment.email_status] : "Not sent"}
+                  </span>
+                  {selectedEquipment.email_status && (
+                    <select
+                      value={selectedEquipment.email_status}
+                      disabled={statusSaving}
+                      onChange={async (e) => {
+                        const newStatus = e.target.value;
+                        setStatusSaving(true);
+                        try {
+                          const updated = await apiCall(`/equipment-records/${selectedEquipment.id}/email-status`, {
+                            method: "PATCH",
+                            body: JSON.stringify({ email_status: newStatus || null }),
+                          });
+                          setSelectedEquipment(updated);
+                          await fetchUpcoming();
+                        } catch (err) {
+                          setError(err.message || "Failed to update status");
+                        } finally {
+                          setStatusSaving(false);
+                        }
+                      }}
+                      style={{ padding: "0.35rem 0.5rem", fontSize: "0.85rem", minWidth: "auto" }}
+                    >
+                      <option value="TENTATIVE">Tentative</option>
+                      <option value="CONFIRMED">Confirmed</option>
+                      <option value="COMPLETED">Completed</option>
+                      <option value="CANCELLED">Cancelled</option>
+                      <option value="RESCHEDULED">Rescheduled</option>
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem", flexWrap: "wrap" }}>
+                <button
+                  className="primary"
+                  onClick={() => setShowEmailModal(true)}
+                  title="Compose an appointment email in Outlook"
+                >
+                  ✉ Send Email
+                </button>
+                <button
+                  className="primary"
                   onClick={() => {
                     setShowDetailsModal(false);
                     if (onNavigateToAddEquipment) {
@@ -1267,6 +1360,25 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
             </div>
           </div>
         </div>
+      )}
+
+      {showEmailModal && selectedEquipment && (
+        <SendEmailModal
+          item={selectedEquipment}
+          currentUser={currentUser}
+          apiCall={apiCall}
+          setError={setError}
+          onClose={() => setShowEmailModal(false)}
+          onSent={async () => {
+            try {
+              const refreshed = await apiCall(`/equipment-records/${selectedEquipment.id}`);
+              setSelectedEquipment(refreshed);
+              await fetchUpcoming();
+            } catch (err) {
+              // error already shown
+            }
+          }}
+        />
       )}
 
       {showDoneModal && doneEquipment && (

@@ -201,10 +201,12 @@ export default function CalendarView({ items, currentUser, apiCall, onRefresh, o
                   {day}
                 </div>
                 <div className="calendar-items">
-                  {dayItems.map(item => (
+                  {dayItems.map(item => {
+                    const statusCls = item.email_status ? ` calendar-item-status-${item.email_status.toLowerCase()}` : "";
+                    return (
                     <div
                       key={item.id}
-                      className={`calendar-item${overdueDay ? " calendar-item-overdue" : ""}`}
+                      className={`calendar-item${overdueDay ? " calendar-item-overdue" : ""}${statusCls}`}
                       draggable={canDrag}
                       onDragStart={(e) => handleDragStart(e, item)}
                       onDragEnd={handleDragEnd}
@@ -217,7 +219,8 @@ export default function CalendarView({ items, currentUser, apiCall, onRefresh, o
                         <span className="calendar-item-client">{item.client_name}</span>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -235,8 +238,28 @@ export default function CalendarView({ items, currentUser, apiCall, onRefresh, o
           <span className="calendar-legend-dot" style={{ backgroundColor: "#d32f2f" }}></span>
           <span>Overdue</span>
         </div>
+        <div className="calendar-legend-item">
+          <span className="calendar-legend-dot" style={{ backgroundColor: "#f59e0b" }}></span>
+          <span>Tentative</span>
+        </div>
+        <div className="calendar-legend-item">
+          <span className="calendar-legend-dot" style={{ backgroundColor: "#3b82f6" }}></span>
+          <span>Confirmed</span>
+        </div>
+        <div className="calendar-legend-item">
+          <span className="calendar-legend-dot" style={{ backgroundColor: "#10b981" }}></span>
+          <span>Completed</span>
+        </div>
+        <div className="calendar-legend-item">
+          <span className="calendar-legend-dot" style={{ backgroundColor: "#8b5cf6" }}></span>
+          <span>Rescheduled</span>
+        </div>
+        <div className="calendar-legend-item">
+          <span className="calendar-legend-dot" style={{ backgroundColor: "#6b7280" }}></span>
+          <span>Cancelled</span>
+        </div>
         {canDrag && (
-          <div className="calendar-legend-item" style={{ marginLeft: "auto", fontSize: "0.8rem", color: "#666" }}>
+          <div className="calendar-legend-item" style={{ marginLeft: "auto", fontSize: "0.8rem", opacity: 0.75 }}>
             Drag a test to another date to reschedule
           </div>
         )}

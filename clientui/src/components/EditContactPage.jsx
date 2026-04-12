@@ -38,6 +38,10 @@ export default function EditContactPage({ apiCall, setError, contactToEdit, cont
       setError("First and last name are required");
       return;
     }
+    if (!form.email.trim()) {
+      setError("Email is required");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -151,8 +155,8 @@ export default function EditContactPage({ apiCall, setError, contactToEdit, cont
             <input type="text" name="last_name" value={form.last_name} onChange={handleChange} required />
           </label>
           <label>
-            Email
-            <input type="email" name="email" value={form.email} onChange={handleChange} />
+            Email *
+            <input type="email" name="email" value={form.email} onChange={handleChange} required />
           </label>
           <label>
             Phone
@@ -162,10 +166,64 @@ export default function EditContactPage({ apiCall, setError, contactToEdit, cont
             Role
             <input type="text" name="role" value={form.role} onChange={handleChange} placeholder="e.g. Manager, Technician" />
           </label>
-          <label className="checkbox-label">
-            <input type="checkbox" name="is_primary" checked={form.is_primary} onChange={handleChange} />
-            Primary Contact
-          </label>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setForm(prev => ({ ...prev, is_primary: !prev.is_primary }))}
+            onKeyDown={(e) => {
+              if (e.key === " " || e.key === "Enter") {
+                e.preventDefault();
+                setForm(prev => ({ ...prev, is_primary: !prev.is_primary }));
+              }
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "1rem",
+              padding: "0.85rem 1rem",
+              border: `1.5px solid ${form.is_primary ? "#10b981" : "#8193A4"}`,
+              borderRadius: "0.5rem",
+              background: form.is_primary ? "rgba(16, 185, 129, 0.08)" : "transparent",
+              cursor: "pointer",
+              userSelect: "none",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+              <span style={{ fontWeight: 600, color: "#2D3234" }}>Primary Contact</span>
+              <span style={{ fontSize: "0.8rem", color: "#2D3234", opacity: 0.7 }}>
+                The primary contact receives appointment emails for this {contactContext?.site ? "site" : "client"}.
+              </span>
+            </div>
+            <span
+              aria-hidden="true"
+              style={{
+                position: "relative",
+                width: "44px",
+                height: "24px",
+                borderRadius: "999px",
+                background: form.is_primary ? "#10b981" : "#cbd5e1",
+                transition: "background 0.15s ease",
+                flexShrink: 0,
+              }}
+            >
+              <span
+                style={{
+                  position: "absolute",
+                  top: "2px",
+                  left: form.is_primary ? "22px" : "2px",
+                  width: "20px",
+                  height: "20px",
+                  borderRadius: "50%",
+                  background: "#fff",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                  transition: "left 0.15s ease",
+                }}
+              />
+            </span>
+            <input type="checkbox" name="is_primary" checked={form.is_primary} onChange={handleChange} style={{ display: "none" }} />
+          </div>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "1rem" }}>
             <button type="submit" className="primary" disabled={loading}>
               {loading ? "Saving..." : (contactToEdit ? "Save Changes" : "Create Contact")}
