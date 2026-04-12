@@ -346,6 +346,7 @@ def init_schema(conn):
       is_admin       INTEGER NOT NULL DEFAULT 0,
       is_super_admin INTEGER NOT NULL DEFAULT 0,
       business_id    INTEGER REFERENCES businesses(id) ON DELETE CASCADE,
+      calendar_token TEXT,
       created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -474,6 +475,20 @@ def _run_migrations(conn):
         )
     except Exception:
         pass
+
+    # Migration: Add calendar_token column to users for Outlook/iCal subscription feeds
+    try:
+        cursor.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_token TEXT"
+        )
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_calendar_token "
+            "ON users(calendar_token) WHERE calendar_token IS NOT NULL"
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Migration note for users.calendar_token: {e}")
 
     # Migration: Change users.business_id and auth_tokens.business_id FK from
     # ON DELETE SET NULL to ON DELETE CASCADE, and clean up orphaned non-superadmin users.

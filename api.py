@@ -197,6 +197,118 @@ def root():
     return {"message": "Service Schedule Manager API", "docs": "/docs", "status": "running"}
 
 
+@app.get("/calendar/ics/{token}.ics")
+def get_calendar_ics(token: str, db: sqlite3.Connection = Depends(get_db)):
+    """Public iCalendar feed for Outlook/Google/Apple subscription.
+
+    Authenticated via the per-user calendar_token in the URL path. Returns
+    all active equipment records with a due_date, scoped to the user's
+    business (or all businesses for super admins with no business assigned).
+    """
+    user = db.execute(
+        "SELECT id, username, business_id FROM users WHERE calendar_token = ?",
+        (token,)
+    ).fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="Calendar not found")
+
+    query = """SELECT er.id, er.equipment_name, er.due_date, er.notes,
+                      er.make, er.model, er.serial_number,
+                      c.name as client_name,
+                      s.name as site_name,
+                      s.street as site_street,
+                      s.state as site_state,
+                      et.name as equipment_type_name
+               FROM equipment_record er
+               LEFT JOIN clients c ON er.client_id = c.id
+               LEFT JOIN sites s ON er.site_id = s.id
+               LEFT JOIN equipment_types et ON er.equipment_type_id = et.id
+               WHERE er.deleted_at IS NULL
+                 AND er.active = 1
+                 AND er.due_date IS NOT NULL"""
+    params = []
+    business_id = user["business_id"]
+    if business_id is not None:
+        query += " AND c.business_id = ?"
+        params.append(business_id)
+    query += " ORDER BY er.due_date"
+
+    rows = db.execute(query, params).fetchall()
+
+    cal = Calendar()
+    cal.add('prodid', '-//Wave Physics//Equipment Calendar//EN')
+    cal.add('version', '2.0')
+    cal.add('method', 'PUBLISH')
+    cal.add('x-wr-calname', f"Wave Physics — {user['username']}")
+    cal.add('x-wr-caldesc', 'Equipment due dates from Wave Physics')
+
+    stamp = datetime.utcnow()
+    for row in rows:
+        r = dict(row)
+        due = r.get("due_date")
+        if due is None:
+            continue
+        if isinstance(due, str):
+            due = dt.datetime.strptime(due, "%Y-%m-%d").date()
+        elif isinstance(due, datetime):
+            due = due.date()
+
+        name_bits = []
+        if r.get("client_name"):
+            name_bits.append(r["client_name"])
+        if r.get("site_name"):
+            name_bits.append(r["site_name"])
+        summary = r.get("equipment_name") or "Equipment"
+        if name_bits:
+            summary = f"{summary} — {' · '.join(name_bits)}"
+
+        desc_lines = []
+        if r.get("equipment_type_name"):
+            desc_lines.append(f"Type: {r['equipment_type_name']}")
+        if r.get("make"):
+            desc_lines.append(f"Make: {r['make']}")
+        if r.get("model"):
+            desc_lines.append(f"Model: {r['model']}")
+        if r.get("serial_number"):
+            desc_lines.append(f"Serial: {r['serial_number']}")
+        if r.get("notes"):
+            if desc_lines:
+                desc_lines.append("")
+            desc_lines.append(r["notes"])
+
+        loc_bits = []
+        if r.get("site_name"):
+            loc_bits.append(r["site_name"])
+        if r.get("site_street"):
+            loc_bits.append(r["site_street"])
+        if r.get("site_state"):
+            loc_bits.append(r["site_state"])
+
+        event = Event()
+        event.add('uid', f"equipment-{r['id']}@wavephysics")
+        event.add('summary', summary)
+        if desc_lines:
+            event.add('description', "\n".join(desc_lines))
+        event.add('dtstart', due)
+        event.add('dtend', due + dt.timedelta(days=1))
+        event.add('dtstamp', stamp)
+        event.add('transp', 'TRANSPARENT')
+        event.add('categories', ['Wave Physics'])
+        if loc_bits:
+            event.add('location', ", ".join(loc_bits))
+        cal.add_component(event)
+
+    ics_bytes = cal.to_ical()
+    return Response(
+        content=ics_bytes,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": 'inline; filename="wavephysics.ics"',
+            "Cache-Control": "no-cache, must-revalidate",
+        },
+    )
+
+
 # Authentication Models
 class LoginRequest(BaseModel):
     username: str
@@ -282,6 +394,58 @@ def get_current_user_info(current_user: dict = Depends(get_current_user)):
         "is_super_admin": current_user.get("is_super_admin", False),
         "business_id": current_user.get("business_id")
     }
+
+
+class CalendarTokenResponse(BaseModel):
+    calendar_token: str
+    ics_path: str
+
+
+def _get_or_create_calendar_token(user_id: int, db) -> str:
+    row = db.execute(
+        "SELECT calendar_token FROM users WHERE id = ?",
+        (user_id,)
+    ).fetchone()
+    if row and row["calendar_token"]:
+        return row["calendar_token"]
+    token = secrets.token_urlsafe(32)
+    db.execute(
+        "UPDATE users SET calendar_token = ? WHERE id = ?",
+        (token, user_id)
+    )
+    db.commit()
+    return token
+
+
+@app.get("/me/calendar-token", response_model=CalendarTokenResponse)
+def get_my_calendar_token(
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Return the user's Outlook/iCal subscription token, creating one on first access."""
+    token = _get_or_create_calendar_token(current_user["user_id"], db)
+    return CalendarTokenResponse(
+        calendar_token=token,
+        ics_path=f"/calendar/ics/{token}.ics",
+    )
+
+
+@app.post("/me/calendar-token/regenerate", response_model=CalendarTokenResponse)
+def regenerate_my_calendar_token(
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Rotate the user's calendar token. The old subscription URL stops working immediately."""
+    new_token = secrets.token_urlsafe(32)
+    db.execute(
+        "UPDATE users SET calendar_token = ? WHERE id = ?",
+        (new_token, current_user["user_id"])
+    )
+    db.commit()
+    return CalendarTokenResponse(
+        calendar_token=new_token,
+        ics_path=f"/calendar/ics/{new_token}.ics",
+    )
 
 class SwitchBusinessRequest(BaseModel):
     business_id: Optional[int] = None

@@ -1145,7 +1145,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
             color: "#2D3234"
           }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>Equipment Details</h2>
+              <h2 style={{ margin: 0, color: "#2D3234" }}>Appointment Details</h2>
               <button onClick={() => setShowDetailsModal(false)} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
             </div>
             

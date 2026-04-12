@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS users (
   is_admin       INTEGER NOT NULL DEFAULT 0,
   is_super_admin INTEGER NOT NULL DEFAULT 0,
   business_id    INTEGER REFERENCES businesses(id) ON DELETE CASCADE,
+  calendar_token TEXT,
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -177,6 +178,7 @@ CREATE INDEX IF NOT EXISTS idx_equipment_record_equipment_type_id ON equipment_r
 CREATE INDEX IF NOT EXISTS idx_contact_links_contact_id ON contact_links(contact_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_types_business_id ON equipment_types(business_id);
 CREATE INDEX IF NOT EXISTS idx_users_business_id ON users(business_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_calendar_token ON users(calendar_token) WHERE calendar_token IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_completions_equipment_record_id ON equipment_completions(equipment_record_id);
 
