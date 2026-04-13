@@ -348,6 +348,7 @@ def init_schema(conn):
       business_id    INTEGER REFERENCES businesses(id) ON DELETE CASCADE,
       calendar_token TEXT,
       theme          TEXT NOT NULL DEFAULT 'default',
+      custom_theme   TEXT,
       created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -507,6 +508,13 @@ def _run_migrations(conn):
         cursor.execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT 'default'"
         )
+        conn.commit()
+    except Exception:
+        pass
+
+    # Migration: Add per-user custom theme palette (JSON-encoded color tokens)
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_theme TEXT")
         conn.commit()
     except Exception:
         pass

@@ -27,20 +27,36 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!authToken);
 
   // Apply persisted theme only when authenticated; login screen always uses default.
-  // The user's saved theme follows their account — when they log in we fetch
-  // it from /auth/me below and update both the DOM and localStorage cache.
   useEffect(() => {
+    const root = document.documentElement;
+    const customKeys = ["--custom-bg", "--custom-surface", "--custom-text", "--custom-accent", "--custom-border"];
+
     if (!isAuthenticated) {
-      document.documentElement.removeAttribute("data-theme");
+      root.removeAttribute("data-theme");
+      customKeys.forEach((k) => root.style.removeProperty(k));
       return;
     }
     const cached = currentUser?.theme || localStorage.getItem("theme") || "default";
+
     if (cached === "default") {
-      document.documentElement.removeAttribute("data-theme");
+      root.removeAttribute("data-theme");
     } else {
-      document.documentElement.setAttribute("data-theme", cached);
+      root.setAttribute("data-theme", cached);
     }
-  }, [isAuthenticated, currentUser?.theme]);
+
+    if (cached === "custom") {
+      const c = currentUser?.custom_theme;
+      if (c) {
+        root.style.setProperty("--custom-bg", c.bg);
+        root.style.setProperty("--custom-surface", c.surface);
+        root.style.setProperty("--custom-text", c.text);
+        root.style.setProperty("--custom-accent", c.accent);
+        root.style.setProperty("--custom-border", c.border);
+      }
+    } else {
+      customKeys.forEach((k) => root.style.removeProperty(k));
+    }
+  }, [isAuthenticated, currentUser?.theme, currentUser?.custom_theme]);
   const [loginTime, setLoginTime] = useState(null); // Track when user logged in
 
   // Initialize view from URL hash or default to "clients"

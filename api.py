@@ -387,14 +387,22 @@ def logout(current_user: dict = Depends(get_current_user), db: sqlite3.Connectio
 @app.get("/auth/me")
 def get_current_user_info(current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
     """Get current authenticated user info"""
-    theme_row = db.execute("SELECT theme FROM users WHERE id = ?", (current_user["user_id"],)).fetchone()
+    row = db.execute("SELECT theme, custom_theme FROM users WHERE id = ?", (current_user["user_id"],)).fetchone()
+    custom_theme = None
+    if row and row["custom_theme"]:
+        try:
+            import json as _json
+            custom_theme = _json.loads(row["custom_theme"])
+        except Exception:
+            custom_theme = None
     return {
         "id": current_user["user_id"],
         "username": current_user["username"],
         "is_admin": current_user["is_admin"],
         "is_super_admin": current_user.get("is_super_admin", False),
         "business_id": current_user.get("business_id"),
-        "theme": (theme_row["theme"] if theme_row and theme_row["theme"] else "default"),
+        "theme": (row["theme"] if row and row["theme"] else "default"),
+        "custom_theme": custom_theme,
     }
 
 
@@ -404,11 +412,34 @@ class ThemeUpdate(BaseModel):
 
 @app.put("/me/theme")
 def update_my_theme(payload: ThemeUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
-    if payload.theme not in ("default", "light", "dark"):
+    if payload.theme not in ("default", "light", "dark", "custom"):
         raise HTTPException(status_code=400, detail="Invalid theme")
     db.execute("UPDATE users SET theme = ? WHERE id = ?", (payload.theme, current_user["user_id"]))
     db.commit()
     return {"theme": payload.theme}
+
+
+class CustomThemeUpdate(BaseModel):
+    bg: str
+    surface: str
+    text: str
+    accent: str
+    border: str
+
+
+_HEX_RE = __import__("re").compile(r"^#[0-9a-fA-F]{6}$")
+
+
+@app.put("/me/custom-theme")
+def update_my_custom_theme(payload: CustomThemeUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    import json as _json
+    colors = payload.dict()
+    for key, val in colors.items():
+        if not _HEX_RE.match(val or ""):
+            raise HTTPException(status_code=400, detail=f"{key} must be a 6-digit hex color")
+    db.execute("UPDATE users SET custom_theme = ? WHERE id = ?", (_json.dumps(colors), current_user["user_id"]))
+    db.commit()
+    return colors
 
 
 class CalendarTokenResponse(BaseModel):

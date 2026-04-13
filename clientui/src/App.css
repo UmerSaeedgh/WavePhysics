@@ -75,6 +75,31 @@
 [data-theme="dark"] input::placeholder,
 [data-theme="dark"] textarea::placeholder { color: #8b95a0; }
 
+/* ================= Custom theme ================= */
+/* The five --custom-* vars are set inline on <html> via JS when theme=custom. */
+[data-theme="custom"] {
+  --light-bg: var(--custom-surface, #ffffff);
+  --white: var(--custom-surface, #ffffff);
+  --text-dark: var(--custom-text, #1a202c);
+  --text-light: var(--custom-bg, #f5f7fa);
+  --border: var(--custom-border, #cbd5e1);
+  --primary: var(--custom-accent, #64748b);
+  --primary-dark: var(--custom-accent, #475569);
+  --primary-light: var(--custom-accent, #94a3b8);
+}
+[data-theme="custom"] body,
+[data-theme="custom"] .app {
+  background: var(--custom-bg, #f5f7fa);
+  color: var(--custom-text, #1a202c);
+}
+[data-theme="custom"] input,
+[data-theme="custom"] textarea,
+[data-theme="custom"] select {
+  background-color: var(--custom-surface, #ffffff);
+  color: var(--custom-text, #1a202c);
+  border-color: var(--custom-border, #cbd5e1);
+}
+
 /* Overdue cards: pink-tinted in light/default, dark red-tinted in dark mode. */
 .list-item.is-overdue {
   color: #1a202c !important;

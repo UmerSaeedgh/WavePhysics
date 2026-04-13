@@ -6,15 +6,39 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
   const [userTab, setUserTab] = useState(initialTab || "settings");
   const [theme, setTheme] = useState(() => currentUser?.theme || localStorage.getItem("theme") || "default");
 
+  const DEFAULT_PALETTES = {
+    default: { bg: "#D7E5D8", surface: "#ffffff", text: "#2D3234", accent: "#8193A4", border: "#8193A4" },
+    light:   { bg: "#f5f7fa", surface: "#ffffff", text: "#1a202c", accent: "#64748b", border: "#cbd5e1" },
+    dark:    { bg: "#15191c", surface: "#232a30", text: "#e5e7eb", accent: "#9aa8b6", border: "#3a4349" },
+  };
+  const [customColors, setCustomColors] = useState(() => (
+    currentUser?.custom_theme || DEFAULT_PALETTES.light
+  ));
+
+  function applyCustomToDom(c) {
+    const root = document.documentElement;
+    root.setAttribute("data-theme", "custom");
+    root.style.setProperty("--custom-bg", c.bg);
+    root.style.setProperty("--custom-surface", c.surface);
+    root.style.setProperty("--custom-text", c.text);
+    root.style.setProperty("--custom-accent", c.accent);
+    root.style.setProperty("--custom-border", c.border);
+  }
+
   async function applyTheme(next) {
     setTheme(next);
     localStorage.setItem("theme", next);
+    const root = document.documentElement;
+    const customKeys = ["--custom-bg", "--custom-surface", "--custom-text", "--custom-accent", "--custom-border"];
     if (next === "default") {
-      document.documentElement.removeAttribute("data-theme");
+      root.removeAttribute("data-theme");
+      customKeys.forEach((k) => root.style.removeProperty(k));
+    } else if (next === "custom") {
+      applyCustomToDom(customColors);
     } else {
-      document.documentElement.setAttribute("data-theme", next);
+      root.setAttribute("data-theme", next);
+      customKeys.forEach((k) => root.style.removeProperty(k));
     }
-    // Sync to server so the same account uses this theme on other devices.
     try {
       await apiCall("/me/theme", { method: "PUT", body: JSON.stringify({ theme: next }) });
       const updated = { ...(currentUser || {}), theme: next };
@@ -22,6 +46,60 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
     } catch (err) {
       setError(err.message || "Failed to save theme");
     }
+  }
+
+  // Debounced server save for custom colors.
+  const customSaveTimer = (typeof window !== "undefined") ? window.__customSaveTimer : null;
+  function updateCustomColor(key, value) {
+    const next = { ...customColors, [key]: value };
+    setCustomColors(next);
+    applyCustomToDom(next);
+    if (window.__customSaveTimer) clearTimeout(window.__customSaveTimer);
+    window.__customSaveTimer = setTimeout(async () => {
+      try {
+        await apiCall("/me/custom-theme", { method: "PUT", body: JSON.stringify(next) });
+        const updated = { ...(currentUser || {}), custom_theme: next };
+        localStorage.setItem("currentUser", JSON.stringify(updated));
+      } catch (err) {
+        setError(err.message || "Failed to save custom theme");
+      }
+    }, 500);
+  }
+
+  function seedCustomFrom(presetId) {
+    const preset = DEFAULT_PALETTES[presetId];
+    if (!preset) return;
+    setCustomColors(preset);
+    applyCustomToDom(preset);
+    if (window.__customSaveTimer) clearTimeout(window.__customSaveTimer);
+    window.__customSaveTimer = setTimeout(async () => {
+      try {
+        await apiCall("/me/custom-theme", { method: "PUT", body: JSON.stringify(preset) });
+        const updated = { ...(currentUser || {}), custom_theme: preset };
+        localStorage.setItem("currentUser", JSON.stringify(updated));
+      } catch (err) {
+        setError(err.message || "Failed to save custom theme");
+      }
+    }, 200);
+  }
+
+  // WCAG relative luminance + contrast ratio (returns ratio between two hex colors).
+  function hexToRgb(hex) {
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "");
+    return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [0, 0, 0];
+  }
+  function relLum([r, g, b]) {
+    const v = [r, g, b].map((x) => {
+      const s = x / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+  }
+  function contrast(hexA, hexB) {
+    const a = relLum(hexToRgb(hexA));
+    const b = relLum(hexToRgb(hexB));
+    const [hi, lo] = a > b ? [a, b] : [b, a];
+    return (hi + 0.05) / (lo + 0.05);
   }
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -233,6 +311,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   { id: "default", label: "Default" },
                   { id: "light", label: "Light" },
                   { id: "dark", label: "Dark" },
+                  { id: "custom", label: "Custom" },
                 ].map(opt => (
                   <button
                     key={opt.id}
@@ -245,8 +324,70 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                 ))}
               </div>
               <div style={{ fontSize: "0.8rem", opacity: 0.75, marginTop: "0.5rem" }}>
-                Theme preference is saved on this device.
+                Theme preference is saved to your account and applies on every device.
               </div>
+
+              {theme === "custom" && (
+                <div style={{ marginTop: "1rem", padding: "1rem", border: "1px solid var(--border)", borderRadius: "0.5rem", background: "var(--white)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                    <strong style={{ color: "var(--text-dark)" }}>Custom palette</strong>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <label style={{ fontSize: "0.8rem", color: "var(--text-dark)", flexDirection: "row", alignItems: "center", gap: "0.4rem" }}>
+                        Start from:
+                        <select
+                          onChange={(e) => { if (e.target.value) seedCustomFrom(e.target.value); e.target.value = ""; }}
+                          defaultValue=""
+                          style={{ padding: "0.3rem 0.5rem", fontSize: "0.85rem" }}
+                        >
+                          <option value="">— preset —</option>
+                          <option value="default">Default</option>
+                          <option value="light">Light</option>
+                          <option value="dark">Dark</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                  {[
+                    { key: "bg", label: "Page background", contrastWith: "text" },
+                    { key: "surface", label: "Card / surface", contrastWith: "text" },
+                    { key: "text", label: "Primary text", contrastWith: "surface" },
+                    { key: "accent", label: "Accent (buttons)", contrastWith: "surface" },
+                    { key: "border", label: "Border / divider", contrastWith: null },
+                  ].map(({ key, label, contrastWith }) => {
+                    const ratio = contrastWith ? contrast(customColors[key], customColors[contrastWith]) : null;
+                    const lowContrast = ratio !== null && ratio < 3.0;
+                    return (
+                      <div key={key} style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.6rem" }}>
+                        <input
+                          type="color"
+                          value={customColors[key]}
+                          onChange={(e) => updateCustomColor(key, e.target.value)}
+                          style={{ width: "44px", height: "32px", padding: 0, border: "1px solid var(--border)", borderRadius: "0.25rem", cursor: "pointer" }}
+                        />
+                        <input
+                          type="text"
+                          value={customColors[key]}
+                          onChange={(e) => {
+                            const v = e.target.value.trim();
+                            if (/^#[0-9a-fA-F]{6}$/.test(v)) updateCustomColor(key, v);
+                            else setCustomColors({ ...customColors, [key]: v });
+                          }}
+                          style={{ width: "90px", padding: "0.3rem 0.5rem", fontFamily: "monospace", fontSize: "0.85rem" }}
+                        />
+                        <span style={{ flex: 1, fontSize: "0.9rem", color: "var(--text-dark)" }}>{label}</span>
+                        {lowContrast && (
+                          <span style={{ fontSize: "0.75rem", color: "#b45309", background: "rgba(245, 158, 11, 0.15)", padding: "0.15rem 0.5rem", borderRadius: "999px", whiteSpace: "nowrap" }}>
+                            ⚠ low contrast ({ratio.toFixed(1)}:1)
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div style={{ fontSize: "0.75rem", opacity: 0.75, marginTop: "0.5rem", color: "var(--text-dark)" }}>
+                    Changes apply live and save automatically.
+                  </div>
+                </div>
+              )}
             </div>
 
             <div style={{ borderTop: "1px solid rgba(129, 147, 164, 0.2)", paddingTop: "2rem", marginTop: "2rem" }}>
