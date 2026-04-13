@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { API_BASE } from "../config";
 import { formatDate } from "../utils/formatDate";
+import EmailTemplatesSection from "./EmailTemplatesSection";
 
 export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin, authToken, onBusinessSwitch, onRefresh }) {
   const [adminTab, setAdminTab] = useState("utilities");
@@ -29,7 +30,8 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
   const [equipmentTypes, setEquipmentTypes] = useState([]);
   const [showAddEquipmentType, setShowAddEquipmentType] = useState(false);
   const [editingEquipmentType, setEditingEquipmentType] = useState(null);
-  const [equipmentTypesExpanded, setEquipmentTypesExpanded] = useState(true);
+  const [equipmentTypesExpanded, setEquipmentTypesExpanded] = useState(false);
+  const [importExportExpanded, setImportExportExpanded] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [equipmentTypeToDelete, setEquipmentTypeToDelete] = useState(null);
   const [deleteFromBusiness, setDeleteFromBusiness] = useState("all");
@@ -714,10 +716,23 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
 
           {/* Import/Export Section - Separate Card */}
           <div className="card">
-            <div className="card-header">
-              <h2>Import & Export</h2>
+            <div
+              className="card-header"
+              style={{ cursor: "pointer" }}
+              onClick={() => setImportExportExpanded(!importExportExpanded)}
+            >
+              <h2 style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{
+                  transform: importExportExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                  transition: "transform 0.2s",
+                  display: "inline-block",
+                  fontSize: "0.75rem",
+                }}>▶</span>
+                Import & Export
+              </h2>
             </div>
-            
+
+            {importExportExpanded && (
             <div style={{ padding: "1rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "2rem" }}>
               {/* Import Section */}
               <div style={{ 
@@ -923,6 +938,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                 </button>
               </div>
             </div>
+            )}
           </div>
         </>
       )}
@@ -1190,6 +1206,10 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
             </div>
           </div>
         </div>
+      )}
+
+      {adminTab === "utilities" && currentUser?.is_admin && (
+        <EmailTemplatesSection apiCall={apiCall} setError={setError} />
       )}
 
       {adminTab === "users" && currentUser?.is_admin && (

@@ -101,7 +101,13 @@ CREATE TABLE IF NOT EXISTS equipment_record (
   notes              TEXT,
   timezone           TEXT,           -- optional override
   deleted_at         TIMESTAMP,
-  deleted_by         TEXT
+  deleted_by         TEXT,
+  appointment_at     TIMESTAMP,
+  email_status       TEXT,
+  email_sent_at      TIMESTAMP,
+  email_subject      TEXT,
+  email_body         TEXT,
+  contact_email_snapshot TEXT
 );
 
 -- Notes & attachments (optional)
@@ -158,6 +164,19 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
   expires_at     TIMESTAMP NOT NULL,
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Email Templates (per-business templates for appointment emails)
+CREATE TABLE IF NOT EXISTS email_templates (
+  id                 SERIAL PRIMARY KEY,
+  business_id        INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  name               TEXT NOT NULL,
+  subject_template   TEXT NOT NULL,
+  body_template      TEXT NOT NULL,
+  is_default         INTEGER NOT NULL DEFAULT 0,
+  created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(business_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_email_templates_business_id ON email_templates(business_id);
 
 -- Equipment Completion Records (tracks when equipment is marked as done)
 CREATE TABLE IF NOT EXISTS equipment_completions (

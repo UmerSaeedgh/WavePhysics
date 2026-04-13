@@ -2456,6 +2456,12 @@ class EquipmentRecordRead(BaseModel):
     site_notes: Optional[str] = None
     equipment_type_name: Optional[str] = None
     business_name: Optional[str] = None
+    appointment_at: Optional[str] = None
+    email_status: Optional[str] = None
+    email_sent_at: Optional[str] = None
+    email_subject: Optional[str] = None
+    email_body: Optional[str] = None
+    contact_email_snapshot: Optional[str] = None
 
 
 @app.get("/equipment-records", response_model=List[EquipmentRecordRead])
@@ -2475,7 +2481,7 @@ def list_equipment_records(
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                       er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
-                      er.active, er.notes, er.timezone,
+                      er.active, er.notes, er.timezone, er.appointment_at, er.email_status, er.email_sent_at, er.email_subject, er.email_body, er.contact_email_snapshot,
                       c.name as client_name,
                       c.address as client_address,
                       c.billing_info as client_billing_info,
@@ -2567,7 +2573,7 @@ def get_upcoming_equipment_records(
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                       er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
-                      er.active, er.notes, er.timezone,
+                      er.active, er.notes, er.timezone, er.appointment_at, er.email_status, er.email_sent_at, er.email_subject, er.email_body, er.contact_email_snapshot,
                       c.name as client_name,
                       c.address as client_address,
                       c.billing_info as client_billing_info,
@@ -2630,7 +2636,7 @@ def get_overdue_equipment_records(
     
     query = """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                       er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
-                      er.active, er.notes, er.timezone,
+                      er.active, er.notes, er.timezone, er.appointment_at, er.email_status, er.email_sent_at, er.email_subject, er.email_body, er.contact_email_snapshot,
                       c.name as client_name,
                       c.address as client_address,
                       c.billing_info as client_billing_info,
@@ -2693,7 +2699,7 @@ def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(
             row = db.execute(
                 """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                           er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
-                          er.active, er.notes, er.timezone,
+                          er.active, er.notes, er.timezone, er.appointment_at, er.email_status, er.email_sent_at, er.email_subject, er.email_body, er.contact_email_snapshot,
                           c.name as client_name,
                           c.address as client_address,
                           c.billing_info as client_billing_info,
@@ -2719,7 +2725,7 @@ def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(
             row = db.execute(
                 """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                           er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
-                          er.active, er.notes, er.timezone,
+                          er.active, er.notes, er.timezone, er.appointment_at, er.email_status, er.email_sent_at, er.email_subject, er.email_body, er.contact_email_snapshot,
                           c.name as client_name,
                           c.address as client_address,
                           c.billing_info as client_billing_info,
@@ -2745,7 +2751,7 @@ def get_equipment_record(equipment_record_id: int, current_user: dict = Depends(
         row = db.execute(
             """SELECT er.id, er.client_id, er.site_id, er.equipment_type_id, er.equipment_name, 
                       er.make, er.model, er.serial_number, er.anchor_date, er.due_date, er.interval_weeks, er.lead_weeks, 
-                      er.active, er.notes, er.timezone,
+                      er.active, er.notes, er.timezone, er.appointment_at, er.email_status, er.email_sent_at, er.email_subject, er.email_body, er.contact_email_snapshot,
                       c.name as client_name,
                       c.address as client_address,
                       c.billing_info as client_billing_info,
@@ -3031,6 +3037,162 @@ def restore_equipment_record(equipment_record_id: int, current_user: dict = Depe
     db.execute("UPDATE equipment_record SET deleted_at = NULL, deleted_by = NULL WHERE id = ?", (equipment_record_id,))
     db.commit()
     return
+
+
+class SendEmailPayload(BaseModel):
+    contact_email: Optional[str] = None
+    appointment_at: Optional[str] = None
+    subject: Optional[str] = None
+    body: Optional[str] = None
+
+
+@app.post("/equipment-records/{equipment_record_id}/send-email", response_model=EquipmentRecordRead)
+def record_send_email(
+    equipment_record_id: int,
+    payload: SendEmailPayload,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Record that an appointment email has been sent. Stores snapshot + sets status to TENTATIVE."""
+    er = db.execute("SELECT id FROM equipment_record WHERE id = ? AND deleted_at IS NULL", (equipment_record_id,)).fetchone()
+    if not er:
+        raise HTTPException(status_code=404, detail="Equipment record not found")
+    now = datetime.utcnow().isoformat()
+    db.execute(
+        """UPDATE equipment_record
+           SET appointment_at = ?, email_status = ?, email_sent_at = ?,
+               email_subject = ?, email_body = ?, contact_email_snapshot = ?
+           WHERE id = ?""",
+        (payload.appointment_at, "TENTATIVE", now, payload.subject, payload.body, payload.contact_email, equipment_record_id),
+    )
+    db.commit()
+    return get_equipment_record(equipment_record_id, current_user, db)
+
+
+class EmailStatusPayload(BaseModel):
+    email_status: Optional[str] = None
+
+
+@app.patch("/equipment-records/{equipment_record_id}/email-status", response_model=EquipmentRecordRead)
+def update_email_status(
+    equipment_record_id: int,
+    payload: EmailStatusPayload,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    er = db.execute("SELECT id FROM equipment_record WHERE id = ? AND deleted_at IS NULL", (equipment_record_id,)).fetchone()
+    if not er:
+        raise HTTPException(status_code=404, detail="Equipment record not found")
+    db.execute("UPDATE equipment_record SET email_status = ? WHERE id = ?", (payload.email_status, equipment_record_id))
+    db.commit()
+    return get_equipment_record(equipment_record_id, current_user, db)
+
+
+# ========== EMAIL TEMPLATES ==========
+
+class EmailTemplateCreate(BaseModel):
+    name: str
+    subject_template: str
+    body_template: str
+    is_default: bool = False
+
+
+class EmailTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    subject_template: Optional[str] = None
+    body_template: Optional[str] = None
+    is_default: Optional[bool] = None
+
+
+class EmailTemplateRead(BaseModel):
+    id: int
+    business_id: int
+    name: str
+    subject_template: str
+    body_template: str
+    is_default: bool
+
+
+def _row_to_email_template(row):
+    d = row_to_dict(row)
+    d["is_default"] = bool(d.get("is_default", 0))
+    return EmailTemplateRead(**d)
+
+
+@app.get("/email-templates", response_model=List[EmailTemplateRead])
+def list_email_templates(current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    rows = db.execute(
+        "SELECT id, business_id, name, subject_template, body_template, is_default FROM email_templates WHERE business_id = ? ORDER BY is_default DESC, name ASC",
+        (business_id,),
+    ).fetchall()
+    return [_row_to_email_template(r) for r in rows]
+
+
+@app.post("/email-templates", response_model=EmailTemplateRead, status_code=status.HTTP_201_CREATED)
+def create_email_template(payload: EmailTemplateCreate, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    if business_id is None:
+        raise HTTPException(status_code=400, detail="No business context available")
+    existing = db.execute(
+        "SELECT id FROM email_templates WHERE business_id = ? AND name = ?",
+        (business_id, payload.name),
+    ).fetchone()
+    if existing:
+        raise HTTPException(status_code=400, detail="Template name already exists")
+    if payload.is_default:
+        db.execute("UPDATE email_templates SET is_default = 0 WHERE business_id = ?", (business_id,))
+    cur = db.execute(
+        "INSERT INTO email_templates (business_id, name, subject_template, body_template, is_default) VALUES (?, ?, ?, ?, ?)",
+        (business_id, payload.name, payload.subject_template, payload.body_template, 1 if payload.is_default else 0),
+    )
+    db.commit()
+    row = db.execute(
+        "SELECT id, business_id, name, subject_template, body_template, is_default FROM email_templates WHERE id = ?",
+        (cur.lastrowid,),
+    ).fetchone()
+    return _row_to_email_template(row)
+
+
+@app.put("/email-templates/{template_id}", response_model=EmailTemplateRead)
+def update_email_template(template_id: int, payload: EmailTemplateUpdate, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    row = db.execute("SELECT id FROM email_templates WHERE id = ? AND business_id = ?", (template_id, business_id)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+    fields, values = [], []
+    if payload.name is not None:
+        fields.append("name = ?"); values.append(payload.name)
+    if payload.subject_template is not None:
+        fields.append("subject_template = ?"); values.append(payload.subject_template)
+    if payload.body_template is not None:
+        fields.append("body_template = ?"); values.append(payload.body_template)
+    if payload.is_default is not None:
+        if payload.is_default:
+            db.execute("UPDATE email_templates SET is_default = 0 WHERE business_id = ?", (business_id,))
+        fields.append("is_default = ?"); values.append(1 if payload.is_default else 0)
+    if fields:
+        values.append(template_id)
+        try:
+            db.execute(f"UPDATE email_templates SET {', '.join(fields)} WHERE id = ?", values)
+            db.commit()
+        except (sqlite3.IntegrityError, psycopg2.IntegrityError):
+            raise HTTPException(status_code=400, detail="Template name must be unique")
+    row = db.execute(
+        "SELECT id, business_id, name, subject_template, body_template, is_default FROM email_templates WHERE id = ?",
+        (template_id,),
+    ).fetchone()
+    return _row_to_email_template(row)
+
+
+@app.delete("/email-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_email_template(template_id: int, current_user: dict = Depends(get_current_admin_user), db: sqlite3.Connection = Depends(get_db)):
+    business_id = get_business_id(current_user)
+    row = db.execute("SELECT id FROM email_templates WHERE id = ? AND business_id = ?", (template_id, business_id)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+    db.execute("DELETE FROM email_templates WHERE id = ?", (template_id,))
+    db.commit()
 
 
 # ========== EQUIPMENT COMPLETIONS ==========

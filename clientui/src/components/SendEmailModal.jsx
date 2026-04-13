@@ -18,6 +18,22 @@ function tomorrowStr() {
   return `${y}-${m}-${day}`;
 }
 
+function computeGreetName(toEmailValue, contactLinks) {
+  const emails = (toEmailValue || "")
+    .split(/[,;]/)
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (emails.length === 0) return "there";
+  const names = emails
+    .map(e => contactLinks.find(l => (l.email || "").toLowerCase() === e)?.first_name)
+    .filter(Boolean);
+  const unique = [...new Set(names)];
+  if (unique.length === 0) return "there";
+  if (unique.length === 1) return unique[0];
+  if (unique.length === 2) return `${unique[0]} and ${unique[1]}`;
+  return `${unique.slice(0, -1).join(", ")}, and ${unique[unique.length - 1]}`;
+}
+
 function formatAppointmentLabel(dateStr, timeStr) {
   if (!dateStr) return "";
   try {
@@ -40,6 +56,8 @@ export default function SendEmailModal({ item, currentUser, apiCall, setError, o
   const [loadingContacts, setLoadingContacts] = useState(true);
   const [toEmail, setToEmail] = useState("");
   const [subject, setSubject] = useState("");
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const defaultDate = overdue
     ? (item?.appointment_at ? item.appointment_at.slice(0, 10) : tomorrowStr())
     : (item?.appointment_at ? item.appointment_at.slice(0, 10) : (item?.due_date || tomorrowStr()));
@@ -53,7 +71,7 @@ export default function SendEmailModal({ item, currentUser, apiCall, setError, o
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState("");
 
-  const senderName = currentUser?.username || "Lead Physicist";
+  const senderName = currentUser?.business_name || currentUser?.username || "Wave Physics";
 
   useEffect(() => {
     let cancelled = false;
@@ -63,10 +81,14 @@ export default function SendEmailModal({ item, currentUser, apiCall, setError, o
         const links = await apiCall(`/contacts/rollup/site/${item.site_id}`);
         if (cancelled) return;
         setContactLinks(links || []);
-        const primary = (links || []).find(l => l.is_primary && l.email);
-        const anyEmail = (links || []).find(l => l.email);
-        const pick = primary || anyEmail;
-        if (pick?.email) setToEmail(pick.email);
+        const primaries = (links || []).filter(l => l.is_primary && l.email);
+        if (primaries.length > 0) {
+          const uniqueEmails = [...new Set(primaries.map(p => p.email))];
+          setToEmail(uniqueEmails.join(", "));
+        } else {
+          const anyEmail = (links || []).find(l => l.email);
+          if (anyEmail?.email) setToEmail(anyEmail.email);
+        }
       } catch (err) {
         if (!cancelled) setLocalError(err.message || "Failed to load contacts");
       } finally {
@@ -79,39 +101,71 @@ export default function SendEmailModal({ item, currentUser, apiCall, setError, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.site_id]);
 
-  // Generate default subject & body once item known
   useEffect(() => {
-    if (!item) return;
-    const siteLabel = item.site_name ? ` at ${item.site_name}` : "";
-    setSubject(`Appointment request: ${item.equipment_name}${siteLabel}`);
-  }, [item?.id]);
+    let cancelled = false;
+    async function loadTemplates() {
+      try {
+        const data = await apiCall("/email-templates");
+        if (cancelled) return;
+        setTemplates(data || []);
+        const def = (data || []).find(t => t.is_default);
+        if (def) setSelectedTemplateId(String(def.id));
+      } catch {
+        // Non-fatal — fallback to built-in default.
+      }
+    }
+    loadTemplates();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function applyPlaceholders(text) {
+    if (!item) return text;
+    const when = formatAppointmentLabel(appointmentDate, appointmentTime);
+    const site = item.site_name || "your site";
+    const eqType = item.equipment_type_name || "equipment";
+    const dueText = item.due_date ? formatDate(item.due_date) : "soon";
+    const greetName = computeGreetName(toEmail, contactLinks);
+    return text
+      .replaceAll("{greet_name}", greetName)
+      .replaceAll("{equipment_type}", eqType)
+      .replaceAll("{due_date}", dueText)
+      .replaceAll("{appointment_when}", when)
+      .replaceAll("{site_name}", site)
+      .replaceAll("{sender_name}", senderName);
+  }
 
   useEffect(() => {
     if (!item) return;
+    const tpl = templates.find(t => String(t.id) === selectedTemplateId);
+    if (tpl) {
+      setSubject(applyPlaceholders(tpl.subject_template));
+      setBody(applyPlaceholders(tpl.body_template));
+      return;
+    }
+    const siteLabel = item.site_name ? ` at ${item.site_name}` : "";
+    setSubject(`Appointment request: ${item.equipment_name}${siteLabel}`);
     const when = formatAppointmentLabel(appointmentDate, appointmentTime);
-    const client = item.client_name || "";
-    const site = item.site_name || "";
-    const equipment = item.equipment_name || "";
+    const site = item.site_name || "your site";
     const eqType = item.equipment_type_name || "equipment";
-    const dueLine = item.due_date ? `This ${eqType} is due on ${formatDate(item.due_date)}.\n` : "";
-    const lead = "the lead physicist";
-    const greeting = contactLinks.find(l => l.email === toEmail);
-    const greetName = greeting ? `${greeting.first_name}` : "there";
+    const dueText = item.due_date ? formatDate(item.due_date) : "soon";
+    const greetName = computeGreetName(toEmail, contactLinks);
     const draft =
 `Hi ${greetName},
 
-${dueLine}I'd like to schedule an appointment with ${lead} to perform the required testing/service for ${equipment}${site ? ` at ${site}` : ""}${client ? ` (${client})` : ""}.
+Your ${eqType} is coming due on ${dueText}. I'd like to coordinate a time to complete the required testing and services for ${site}.
 
-Proposed appointment: ${when}
+We currently have the following appointment proposed:
+${when}
 
-Please reply to confirm this time, or suggest an alternative that works better for you.
+Please let me know if this time works for you, or feel free to suggest an alternative that better fits your schedule.
 
 Thanks,
 ${senderName}`;
     setBody(draft);
-    // Intentionally not including body in deps — we regenerate on date/time/to/item changes, user edits freely after.
+    // Regenerate when inputs or selected template change; user edits freely afterwards.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item?.id, appointmentDate, appointmentTime, toEmail, contactLinks.length]);
+  }, [item?.id, appointmentDate, appointmentTime, toEmail, contactLinks.length, selectedTemplateId, templates.length]);
 
   const appointmentIso = useMemo(() => {
     if (!appointmentDate) return "";
@@ -141,22 +195,14 @@ ${senderName}`;
     ? [item.site_name, item.site_street, item.site_state, item.site_zip_code].filter(Boolean).join(", ")
     : "";
 
-  function buildMailto() {
-    const params = new URLSearchParams();
-    params.set("subject", subject);
-    params.set("body", body);
-    return `mailto:${encodeURIComponent(toEmail)}?${params.toString().replace(/\+/g, "%20")}`;
-  }
-
-  // Outlook calendar deep-link: opens "New meeting" compose in Outlook Web with the
-  // attendee pre-added. When sent, the recipient receives a real meeting invitation
-  // with Accept / Tentative / Decline buttons in their inbox.
+// Opens Outlook Web calendar compose with attendee + event details pre-filled.
+  // Teams auto-attach is controlled by the user's Outlook setting
+  // ("Add online meeting to all meetings") — not exposed via URL.
   function buildOutlookMeetingUrl() {
     const params = new URLSearchParams();
     params.set("path", "/calendar/action/compose");
     params.set("rru", "addevent");
     params.set("subject", subject);
-    // Outlook calendar compose renders body as HTML — convert newlines to <br> so it doesn't collapse.
     const htmlBody = body
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
@@ -168,19 +214,6 @@ ${senderName}`;
     if (endIso) params.set("enddt", endIso);
     if (toEmail) params.set("to", toEmail);
     return `https://outlook.office.com/calendar/0/deeplink/compose?${params.toString().replace(/\+/g, "%20")}`;
-  }
-
-  function buildOutlookWebMailUrl() {
-    const params = new URLSearchParams();
-    params.set("to", toEmail);
-    params.set("subject", subject);
-    const htmlBody = body
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/\r?\n/g, "<br>");
-    params.set("body", htmlBody);
-    return `https://outlook.office.com/mail/deeplink/compose?${params.toString().replace(/\+/g, "%20")}`;
   }
 
   async function recordSent() {
@@ -203,23 +236,9 @@ ${senderName}`;
     }
   }
 
-  async function handleOpenMeeting() {
+async function handleOpenWebMail() {
     if (!toEmail || !appointmentIso || dateError) return;
     window.open(buildOutlookMeetingUrl(), "_blank", "noopener");
-    await recordSent();
-    onClose && onClose();
-  }
-
-  async function handleOpenMailto() {
-    if (!toEmail || !appointmentIso || dateError) return;
-    window.location.href = buildMailto();
-    await recordSent();
-    onClose && onClose();
-  }
-
-  async function handleOpenWebMail() {
-    if (!toEmail || !appointmentIso || dateError) return;
-    window.open(buildOutlookWebMailUrl(), "_blank", "noopener");
     await recordSent();
     onClose && onClose();
   }
@@ -329,6 +348,23 @@ ${senderName}`;
             </div>
           )}
 
+          {templates.length > 0 && (
+            <label>
+              Template
+              <select
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+              >
+                <option value="">Built-in default</option>
+                {templates.map(t => (
+                  <option key={t.id} value={String(t.id)}>
+                    {t.name}{t.is_default ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           <label>
             Subject
             <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} />
@@ -344,38 +380,14 @@ ${senderName}`;
             />
           </label>
 
-          <div style={{ fontSize: "0.8rem", opacity: 0.85, background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.3)", padding: "0.75rem", borderRadius: "0.5rem" }}>
-            <strong>Send Meeting Invite</strong> opens a new meeting in Outlook Web with the attendee and time pre-filled.
-            When you click Send there, the recipient gets a <strong>real meeting request with Accept / Tentative / Decline buttons</strong> in their inbox.
-            This appointment is marked <strong>Tentative</strong> in the system. Update the status later as the customer responds.
-          </div>
-
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
             <button
               className="primary"
-              onClick={handleOpenMeeting}
-              disabled={disabled}
-              title="Opens a new Outlook meeting with Accept/Decline buttons"
-            >
-              {saving ? "Saving…" : "📅 Send Meeting Invite"}
-            </button>
-            <button
-              className="secondary"
-              onClick={handleOpenMailto}
-              disabled={disabled}
-              title="Send as a plain email instead (no RSVP buttons)"
-              style={{ color: "#2D3234", border: "1px solid #8193A4", background: "transparent" }}
-            >
-              Plain email (mailto)
-            </button>
-            <button
-              className="secondary"
               onClick={handleOpenWebMail}
               disabled={disabled}
-              title="Plain email via Outlook Web"
-              style={{ color: "#2D3234", border: "1px solid #8193A4", background: "transparent" }}
+              title="Opens Outlook Web with the meeting invite pre-filled"
             >
-              Outlook Web mail
+              {saving ? "Saving…" : "📅 Send Meeting Invite"}
             </button>
             <button
               className="secondary"

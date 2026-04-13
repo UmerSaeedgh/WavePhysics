@@ -362,6 +362,18 @@ def init_schema(conn):
       created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Email Templates (per-business templates for appointment emails)
+    CREATE TABLE IF NOT EXISTS email_templates (
+      id                 SERIAL PRIMARY KEY,
+      business_id        INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      name               TEXT NOT NULL,
+      subject_template   TEXT NOT NULL,
+      body_template      TEXT NOT NULL,
+      is_default         INTEGER NOT NULL DEFAULT 0,
+      created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(business_id, name)
+    );
+
     -- Equipment Completion Records (tracks when equipment is marked as done)
     CREATE TABLE IF NOT EXISTS equipment_completions (
       id                 SERIAL PRIMARY KEY,
@@ -383,6 +395,7 @@ def init_schema(conn):
     CREATE INDEX IF NOT EXISTS idx_users_business_id ON users(business_id);
     CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
     CREATE INDEX IF NOT EXISTS idx_equipment_completions_equipment_record_id ON equipment_completions(equipment_record_id);
+    CREATE INDEX IF NOT EXISTS idx_email_templates_business_id ON email_templates(business_id);
     """
     
     cursor.execute(schema_sql)

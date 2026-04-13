@@ -2,3 +2,4 @@ sql.py
 clientui/src/config.js
 data/
 *.db
+.claude/
