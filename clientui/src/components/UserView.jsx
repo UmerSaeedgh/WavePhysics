@@ -4,6 +4,17 @@ import { API_BASE } from "../config";
 
 export default function UserView({ apiCall, setError, currentUser, onLogout, isSuperAdmin, authToken, onBusinessSwitch, onRefresh, initialTab }) {
   const [userTab, setUserTab] = useState(initialTab || "settings");
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "default");
+
+  function applyTheme(next) {
+    setTheme(next);
+    localStorage.setItem("theme", next);
+    if (next === "default") {
+      document.documentElement.removeAttribute("data-theme");
+    } else {
+      document.documentElement.setAttribute("data-theme", next);
+    }
+  }
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -207,6 +218,29 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
               </div>
             </div>
 
+            <div style={{ borderTop: "1px solid rgba(129, 147, 164, 0.2)", paddingTop: "1.5rem", marginTop: "1.5rem" }}>
+              <h3 style={{ marginTop: 0, marginBottom: "0.75rem" }}>Appearance</h3>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                {[
+                  { id: "default", label: "Default" },
+                  { id: "light", label: "Light" },
+                  { id: "dark", label: "Dark" },
+                ].map(opt => (
+                  <button
+                    key={opt.id}
+                    onClick={() => applyTheme(opt.id)}
+                    className={theme === opt.id ? "primary" : "secondary"}
+                    style={theme === opt.id ? {} : { color: "var(--text-dark)", border: "1px solid var(--border)", background: "transparent" }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: "0.8rem", opacity: 0.75, marginTop: "0.5rem" }}>
+                Theme preference is saved on this device.
+              </div>
+            </div>
+
             <div style={{ borderTop: "1px solid rgba(129, 147, 164, 0.2)", paddingTop: "2rem", marginTop: "2rem" }}>
               <div
                 style={{
@@ -214,7 +248,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   alignItems: "center",
                   cursor: "pointer",
                   padding: "1rem 1.25rem",
-                  background: showChangeUsername ? "#ffffff" : "rgba(255, 255, 255, 0.6)",
+                  background: showChangeUsername ? "var(--white)" : "rgba(255, 255, 255, 0.06)",
                   borderRadius: "0.5rem",
                   border: showChangeUsername ? "1px solid rgba(129, 147, 164, 0.3)" : "1px solid rgba(129, 147, 164, 0.2)",
                   boxShadow: showChangeUsername ? "0 2px 4px rgba(0, 0, 0, 0.05)" : "none",
@@ -224,14 +258,14 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                 onClick={() => setShowChangeUsername(!showChangeUsername)}
                 onMouseEnter={(e) => {
                   if (!showChangeUsername) {
-                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.8)";
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.12)";
                     e.currentTarget.style.borderColor = "rgba(129, 147, 164, 0.3)";
                     e.currentTarget.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.05)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!showChangeUsername) {
-                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.6)";
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.06)";
                     e.currentTarget.style.borderColor = "rgba(129, 147, 164, 0.2)";
                     e.currentTarget.style.boxShadow = "none";
                   }
@@ -246,7 +280,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   width: "20px",
                   height: "20px",
                   marginRight: "0.75rem",
-                  color: "#8193A4",
+                  color: "var(--primary)",
                   fontSize: "0.75rem",
                   flexShrink: 0
                 }}>▶</span>
@@ -254,7 +288,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   margin: 0, 
                   fontSize: "1rem", 
                   fontWeight: 600,
-                  color: "#2D3234",
+                  color: "var(--text-dark)",
                   flex: 1
                 }}>
                   Change Username
@@ -263,7 +297,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
               {showChangeUsername && (
                 <div style={{ 
                   padding: "1.5rem", 
-                  background: "#ffffff", 
+                  background: "var(--white)", 
                   borderRadius: "0 0 0.5rem 0.5rem",
                   border: "1px solid rgba(129, 147, 164, 0.3)",
                   borderTop: "none",
@@ -273,8 +307,8 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   {usernameSuccessMessage && (
                     <div style={{ 
                       background: "rgba(215, 229, 216, 0.3)", 
-                      border: "1px solid #8193A4", 
-                      color: "#2D3234", 
+                      border: "1px solid var(--primary)", 
+                      color: "var(--text-dark)", 
                       padding: "0.75rem 1rem", 
                       borderRadius: "0.5rem", 
                       marginBottom: "1rem" 
@@ -324,7 +358,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   alignItems: "center",
                   cursor: "pointer",
                   padding: "1rem 1.25rem",
-                  background: showChangePassword ? "#ffffff" : "rgba(255, 255, 255, 0.6)",
+                  background: showChangePassword ? "var(--white)" : "rgba(255, 255, 255, 0.06)",
                   borderRadius: "0.5rem",
                   border: showChangePassword ? "1px solid rgba(129, 147, 164, 0.3)" : "1px solid rgba(129, 147, 164, 0.2)",
                   boxShadow: showChangePassword ? "0 2px 4px rgba(0, 0, 0, 0.05)" : "none",
@@ -334,14 +368,14 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                 onClick={() => setShowChangePassword(!showChangePassword)}
                 onMouseEnter={(e) => {
                   if (!showChangePassword) {
-                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.8)";
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.12)";
                     e.currentTarget.style.borderColor = "rgba(129, 147, 164, 0.3)";
                     e.currentTarget.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.05)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!showChangePassword) {
-                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.6)";
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.06)";
                     e.currentTarget.style.borderColor = "rgba(129, 147, 164, 0.2)";
                     e.currentTarget.style.boxShadow = "none";
                   }
@@ -356,7 +390,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   width: "20px",
                   height: "20px",
                   marginRight: "0.75rem",
-                  color: "#8193A4",
+                  color: "var(--primary)",
                   fontSize: "0.75rem",
                   flexShrink: 0
                 }}>▶</span>
@@ -364,7 +398,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   margin: 0, 
                   fontSize: "1rem", 
                   fontWeight: 600,
-                  color: "#2D3234",
+                  color: "var(--text-dark)",
                   flex: 1
                 }}>
                   Change Password
@@ -373,7 +407,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
               {showChangePassword && (
                 <div style={{ 
                   padding: "1.5rem", 
-                  background: "#ffffff", 
+                  background: "var(--white)", 
                   borderRadius: "0 0 0.5rem 0.5rem",
                   border: "1px solid rgba(129, 147, 164, 0.3)",
                   borderTop: "none",
@@ -383,8 +417,8 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   {successMessage && (
                     <div style={{ 
                       background: "rgba(215, 229, 216, 0.3)", 
-                      border: "1px solid #8193A4", 
-                      color: "#2D3234", 
+                      border: "1px solid var(--primary)", 
+                      color: "var(--text-dark)", 
                       padding: "0.75rem 1rem", 
                       borderRadius: "0.5rem", 
                       marginBottom: "1rem" 
@@ -445,7 +479,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   alignItems: "center",
                   cursor: "pointer",
                   padding: "1rem 1.25rem",
-                  background: showOutlookSync ? "#ffffff" : "rgba(255, 255, 255, 0.6)",
+                  background: showOutlookSync ? "var(--white)" : "rgba(255, 255, 255, 0.06)",
                   borderRadius: "0.5rem",
                   border: showOutlookSync ? "1px solid rgba(129, 147, 164, 0.3)" : "1px solid rgba(129, 147, 164, 0.2)",
                   boxShadow: showOutlookSync ? "0 2px 4px rgba(0, 0, 0, 0.05)" : "none",
@@ -455,14 +489,14 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                 onClick={() => setShowOutlookSync(!showOutlookSync)}
                 onMouseEnter={(e) => {
                   if (!showOutlookSync) {
-                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.8)";
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.12)";
                     e.currentTarget.style.borderColor = "rgba(129, 147, 164, 0.3)";
                     e.currentTarget.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.05)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!showOutlookSync) {
-                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.6)";
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.06)";
                     e.currentTarget.style.borderColor = "rgba(129, 147, 164, 0.2)";
                     e.currentTarget.style.boxShadow = "none";
                   }
@@ -477,7 +511,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   width: "20px",
                   height: "20px",
                   marginRight: "0.75rem",
-                  color: "#8193A4",
+                  color: "var(--primary)",
                   fontSize: "0.75rem",
                   flexShrink: 0
                 }}>▶</span>
@@ -485,7 +519,7 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   margin: 0,
                   fontSize: "1rem",
                   fontWeight: 600,
-                  color: "#2D3234",
+                  color: "var(--text-dark)",
                   flex: 1
                 }}>
                   Sync with Outlook Calendar
@@ -494,14 +528,14 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
               {showOutlookSync && (
                 <div style={{
                   padding: "1.5rem",
-                  background: "#ffffff",
+                  background: "var(--white)",
                   borderRadius: "0 0 0.5rem 0.5rem",
                   border: "1px solid rgba(129, 147, 164, 0.3)",
                   borderTop: "none",
                   boxShadow: "0 2px 4px rgba(0, 0, 0, 0.05)",
                   marginTop: "-0.5rem"
                 }}>
-                  <p style={{ color: "#2D3234", fontSize: "0.9rem", marginTop: 0, marginBottom: "1rem" }}>
+                  <p style={{ color: "var(--text-dark)", fontSize: "0.9rem", marginTop: 0, marginBottom: "1rem" }}>
                     Subscribe to your Wave Physics calendar in Outlook so every equipment due date appears on your Outlook calendar. Updates sync automatically — Outlook refreshes internet calendars every few hours.
                   </p>
 
@@ -519,7 +553,8 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                         padding: "0.5rem",
                         fontFamily: "monospace",
                         fontSize: "0.85rem",
-                        background: "#f6f8fa",
+                        background: "var(--white)",
+                        color: "var(--text-dark)",
                         border: "1px solid rgba(129, 147, 164, 0.3)",
                         borderRadius: "0.25rem",
                       }}
@@ -544,10 +579,10 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                   </div>
 
                   <details style={{ marginBottom: "0.5rem" }}>
-                    <summary style={{ cursor: "pointer", fontWeight: 500, color: "#2D3234" }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 500, color: "var(--text-dark)" }}>
                       How to add this to Outlook
                     </summary>
-                    <div style={{ padding: "0.75rem 0 0.25rem 0", fontSize: "0.9rem", color: "#2D3234", lineHeight: 1.6 }}>
+                    <div style={{ padding: "0.75rem 0 0.25rem 0", fontSize: "0.9rem", color: "var(--text-dark)", lineHeight: 1.6 }}>
                       <strong>Outlook on the Web / New Outlook:</strong>
                       <ol style={{ marginTop: "0.25rem" }}>
                         <li>Open Outlook and go to the Calendar.</li>
@@ -561,22 +596,22 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                         <li>Paste the URL and click <em>OK</em>.</li>
                         <li>Press <kbd>F9</kbd> to force a refresh whenever you want the latest changes.</li>
                       </ol>
-                      <p style={{ color: "#8193A4", marginTop: "0.5rem" }}>
+                      <p style={{ color: "var(--primary)", marginTop: "0.5rem" }}>
                         Tip: Outlook controls how often it re-reads the feed (usually every few hours). The web and mobile apps don't expose a manual refresh; the Windows desktop app does (<kbd>F9</kbd>).
                       </p>
                     </div>
                   </details>
 
-                  <p style={{ color: "#8193A4", fontSize: "0.8rem", marginBottom: 0 }}>
+                  <p style={{ color: "var(--primary)", fontSize: "0.8rem", marginBottom: 0 }}>
                     Treat this URL like a password — anyone with it can view your equipment calendar. Click <em>Regenerate</em> if it is ever shared or leaked.
                   </p>
                 </div>
               )}
             </div>
 
-            <div style={{ borderTop: "1px solid #8193A4", paddingTop: "2rem", marginTop: "2rem" }}>
+            <div style={{ borderTop: "1px solid var(--primary)", paddingTop: "2rem", marginTop: "2rem" }}>
               <h3>Logout</h3>
-              <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1rem" }}>
+              <p style={{ color: "var(--primary)", fontSize: "0.9rem", marginBottom: "1rem" }}>
                 Sign out of your account
               </p>
               <button

@@ -375,7 +375,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
           const itemStyle = isInactive && currentUser?.is_admin ? {
             opacity: 0.6,
             backgroundColor: "#f5f5f5",
-            borderLeft: "3px solid #8193A4"
+            borderLeft: "3px solid var(--primary)"
           } : {};
           // Add overdue styling
           const overdueStyle = isOverdue ? {
@@ -385,7 +385,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
           return (
             <li 
               key={item.id} 
-              className={`list-item ${className}`}
+              className={`list-item ${className}${isOverdue ? " is-overdue" : ""}`}
               style={{ cursor: "pointer", ...itemStyle, ...overdueStyle }}
               onClick={() => {
                 if (editingNotesId !== item.id) {
@@ -398,7 +398,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                 <div className="list-title">
                   {item.equipment_name || 'Unknown'}
                   {item.due_date && (
-                    <span style={{ marginLeft: "0.75rem", fontSize: "0.9rem", color: isOverdue ? "#d32f2f" : "#2D3234", fontWeight: "bold" }}>
+                    <span style={{ marginLeft: "0.75rem", fontSize: "0.9rem", color: isOverdue ? "#d32f2f" : "var(--text-dark)", fontWeight: "bold" }}>
                       • Due: {formatDate(item.due_date)}
                     </span>
                   )}
@@ -408,7 +408,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                     </span>
                   )}
                   {isInactive && currentUser?.is_admin && (
-                    <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#8193A4", fontStyle: "italic" }}>
+                    <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "var(--primary)", fontStyle: "italic" }}>
                       (Inactive)
                     </span>
                   )}
@@ -427,7 +427,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                       style={{
                         flex: 1,
                         padding: "0.5rem",
-                        border: "1px solid #8193A4",
+                        border: "1px solid var(--primary)",
                         borderRadius: "0.25rem",
                         fontSize: "0.9rem",
                         minHeight: "60px",
@@ -461,7 +461,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                 ) : (
                   <div style={{ marginTop: "0.5rem" }}>
                     {item.notes ? (
-                      <div style={{ fontSize: "0.9rem", color: "#2D3234", fontStyle: "italic", whiteSpace: "pre-wrap" }}>
+                      <div style={{ fontSize: "0.9rem", color: "var(--text-dark)", fontStyle: "italic", whiteSpace: "pre-wrap" }}>
                         {item.notes}
                       </div>
                     ) : (
@@ -713,7 +713,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
             border: "1px solid rgba(129, 147, 164, 0.2)"
           }}>
             <div className="loading-spinner"></div>
-            <span style={{ fontSize: "0.875rem", color: "#8193A4", fontWeight: 500 }}>Loading...</span>
+            <span style={{ fontSize: "0.875rem", color: "var(--primary)", fontWeight: 500 }}>Loading...</span>
           </div>
         )}
         <div className="card-header">
@@ -751,9 +751,9 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
         </div>
 
         {showFilters && (
-          <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
+          <div style={{ padding: "1rem", borderBottom: "1px solid var(--primary)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <h3 style={{ margin: 0, fontSize: "1rem", color: "#2D3234" }}>Filters</h3>
+              <h3 style={{ margin: 0, fontSize: "1rem", color: "var(--text-dark)" }}>Filters</h3>
               <button
                 type="button"
                 className="secondary"
@@ -778,7 +778,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Search by Name
                 </label>
                 <input
@@ -789,7 +789,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -797,7 +797,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Client
                 </label>
                 <select
@@ -809,7 +809,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -824,7 +824,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Site
                 </label>
                 <select
@@ -834,10 +834,11 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem",
-                    backgroundColor: !selectedClientId ? "#f0f0f0" : "#fff"
+                    backgroundColor: !selectedClientId ? "#f0f0f0" : "var(--white)",
+                    color: !selectedClientId ? "#1a202c" : "var(--text-dark)",
                   }}
                 >
                   <option value="">All Sites</option>
@@ -850,7 +851,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Equipment Type
                 </label>
                 <select
@@ -859,7 +860,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -874,7 +875,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   State
                 </label>
                 <select
@@ -883,7 +884,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -899,7 +900,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               
               {(isAdmin || isSuperAdminUser) && (
                 <div>
-                  <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                  <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                     Status
                   </label>
                   <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -924,7 +925,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               )}
 
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Sort By
                 </label>
                 <select
@@ -933,7 +934,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -944,7 +945,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Sort Order
                 </label>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -1079,7 +1080,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                     padding: "1rem", 
                     margin: 0, 
                     fontSize: "1rem", 
-                    color: "#2D3234",
+                    color: "var(--text-dark)",
                     cursor: "pointer",
                     display: "flex",
                     justifyContent: "space-between",
@@ -1090,10 +1091,10 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   }}
                   onClick={() => setShowUpcoming(!showUpcoming)}
                 >
-                  <h3 style={{ margin: 0, fontSize: "1rem", color: "#2D3234" }}>
+                  <h3 style={{ margin: 0, fontSize: "1rem", color: "var(--text-dark)" }}>
                     Upcoming ({filteredUpcoming.length})
                   </h3>
-                  <span style={{ fontSize: "0.875rem", color: "#8193A4" }}>
+                  <span style={{ fontSize: "0.875rem", color: "var(--primary)" }}>
                     {showUpcoming ? "▼" : "▶"}
                   </span>
                 </div>
@@ -1111,7 +1112,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                     padding: "1rem", 
                     margin: 0, 
                     fontSize: "1rem", 
-                    color: "#2D3234",
+                    color: "var(--text-dark)",
                     cursor: "pointer",
                     display: "flex",
                     justifyContent: "space-between",
@@ -1122,10 +1123,10 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   }}
                   onClick={() => setShowRemaining(!showRemaining)}
                 >
-                  <h3 style={{ margin: 0, fontSize: "1rem", color: "#2D3234" }}>
+                  <h3 style={{ margin: 0, fontSize: "1rem", color: "var(--text-dark)" }}>
                     Remaining ({filteredRemaining.length})
                   </h3>
-                  <span style={{ fontSize: "0.875rem", color: "#8193A4" }}>
+                  <span style={{ fontSize: "0.875rem", color: "var(--primary)" }}>
                     {showRemaining ? "▼" : "▶"}
                   </span>
                 </div>
@@ -1154,23 +1155,23 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
           zIndex: 1000
         }} onClick={() => setShowDetailsModal(false)}>
           <div style={{
-            backgroundColor: "#D7E5D8",
+            backgroundColor: "var(--light-bg)",
             padding: "2rem",
             borderRadius: "0.5rem",
             maxWidth: "800px",
             maxHeight: "80vh",
             overflow: "auto",
             width: "90%",
-            color: "#2D3234"
+            color: "var(--text-dark)"
           }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>Appointment Details</h2>
-              <button onClick={() => setShowDetailsModal(false)} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+              <h2 style={{ margin: 0, color: "var(--text-dark)" }}>Appointment Details</h2>
+              <button onClick={() => setShowDetailsModal(false)} style={{ color: "var(--text-dark)", background: "transparent", border: "1px solid var(--primary)" }}>✕</button>
             </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
               <div>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Equipment Information</h3>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)", fontSize: "1.1rem" }}>Equipment Information</h3>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
                   <div><strong>Equipment Name:</strong> {selectedEquipment.equipment_name || "N/A"}</div>
                   <div><strong>Equipment Type:</strong> {selectedEquipment.equipment_type_name || "N/A"}</div>
@@ -1193,7 +1194,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               </div>
 
               <div>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Client Information</h3>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)", fontSize: "1.1rem" }}>Client Information</h3>
                 <div style={{ fontSize: "0.9rem" }}>
                   {selectedEquipment.client_name && <div><strong>Name:</strong> {selectedEquipment.client_name}</div>}
                   {selectedEquipment.client_address && <div><strong>Address:</strong> {selectedEquipment.client_address}</div>}
@@ -1208,7 +1209,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
               </div>
 
               <div>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)", fontSize: "1.1rem" }}>Site Information</h3>
                 <div style={{ fontSize: "0.9rem" }}>
                   {selectedEquipment.site_name && <div><strong>Name:</strong> {selectedEquipment.site_name}</div>}
                   {selectedEquipment.site_street && <div><strong>Street:</strong> {selectedEquipment.site_street}</div>}
@@ -1229,7 +1230,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                 padding: "0.85rem 1rem",
                 borderRadius: "0.5rem",
                 background: "rgba(129,147,164,0.12)",
-                border: "1px solid #8193A4",
+                border: "1px solid var(--primary)",
                 display: "flex",
                 alignItems: "center",
                 gap: "1rem",
@@ -1256,7 +1257,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                     textTransform: "uppercase",
                     letterSpacing: "0.03em",
                     background: selectedEquipment.email_status ? EMAIL_STATUS_COLORS[selectedEquipment.email_status] : "#cbd5e1",
-                    color: selectedEquipment.email_status ? "#fff" : "#2D3234",
+                    color: selectedEquipment.email_status ? "#ffffff" : "#1a202c",
                   }}>
                     {selectedEquipment.email_status ? EMAIL_STATUS_LABEL[selectedEquipment.email_status] : "Not sent"}
                   </span>
@@ -1338,8 +1339,8 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                     }
                   }}
                   style={{ 
-                    color: "#2D3234", 
-                    border: "1px solid #8193A4",
+                    color: "var(--text-dark)", 
+                    border: "1px solid var(--primary)",
                     background: "transparent"
                   }}
                 >
@@ -1349,8 +1350,8 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   className="secondary" 
                   onClick={() => setShowDetailsModal(false)}
                   style={{ 
-                    color: "#2D3234", 
-                    border: "1px solid #8193A4",
+                    color: "var(--text-dark)", 
+                    border: "1px solid var(--primary)",
                     background: "transparent"
                   }}
                 >
@@ -1395,21 +1396,21 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
           zIndex: 1000
         }} onClick={handleCancelDone}>
           <div style={{
-            backgroundColor: "#D7E5D8",
+            backgroundColor: "var(--light-bg)",
             padding: "2rem",
             borderRadius: "0.5rem",
             maxWidth: "500px",
             width: "90%",
-            color: "#2D3234"
+            color: "var(--text-dark)"
           }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>Mark as Done</h2>
-              <button onClick={handleCancelDone} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+              <h2 style={{ margin: 0, color: "var(--text-dark)" }}>Mark as Done</h2>
+              <button onClick={handleCancelDone} style={{ color: "var(--text-dark)", border: "1px solid var(--primary)" }}>✕</button>
             </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Completion Date
                 </label>
                 <input
@@ -1419,19 +1420,19 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234"
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)"
                   }}
                 />
-                <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
+                <div style={{ fontSize: "0.85rem", color: "var(--primary)", marginTop: "0.25rem" }}>
                   Select the date when the test was completed. Default is today.
                 </div>
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Interval (weeks)
                 </label>
                 <input
@@ -1442,16 +1443,16 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234"
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)"
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Calculated Due Date (Read-only)
                 </label>
                 <input
@@ -1462,15 +1463,15 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     backgroundColor: "#f5f5f5",
-                    color: "#2D3234",
+                    color: "var(--text-dark)",
                     fontFamily: "monospace",
                     cursor: "not-allowed"
                   }}
                 />
-                <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
+                <div style={{ fontSize: "0.85rem", color: "var(--primary)", marginTop: "0.25rem" }}>
                   {completionDate && doneInterval ? 
                     `Calculation: ${completionDate} + ${doneInterval} weeks = ${calculatedDueDate || "calculating..."}` :
                     "Select completion date and interval to calculate due date"
@@ -1490,8 +1491,8 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
                   className="secondary"
                   onClick={handleCancelDone}
                   style={{ 
-                    color: "#2D3234", 
-                    border: "1px solid #8193A4",
+                    color: "var(--text-dark)", 
+                    border: "1px solid var(--primary)",
                     background: "transparent"
                   }}
                 >

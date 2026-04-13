@@ -231,7 +231,7 @@ export default function CalendarView({ items, currentUser, apiCall, onRefresh, o
       {/* Legend */}
       <div className="calendar-legend">
         <div className="calendar-legend-item">
-          <span className="calendar-legend-dot" style={{ backgroundColor: "#8193A4" }}></span>
+          <span className="calendar-legend-dot" style={{ backgroundColor: "var(--primary)" }}></span>
           <span>Upcoming</span>
         </div>
         <div className="calendar-legend-item">
@@ -280,16 +280,16 @@ export default function CalendarView({ items, currentUser, apiCall, onRefresh, o
           zIndex: 1000
         }} onClick={handleCancelReschedule}>
           <div style={{
-            backgroundColor: "#D7E5D8",
+            backgroundColor: "var(--light-bg)",
             padding: "2rem",
             borderRadius: "0.5rem",
             maxWidth: "450px",
             width: "90%",
-            color: "#2D3234"
+            color: "var(--text-dark)"
           }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h3 style={{ margin: 0, color: "#2D3234" }}>Reschedule Test</h3>
-              <button onClick={handleCancelReschedule} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+              <h3 style={{ margin: 0, color: "var(--text-dark)" }}>Reschedule Test</h3>
+              <button onClick={handleCancelReschedule} style={{ color: "var(--text-dark)", border: "1px solid var(--primary)" }}>✕</button>
             </div>
             <p style={{ margin: "0 0 1rem 0" }}>
               Are you sure you want to reschedule <strong>{confirmDrag.item.equipment_name}</strong>?
@@ -299,7 +299,7 @@ export default function CalendarView({ items, currentUser, apiCall, onRefresh, o
                 <div style={{ fontSize: "0.8rem", color: "#666", marginBottom: "0.25rem" }}>From</div>
                 <div style={{ fontWeight: "bold", color: "#d32f2f", fontSize: "1.05rem" }}>{formatDate(confirmDrag.item.due_date)}</div>
               </div>
-              <div style={{ fontSize: "1.5rem", color: "#8193A4" }}>→</div>
+              <div style={{ fontSize: "1.5rem", color: "var(--primary)" }}>→</div>
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: "0.8rem", color: "#666", marginBottom: "0.25rem" }}>To</div>
                 <div style={{ fontWeight: "bold", color: "#10b981", fontSize: "1.05rem" }}>{formatDate(confirmDrag.newDate)}</div>

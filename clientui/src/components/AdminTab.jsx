@@ -575,7 +575,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   fontSize: "0.75rem"
                 }}>▶</span>
                 Equipment Types
-                <span style={{ fontSize: "0.875rem", fontWeight: "normal", color: "#8193A4", marginLeft: "0.5rem" }}>
+                <span style={{ fontSize: "0.875rem", fontWeight: "normal", color: "var(--primary)", marginLeft: "0.5rem" }}>
                   ({equipmentTypes.length})
                 </span>
               </h2>
@@ -597,13 +597,13 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
             
             {equipmentTypesExpanded && (
               <div style={{ padding: "1rem" }}>
-                <p style={{ color: "#8193A4", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
+                <p style={{ color: "var(--primary)", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
                   Manage equipment types for {isSuperAdmin ? "businesses" : "your business"}. Each business has its own equipment types.
                   {isSuperAdmin && " As superadmin, you can create equipment types for any business or for all businesses."}
                 </p>
 
                 {isSuperAdmin && selectedBusinessId === null && (
-                  <div style={{ padding: "1rem", marginBottom: "1.5rem", backgroundColor: "rgba(129, 147, 164, 0.1)", borderLeft: "4px solid #8193A4", borderRadius: "0.25rem" }}>
+                  <div style={{ padding: "1rem", marginBottom: "1.5rem", backgroundColor: "rgba(129, 147, 164, 0.1)", borderLeft: "4px solid var(--primary)", borderRadius: "0.25rem" }}>
                     <strong>Viewing All Businesses</strong> - You are currently viewing equipment types from all businesses. Switch to a specific business to filter.
                   </div>
                 )}
@@ -631,7 +631,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                 {equipmentTypes.length === 0 ? (
                   <p className="empty">No equipment types yet. Click "Add New Equipment Type" to get started.</p>
                 ) : (
-                  <div style={{ maxHeight: "500px", overflowY: "auto", border: "1px solid #e0e0e0", borderRadius: "0.25rem", padding: "0.5rem" }}>
+                  <div style={{ maxHeight: "500px", overflowY: "auto", border: "1px solid var(--border)", borderRadius: "0.25rem", padding: "0.5rem" }}>
                     <ul className="list" style={{ margin: 0 }}>
                       {equipmentTypes.map((type, index) => {
                         // Check if this is a grouped type (has businesses array)
@@ -644,7 +644,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                               <div className="list-title">
                                 {type.name}
                                 {!type.active && (
-                                  <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#8193A4", fontStyle: "italic" }}>
+                                  <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "var(--primary)", fontStyle: "italic" }}>
                                     (Inactive)
                                   </span>
                                 )}
@@ -737,12 +737,12 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
               {/* Import Section */}
               <div style={{ 
                 padding: "1.5rem", 
-                backgroundColor: "#f8f9fa", 
+                backgroundColor: "var(--white)", 
                 borderRadius: "0.5rem",
-                border: "1px solid #e0e0e0"
+                border: "1px solid var(--border)"
               }}>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234" }}>Import Equipments</h3>
-                <p style={{ color: "#8193A4", fontSize: "0.875rem", marginBottom: "1rem", lineHeight: "1.5" }}>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)" }}>Import Equipments</h3>
+                <p style={{ color: "var(--primary)", fontSize: "0.875rem", marginBottom: "1rem", lineHeight: "1.5" }}>
                   Import equipment records from Excel file. Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date.
                   {isSuperAdmin && " Optional column: Business."}
                 </p>
@@ -758,7 +758,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                 </div>
                 {isSuperAdmin && (
                   <div style={{ marginBottom: "1rem" }}>
-                    <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem", fontWeight: "600", color: "#2D3234" }}>
+                    <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem", fontWeight: "600", color: "var(--text-dark)" }}>
                       Business (Optional)
                     </label>
                     <select
@@ -767,7 +767,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                       style={{
                         width: "100%",
                         padding: "0.5rem",
-                        border: "1px solid #8193A4",
+                        border: "1px solid var(--primary)",
                         borderRadius: "0.25rem",
                         fontSize: "0.875rem"
                       }}
@@ -806,12 +806,12 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
               {/* Temporary Upload Section */}
               <div style={{ 
                 padding: "1.5rem", 
-                backgroundColor: "#f8f9fa", 
+                backgroundColor: "var(--white)", 
                 borderRadius: "0.5rem",
-                border: "1px solid #e0e0e0"
+                border: "1px solid var(--border)"
               }}>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234" }}>Temporary Data Upload</h3>
-                <p style={{ color: "#8193A4", fontSize: "0.875rem", marginBottom: "1rem", lineHeight: "1.5" }}>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)" }}>Temporary Data Upload</h3>
+                <p style={{ color: "var(--primary)", fontSize: "0.875rem", marginBottom: "1rem", lineHeight: "1.5" }}>
                   Import equipment records from Excel file. Creates missing clients, sites, and businesses automatically.
                 </p>
                 <div style={{ 
@@ -826,7 +826,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                 </div>
                 {isSuperAdmin && (
                   <div style={{ marginBottom: "1rem" }}>
-                    <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem", fontWeight: "600", color: "#2D3234" }}>
+                    <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem", fontWeight: "600", color: "var(--text-dark)" }}>
                       Business (Optional)
                     </label>
                     <select
@@ -835,7 +835,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                       style={{
                         width: "100%",
                         padding: "0.5rem",
-                        border: "1px solid #8193A4",
+                        border: "1px solid var(--primary)",
                         borderRadius: "0.25rem",
                         fontSize: "0.875rem"
                       }}
@@ -874,12 +874,12 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
               {/* Export Section */}
               <div style={{ 
                 padding: "1.5rem", 
-                backgroundColor: "#f8f9fa", 
+                backgroundColor: "var(--white)", 
                 borderRadius: "0.5rem",
-                border: "1px solid #e0e0e0"
+                border: "1px solid var(--border)"
               }}>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234" }}>Export Equipments</h3>
-                <p style={{ color: "#8193A4", fontSize: "0.875rem", marginBottom: "1.5rem", lineHeight: "1.5" }}>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)" }}>Export Equipments</h3>
+                <p style={{ color: "var(--primary)", fontSize: "0.875rem", marginBottom: "1.5rem", lineHeight: "1.5" }}>
                   Export all equipment records to an Excel file for backup or external processing.
                 </p>
                 <button
@@ -895,17 +895,17 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
               {/* Export Equipment Info Section */}
               <div style={{ 
                 padding: "1.5rem", 
-                backgroundColor: "#f8f9fa", 
+                backgroundColor: "var(--white)", 
                 borderRadius: "0.5rem",
-                border: "1px solid #e0e0e0"
+                border: "1px solid var(--border)"
               }}>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234" }}>Export Equipment Info</h3>
-                <p style={{ color: "#8193A4", fontSize: "0.875rem", marginBottom: "1rem", lineHeight: "1.5" }}>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)" }}>Export Equipment Info</h3>
+                <p style={{ color: "var(--primary)", fontSize: "0.875rem", marginBottom: "1rem", lineHeight: "1.5" }}>
                   Export equipment information with testing completion dates. Includes client name, site details, equipment details, and all completion dates. If an equipment is tested multiple times, each date will have a separate entry.
                 </p>
                 {isSuperAdmin && (
                   <div style={{ marginBottom: "1rem" }}>
-                    <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem", fontWeight: "600", color: "#2D3234" }}>
+                    <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem", fontWeight: "600", color: "var(--text-dark)" }}>
                       Business (Optional)
                     </label>
                     <select
@@ -914,7 +914,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                       style={{
                         width: "100%",
                         padding: "0.5rem",
-                        border: "1px solid #8193A4",
+                        border: "1px solid var(--primary)",
                         borderRadius: "0.25rem",
                         fontSize: "0.875rem"
                       }}
@@ -968,17 +968,17 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
           });
         }}>
           <div style={{
-            backgroundColor: "#D7E5D8",
+            backgroundColor: "var(--light-bg)",
             padding: "2rem",
             borderRadius: "0.5rem",
             maxWidth: "500px",
             width: "90%",
-            color: "#2D3234",
+            color: "var(--text-dark)",
             maxHeight: "90vh",
             overflowY: "auto"
           }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>
+              <h2 style={{ margin: 0, color: "var(--text-dark)" }}>
                 {editingEquipmentType ? "Edit Equipment Type" : "Add New Equipment Type"}
               </h2>
               <button onClick={() => {
@@ -992,13 +992,13 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   active: true,
                   business_id: null
                 });
-              }} style={{ color: "#2D3234", border: "1px solid #8193A4", background: "transparent", cursor: "pointer", fontSize: "1.5rem", padding: "0.25rem 0.5rem" }}>✕</button>
+              }} style={{ color: "var(--text-dark)", border: "1px solid var(--primary)", background: "transparent", cursor: "pointer", fontSize: "1.5rem", padding: "0.25rem 0.5rem" }}>✕</button>
             </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               {isSuperAdmin && !editingEquipmentType && (
                 <div>
-                  <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                  <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                     Business
                   </label>
                   <select
@@ -1013,10 +1013,10 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                     style={{
                       width: "100%",
                       padding: "0.5rem",
-                      border: "1px solid #8193A4",
+                      border: "1px solid var(--primary)",
                       borderRadius: "0.25rem",
-                      backgroundColor: "#fff",
-                      color: "#2D3234"
+                      backgroundColor: "var(--white)",
+                      color: "var(--text-dark)"
                     }}
                   >
                     <option value="all">All Businesses</option>
@@ -1030,7 +1030,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
               )}
 
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Name *
                 </label>
                 <input
@@ -1042,16 +1042,16 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234"
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)"
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Interval (weeks) *
                 </label>
                 <input
@@ -1070,16 +1070,16 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234"
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)"
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Default Lead Weeks *
                 </label>
                 <input
@@ -1091,10 +1091,10 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234"
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)"
                   }}
                 />
               </div>
@@ -1106,7 +1106,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                     position: "relative",
                     width: "48px",
                     height: "24px",
-                    backgroundColor: equipmentTypeForm.active ? "#8193A4" : "#cbd5e1",
+                    backgroundColor: equipmentTypeForm.active ? "var(--primary)" : "#cbd5e1",
                     borderRadius: "12px",
                     transition: "background-color 0.2s ease",
                     cursor: "pointer",
@@ -1120,7 +1120,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                       left: equipmentTypeForm.active ? "26px" : "2px",
                       width: "20px",
                       height: "20px",
-                      backgroundColor: "#ffffff",
+                      backgroundColor: "var(--white)",
                       borderRadius: "50%",
                       transition: "left 0.2s ease",
                       boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)"
@@ -1195,8 +1195,8 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                     });
                   }}
                   style={{ 
-                    color: "#2D3234", 
-                    border: "1px solid #8193A4",
+                    color: "var(--text-dark)", 
+                    border: "1px solid var(--primary)",
                     background: "transparent"
                   }}
                 >
@@ -1255,7 +1255,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                       position: "relative",
                       width: "48px",
                       height: "24px",
-                      backgroundColor: newUser.is_admin ? "#8193A4" : "#cbd5e1",
+                      backgroundColor: newUser.is_admin ? "var(--primary)" : "#cbd5e1",
                       borderRadius: "12px",
                       transition: "background-color 0.2s ease",
                       cursor: "pointer",
@@ -1269,7 +1269,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                         left: newUser.is_admin ? "26px" : "2px",
                         width: "20px",
                         height: "20px",
-                        backgroundColor: "#ffffff",
+                        backgroundColor: "var(--white)",
                         borderRadius: "50%",
                         transition: "left 0.2s ease",
                         boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)"
@@ -1318,10 +1318,10 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                     <div className="list-main">
                       <div className="list-title">
                         {user.username} 
-                        {user.is_admin && <span style={{ color: "#8193A4", fontSize: "0.875rem" }}>(Admin)</span>}
-                        {user.is_super_admin && <span style={{ color: "#8193A4", fontSize: "0.875rem", fontWeight: "bold" }}>(Super Admin)</span>}
+                        {user.is_admin && <span style={{ color: "var(--primary)", fontSize: "0.875rem" }}>(Admin)</span>}
+                        {user.is_super_admin && <span style={{ color: "var(--primary)", fontSize: "0.875rem", fontWeight: "bold" }}>(Super Admin)</span>}
                         {isSuperAdmin && user.business_name && (
-                          <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "#2D3234", fontStyle: "italic" }}>
+                          <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "var(--text-dark)", fontStyle: "italic" }}>
                             • {user.business_name}
                           </span>
                         )}
@@ -1388,7 +1388,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
           </div>
 
           {selectedBusinessId === null && (
-            <div style={{ padding: "1rem", marginBottom: "1rem", backgroundColor: "rgba(129, 147, 164, 0.1)", borderLeft: "4px solid #8193A4", borderRadius: "0.25rem" }}>
+            <div style={{ padding: "1rem", marginBottom: "1rem", backgroundColor: "rgba(129, 147, 164, 0.1)", borderLeft: "4px solid var(--primary)", borderRadius: "0.25rem" }}>
               <strong>Viewing All Businesses</strong> - You are currently viewing data from all businesses. Switch to a specific business to filter data.
             </div>
           )}
@@ -1405,7 +1405,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                     <div className="list-title">
                       {business.name}
                       {selectedBusinessId === business.id && (
-                        <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "#2D3234", fontWeight: "bold" }}>
+                        <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "var(--text-dark)", fontWeight: "bold" }}>
                           (Current)
                         </span>
                       )}
@@ -1449,15 +1449,15 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
           setBusinessName("");
         }}>
           <div style={{
-            backgroundColor: "#D7E5D8",
+            backgroundColor: "var(--light-bg)",
             padding: "2rem",
             borderRadius: "0.5rem",
             maxWidth: "500px",
             width: "90%",
-            color: "#2D3234"
+            color: "var(--text-dark)"
           }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>
+              <h2 style={{ margin: 0, color: "var(--text-dark)" }}>
                 {editingBusiness ? "Edit Business" : "Add New Business"}
               </h2>
               <button onClick={() => {
@@ -1467,12 +1467,12 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                 setCreateAdminUser(true);
                 setAdminUsername("");
                 setAdminPassword("");
-              }} style={{ color: "#2D3234", border: "1px solid #8193A4", background: "transparent", cursor: "pointer", fontSize: "1.5rem", padding: "0.25rem 0.5rem" }}>✕</button>
+              }} style={{ color: "var(--text-dark)", border: "1px solid var(--primary)", background: "transparent", cursor: "pointer", fontSize: "1.5rem", padding: "0.25rem 0.5rem" }}>✕</button>
             </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Business Name
                 </label>
                 <input
@@ -1483,10 +1483,10 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234"
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)"
                   }}
                   onKeyPress={(e) => {
                     if (e.key === "Enter") {
@@ -1505,7 +1505,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                         position: "relative",
                         width: "48px",
                         height: "24px",
-                        backgroundColor: createAdminUser ? "#8193A4" : "#cbd5e1",
+                        backgroundColor: createAdminUser ? "var(--primary)" : "#cbd5e1",
                         borderRadius: "12px",
                         transition: "background-color 0.2s ease",
                         cursor: "pointer",
@@ -1519,7 +1519,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                           left: createAdminUser ? "26px" : "2px",
                           width: "20px",
                           height: "20px",
-                          backgroundColor: "#ffffff",
+                          backgroundColor: "var(--white)",
                           borderRadius: "50%",
                           transition: "left 0.2s ease",
                           boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)"
@@ -1532,7 +1532,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   {createAdminUser && (
                     <>
                       <div>
-                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                           Admin Username
                         </label>
                         <input
@@ -1543,15 +1543,15 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                           style={{
                             width: "100%",
                             padding: "0.5rem",
-                            border: "1px solid #8193A4",
+                            border: "1px solid var(--primary)",
                             borderRadius: "0.25rem",
-                            backgroundColor: "#fff",
-                            color: "#2D3234"
+                            backgroundColor: "var(--white)",
+                            color: "var(--text-dark)"
                           }}
                         />
                       </div>
                       <div>
-                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                           Admin Password
                         </label>
                         <input
@@ -1562,10 +1562,10 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                           style={{
                             width: "100%",
                             padding: "0.5rem",
-                            border: "1px solid #8193A4",
+                            border: "1px solid var(--primary)",
                             borderRadius: "0.25rem",
-                            backgroundColor: "#fff",
-                            color: "#2D3234"
+                            backgroundColor: "var(--white)",
+                            color: "var(--text-dark)"
                           }}
                         />
                       </div>
@@ -1592,8 +1592,8 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                     setAdminPassword("");
                   }}
                   style={{ 
-                    color: "#2D3234", 
-                    border: "1px solid #8193A4",
+                    color: "var(--text-dark)", 
+                    border: "1px solid var(--primary)",
                     background: "transparent"
                   }}
                 >
@@ -1619,7 +1619,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
           zIndex: 1000
         }}>
           <div style={{
-            backgroundColor: "#fff",
+            backgroundColor: "var(--white)",
             padding: "2rem",
             borderRadius: "0.5rem",
             maxWidth: "500px",
@@ -1627,11 +1627,11 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
             maxHeight: "80vh",
             overflowY: "auto"
           }}>
-            <h2 style={{ marginTop: 0, marginBottom: "1rem", color: "#2D3234" }}>
+            <h2 style={{ marginTop: 0, marginBottom: "1rem", color: "var(--text-dark)" }}>
               Delete Equipment Type: {equipmentTypeToDelete.name}
             </h2>
             
-            <p style={{ color: "#8193A4", marginBottom: "1.5rem" }}>
+            <p style={{ color: "var(--primary)", marginBottom: "1.5rem" }}>
               {equipmentTypeToDelete.businesses && equipmentTypeToDelete.businesses.some(b => b.id === null) ? (
                 <>This equipment type is available to <strong>All Businesses</strong>. You can delete it from all businesses or from a specific business.</>
               ) : (
@@ -1646,7 +1646,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                     <li key={idx} style={{ 
                       padding: "0.5rem", 
                       marginBottom: "0.5rem", 
-                      backgroundColor: "#f8f9fa",
+                      backgroundColor: "var(--white)",
                       borderRadius: "0.25rem"
                     }}>
                       {business.name}
@@ -1656,12 +1656,12 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
               </div>
             )}
             
-            <p style={{ color: "#2D3234", marginBottom: "1rem", fontWeight: "600" }}>
+            <p style={{ color: "var(--text-dark)", marginBottom: "1rem", fontWeight: "600" }}>
               How would you like to delete this equipment type?
             </p>
             
             <div style={{ marginBottom: "1.5rem" }}>
-              <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+              <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                 Delete from:
               </label>
               <select
@@ -1670,11 +1670,11 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                 style={{
                   width: "100%",
                   padding: "0.5rem",
-                  border: "1px solid #8193A4",
+                  border: "1px solid var(--primary)",
                   borderRadius: "0.25rem",
                   fontSize: "0.875rem",
-                  backgroundColor: "#fff",
-                  color: "#2D3234"
+                  backgroundColor: "var(--white)",
+                  color: "var(--text-dark)"
                 }}
               >
                 {(() => {
@@ -1760,23 +1760,23 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
           zIndex: 1000
         }} onClick={handleCancelPasswordChange}>
           <div style={{
-            backgroundColor: "#D7E5D8",
+            backgroundColor: "var(--light-bg)",
             padding: "2rem",
             borderRadius: "0.5rem",
             maxWidth: "500px",
             width: "90%",
-            color: "#2D3234"
+            color: "var(--text-dark)"
           }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>
+              <h2 style={{ margin: 0, color: "var(--text-dark)" }}>
                 Change Password for {selectedUserForPasswordChange.username}
               </h2>
-              <button onClick={handleCancelPasswordChange} style={{ color: "#2D3234", border: "1px solid #8193A4", background: "transparent", cursor: "pointer", fontSize: "1.5rem", padding: "0.25rem 0.5rem" }}>✕</button>
+              <button onClick={handleCancelPasswordChange} style={{ color: "var(--text-dark)", border: "1px solid var(--primary)", background: "transparent", cursor: "pointer", fontSize: "1.5rem", padding: "0.25rem 0.5rem" }}>✕</button>
             </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   New Password
                 </label>
                 <input
@@ -1787,16 +1787,16 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234"
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)"
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Confirm Password
                 </label>
                 <input
@@ -1807,10 +1807,10 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234"
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)"
                   }}
                   onKeyPress={(e) => {
                     if (e.key === "Enter") {
@@ -1831,8 +1831,8 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   className="secondary"
                   onClick={handleCancelPasswordChange}
                   style={{ 
-                    color: "#2D3234", 
-                    border: "1px solid #8193A4",
+                    color: "var(--text-dark)", 
+                    border: "1px solid var(--primary)",
                     background: "transparent"
                   }}
                 >

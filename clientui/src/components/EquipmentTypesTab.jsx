@@ -151,7 +151,7 @@ export default function EquipmentTypesTab({ equipmentTypes, onRefresh, apiCall, 
             {selectedType ? "Save" : "Create"}
           </button>
         </form>
-        <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid #8193A4" }}>
+        <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--primary)" }}>
           <button className="secondary" onClick={handleSeed}>
             Seed Default Equipments
           </button>

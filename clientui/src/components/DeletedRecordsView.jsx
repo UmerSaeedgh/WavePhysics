@@ -105,7 +105,7 @@ export default function DeletedRecordsView({ apiCall, currentUser, businesses, o
         </div>
       )}
 
-      <div className="filter-section" style={{ marginBottom: "1rem", padding: "1rem", background: "#f5f5f5", borderRadius: "0.5rem" }}>
+      <div className="filter-section" style={{ marginBottom: "1rem", padding: "1rem", background: "var(--white)", color: "var(--text-dark)", borderRadius: "0.5rem", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
           <label>
             Filter by Type:
@@ -168,7 +168,7 @@ export default function DeletedRecordsView({ apiCall, currentUser, businesses, o
       {loading ? (
         <div style={{ textAlign: "center", padding: "2rem" }}>Loading deleted records...</div>
       ) : sortedRecords.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "2rem", color: "#8193A4" }}>
+        <div style={{ textAlign: "center", padding: "2rem", color: "var(--primary)" }}>
           No deleted records found.
         </div>
       ) : (
@@ -178,7 +178,7 @@ export default function DeletedRecordsView({ apiCall, currentUser, businesses, o
               <div className="list-main">
                 <div className="list-title">
                   {record.name}
-                  <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "#8193A4", fontWeight: "normal" }}>
+                  <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "var(--primary)", fontWeight: "normal" }}>
                     ({getTypeLabel(record.type)})
                   </span>
                 </div>

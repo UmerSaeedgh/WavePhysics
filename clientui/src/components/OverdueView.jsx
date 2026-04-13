@@ -26,7 +26,7 @@ export default function OverdueView({ apiCall, setError, overdue, setOverdue, lo
           const itemStyle = isInactive && currentUser?.is_admin ? {
             opacity: 0.6,
             backgroundColor: "#f5f5f5",
-            borderLeft: "3px solid #8193A4"
+            borderLeft: "3px solid var(--primary)"
           } : {};
           return (
             <li 
@@ -43,7 +43,7 @@ export default function OverdueView({ apiCall, setError, overdue, setOverdue, lo
                 <div className="list-title">
                   {item.equipment_name || 'Unknown'}
                   {isInactive && currentUser?.is_admin && (
-                    <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#8193A4", fontStyle: "italic" }}>
+                    <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "var(--primary)", fontStyle: "italic" }}>
                       (Inactive)
                     </span>
                   )}

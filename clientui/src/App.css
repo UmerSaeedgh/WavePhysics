@@ -28,6 +28,79 @@
   --shadow-2xl: 0 30px 60px -15px rgba(0, 0, 0, 0.3);
   --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   --gradient-dark: linear-gradient(135deg, #2D3234 0%, #3a4043 100%);
+  --app-bg: var(--light-bg);
+  --app-text: var(--text-dark);
+}
+
+/* ================= Light theme ================= */
+[data-theme="light"] {
+  --light-bg: #ffffff;
+  --white: #ffffff;
+  --text-dark: #1a202c;
+  --text-light: #f5f7fa;
+  --border: #cbd5e1;
+  --primary: #64748b;
+  --primary-dark: #475569;
+  --primary-light: #94a3b8;
+  --primary-lighter: #e2e8f0;
+  --dark-light: #475569;
+}
+[data-theme="light"] body,
+[data-theme="light"] .app { background: #f5f7fa; color: var(--text-dark); }
+
+/* ================= Dark theme ================= */
+[data-theme="dark"] {
+  --light-bg: #232a30;
+  --white: #2a3136;
+  --text-dark: #e5e7eb;
+  --text-light: #232a30;
+  --border: #3a4349;
+  --primary: #9aa8b6;
+  --primary-dark: #7a8896;
+  --primary-light: #b8c3d0;
+  --primary-lighter: #3a4349;
+  --dark: #0f1214;
+  --dark-light: #c9d1d9;
+}
+[data-theme="dark"] body,
+[data-theme="dark"] .app { background: #15191c; color: var(--text-dark); }
+
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+  background-color: #2a3136;
+  color: #e5e7eb;
+  border-color: #3a4349;
+}
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder { color: #8b95a0; }
+
+/* Overdue cards: pink-tinted in light/default, dark red-tinted in dark mode. */
+.list-item.is-overdue {
+  color: #1a202c !important;
+}
+.list-item.is-overdue .list-title,
+.list-item.is-overdue .list-subtitle,
+.list-item.is-overdue .list-main {
+  color: #1a202c !important;
+}
+.list-item.is-overdue button:not(.primary):not(.secondary):not(.danger) {
+  color: #1a202c !important;
+  border-color: rgba(0, 0, 0, 0.25) !important;
+}
+
+[data-theme="dark"] .list-item.is-overdue {
+  background-color: #3a1f22 !important;
+  color: #f5d0d3 !important;
+}
+[data-theme="dark"] .list-item.is-overdue .list-title,
+[data-theme="dark"] .list-item.is-overdue .list-subtitle,
+[data-theme="dark"] .list-item.is-overdue .list-main {
+  color: #f5d0d3 !important;
+}
+[data-theme="dark"] .list-item.is-overdue button:not(.primary):not(.secondary):not(.danger) {
+  color: #f5d0d3 !important;
+  border-color: rgba(245, 208, 211, 0.35) !important;
 }
 
 body {
@@ -286,7 +359,7 @@ textarea::placeholder {
 
 button {
   border-radius: 0.5rem;
-  border: none;
+  border: 1px solid var(--border);
   padding: 0.625rem 1.25rem;
   font: inherit;
   font-size: 0.9375rem;
@@ -299,6 +372,8 @@ button {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+  background: var(--white);
+  color: var(--text-dark);
 }
 
 button.primary {

@@ -141,7 +141,7 @@ export default function EditContactPage({ apiCall, setError, contactToEdit, cont
       </div>
 
       <div className="card">
-        <div style={{ padding: "0.5rem 1rem", backgroundColor: "#8193A4", color: "#2D3234", fontSize: "0.9rem", marginBottom: "1rem" }}>
+        <div style={{ padding: "0.5rem 1rem", backgroundColor: "var(--primary)", color: "var(--text-dark)", fontSize: "0.9rem", marginBottom: "1rem" }}>
           {contactContext?.site ? `Site: ${contextName}` : contactContext?.client ? `Client: ${contextName}` : ""}
         </div>
 
@@ -182,7 +182,7 @@ export default function EditContactPage({ apiCall, setError, contactToEdit, cont
               justifyContent: "space-between",
               gap: "1rem",
               padding: "0.85rem 1rem",
-              border: `1.5px solid ${form.is_primary ? "#10b981" : "#8193A4"}`,
+              border: `1.5px solid ${form.is_primary ? "#10b981" : "var(--primary)"}`,
               borderRadius: "0.5rem",
               background: form.is_primary ? "rgba(16, 185, 129, 0.08)" : "transparent",
               cursor: "pointer",
@@ -191,8 +191,8 @@ export default function EditContactPage({ apiCall, setError, contactToEdit, cont
             }}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
-              <span style={{ fontWeight: 600, color: "#2D3234" }}>Primary Contact</span>
-              <span style={{ fontSize: "0.8rem", color: "#2D3234", opacity: 0.7 }}>
+              <span style={{ fontWeight: 600, color: "var(--text-dark)" }}>Primary Contact</span>
+              <span style={{ fontSize: "0.8rem", color: "var(--text-dark)", opacity: 0.7 }}>
                 The primary contact receives appointment emails for this {contactContext?.site ? "site" : "client"}.
               </span>
             </div>
@@ -216,7 +216,7 @@ export default function EditContactPage({ apiCall, setError, contactToEdit, cont
                   width: "20px",
                   height: "20px",
                   borderRadius: "50%",
-                  background: "#fff",
+                  background: "var(--white)",
                   boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
                   transition: "left 0.15s ease",
                 }}

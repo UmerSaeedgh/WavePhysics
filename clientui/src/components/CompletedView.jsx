@@ -302,9 +302,9 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
         </div>
 
         {showFilters && (
-          <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
+          <div style={{ padding: "1rem", borderBottom: "1px solid var(--primary)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <h3 style={{ margin: 0, fontSize: "1rem", color: "#2D3234" }}>Filters</h3>
+              <h3 style={{ margin: 0, fontSize: "1rem", color: "var(--text-dark)" }}>Filters</h3>
               <button
                 type="button"
                 className="secondary"
@@ -327,7 +327,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Search by Name
                 </label>
                 <input
@@ -338,7 +338,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -346,7 +346,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Client
                 </label>
                 <select
@@ -358,7 +358,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -373,7 +373,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Site
                 </label>
                 <select
@@ -383,10 +383,10 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem",
-                    backgroundColor: !selectedClientId ? "#f0f0f0" : "#fff"
+                    backgroundColor: !selectedClientId ? "#f0f0f0" : "var(--white)"
                   }}
                 >
                   <option value="">All Sites</option>
@@ -399,7 +399,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Equipment Type
                 </label>
                 <select
@@ -408,7 +408,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -423,7 +423,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Sort By
                 </label>
                 <select
@@ -432,7 +432,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -444,7 +444,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Sort Order
                 </label>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -501,7 +501,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
                   <div className="list-title">
                     {completion.equipment_name || 'Unknown'}
                     {completion.completion_count > 1 && (
-                      <span style={{ marginLeft: "0.5rem", fontSize: "0.9rem", color: "#8193A4", fontWeight: "normal" }}>
+                      <span style={{ marginLeft: "0.5rem", fontSize: "0.9rem", color: "var(--primary)", fontWeight: "normal" }}>
                         ({completion.completion_count} times)
                       </span>
                     )}
@@ -537,24 +537,24 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
           zIndex: 1000
         }} onClick={handleCloseHistoryModal}>
           <div style={{
-            backgroundColor: "#D7E5D8",
+            backgroundColor: "var(--light-bg)",
             padding: "2rem",
             borderRadius: "0.5rem",
             maxWidth: "800px",
             width: "90%",
             maxHeight: "80vh",
             overflow: "auto",
-            color: "#2D3234"
+            color: "var(--text-dark)"
           }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>
+              <h2 style={{ margin: 0, color: "var(--text-dark)" }}>
                 Completion History: {selectedEquipmentName}
               </h2>
               <button 
                 onClick={handleCloseHistoryModal} 
                 style={{ 
-                  color: "#2D3234", 
-                  border: "1px solid #8193A4",
+                  color: "var(--text-dark)", 
+                  border: "1px solid var(--primary)",
                   background: "transparent",
                   padding: "0.5rem 1rem",
                   borderRadius: "0.25rem",
@@ -573,7 +573,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
               <p className="empty">No completion history found for this equipment</p>
             ) : (
               <div>
-                <p style={{ marginBottom: "1rem", color: "#2D3234", fontSize: "0.9rem" }}>
+                <p style={{ marginBottom: "1rem", color: "var(--text-dark)", fontSize: "0.9rem" }}>
                   Total completions: {historyCompletions.length}
                 </p>
                 <ul className="list" style={{ maxHeight: "60vh", overflowY: "auto" }}>

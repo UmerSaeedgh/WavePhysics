@@ -16,6 +16,16 @@ import CompletedView from "./components/CompletedView";
 import DeletedRecordsView from "./components/DeletedRecordsView";
 
 function App() {
+  // Apply persisted theme on mount
+  useEffect(() => {
+    const theme = localStorage.getItem("theme") || "default";
+    if (theme === "default") {
+      document.documentElement.removeAttribute("data-theme");
+    } else {
+      document.documentElement.setAttribute("data-theme", theme);
+    }
+  }, []);
+
   // Authentication state
   const [authToken, setAuthToken] = useState(() => {
     return localStorage.getItem("authToken") || null;

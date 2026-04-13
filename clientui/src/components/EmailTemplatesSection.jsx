@@ -127,7 +127,7 @@ export default function EmailTemplatesSection({ apiCall, setError }) {
             fontSize: "0.75rem",
           }}>▶</span>
           Email Templates
-          <span style={{ fontSize: "0.875rem", fontWeight: "normal", color: "#8193A4", marginLeft: "0.5rem" }}>
+          <span style={{ fontSize: "0.875rem", fontWeight: "normal", color: "var(--primary)", marginLeft: "0.5rem" }}>
             ({templates.length})
           </span>
         </h2>
@@ -170,14 +170,14 @@ export default function EmailTemplatesSection({ apiCall, setError }) {
                     required
                   />
                 </label>
-                <div style={{ fontSize: "0.8rem", color: "#2D3234", opacity: 0.75 }}>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-dark)", opacity: 0.75 }}>
                   Placeholders: {PLACEHOLDERS.join(", ")}
                 </div>
                 <label
                   className="checkbox-label"
                   style={{
                     padding: "0.6rem 0.9rem",
-                    border: `1.5px solid ${form.is_default ? "#10b981" : "#8193A4"}`,
+                    border: `1.5px solid ${form.is_default ? "#10b981" : "var(--primary)"}`,
                     borderRadius: "0.5rem",
                     background: form.is_default ? "rgba(16, 185, 129, 0.08)" : "transparent",
                     cursor: "pointer",
@@ -198,7 +198,7 @@ export default function EmailTemplatesSection({ apiCall, setError }) {
                       padding: "0.1rem 0.5rem",
                       borderRadius: "999px",
                       background: "#10b981",
-                      color: "#fff",
+                      color: "var(--white)",
                       fontSize: "0.7rem",
                       fontWeight: 600,
                     }}>DEFAULT</span>
@@ -232,7 +232,7 @@ export default function EmailTemplatesSection({ apiCall, setError }) {
                               padding: "0.1rem 0.5rem",
                               borderRadius: "999px",
                               background: "#10b981",
-                              color: "#fff",
+                              color: "var(--white)",
                               fontSize: "0.7rem",
                               fontWeight: 600,
                             }}>DEFAULT</span>

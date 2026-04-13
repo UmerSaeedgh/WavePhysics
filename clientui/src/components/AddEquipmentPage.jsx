@@ -420,7 +420,7 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
                 position: "relative",
                 width: "48px",
                 height: "24px",
-                backgroundColor: equipmentForm.active ? "#8193A4" : "#cbd5e1",
+                backgroundColor: equipmentForm.active ? "var(--primary)" : "#cbd5e1",
                 borderRadius: "12px",
                 transition: "background-color 0.2s ease",
                 cursor: "pointer",
@@ -434,7 +434,7 @@ export default function AddEquipmentPage({ apiCall, setError, clients, sites, eq
                   left: equipmentForm.active ? "26px" : "2px",
                   width: "20px",
                   height: "20px",
-                  backgroundColor: "#ffffff",
+                  backgroundColor: "var(--white)",
                   borderRadius: "50%",
                   transition: "left 0.2s ease",
                   boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)"

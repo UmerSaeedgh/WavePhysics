@@ -87,11 +87,11 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
         </div>
         
         {showFilters && (
-          <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
+          <div style={{ padding: "1rem", borderBottom: "1px solid var(--primary)" }}>
             <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
               {isSuperAdmin && businesses && businesses.length > 0 && (
                 <div style={{ minWidth: "200px" }}>
-                  <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                  <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                     Filter by Business
                   </label>
                   <select
@@ -105,10 +105,10 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
                     style={{
                       width: "100%",
                       padding: "0.5rem",
-                      border: "1px solid #8193A4",
+                      border: "1px solid var(--primary)",
                       borderRadius: "0.25rem",
-                      backgroundColor: "#fff",
-                      color: "#2D3234"
+                      backgroundColor: "var(--white)",
+                      color: "var(--text-dark)"
                     }}
                   >
                     <option value="">All Businesses</option>
@@ -121,7 +121,7 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
                 </div>
               )}
               <div style={{ flex: 1, minWidth: "200px" }}>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Search Clients
                 </label>
                 <input
@@ -132,14 +132,14 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
                 />
               </div>
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Sort Order
                 </label>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -184,7 +184,7 @@ export default function ClientsListView({ clients, onRefresh, onClientClick, onV
                 <div className="list-main" onClick={() => onClientClick(client)}>
                   <div className="list-title">
                     {client.name}
-                    <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "#8193A4", fontWeight: "normal" }}>
+                    <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "var(--primary)", fontWeight: "normal" }}>
                       ({countSitesForClient(client.id)} sites, {countEquipmentsForClient(client.id)} equipments)
                     </span>
                   </div>

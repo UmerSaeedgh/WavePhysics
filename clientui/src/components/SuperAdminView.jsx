@@ -195,7 +195,7 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
                   <div className="list-title">
                     {business.name}
                     {selectedBusinessId === business.id && (
-                      <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "#2D3234", fontWeight: "bold" }}>
+                      <span style={{ marginLeft: "0.75rem", fontSize: "0.875rem", color: "var(--text-dark)", fontWeight: "bold" }}>
                         (Current)
                       </span>
                     )}
@@ -231,23 +231,23 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
           zIndex: 1000
         }} onClick={handleCancel}>
           <div style={{
-            backgroundColor: "#D7E5D8",
+            backgroundColor: "var(--light-bg)",
             padding: "2rem",
             borderRadius: "0.5rem",
             maxWidth: "500px",
             width: "90%",
-            color: "#2D3234"
+            color: "var(--text-dark)"
           }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>
+              <h2 style={{ margin: 0, color: "var(--text-dark)" }}>
                 {editingBusiness ? "Edit Business" : "Add New Business"}
               </h2>
-              <button onClick={handleCancel} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+              <button onClick={handleCancel} style={{ color: "var(--text-dark)", border: "1px solid var(--primary)" }}>✕</button>
             </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Business Name
                 </label>
                 <input
@@ -258,10 +258,10 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234"
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)"
                   }}
                   onKeyPress={(e) => {
                     if (e.key === "Enter") {
@@ -280,7 +280,7 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
                         position: "relative",
                         width: "48px",
                         height: "24px",
-                        backgroundColor: createAdminUser ? "#8193A4" : "#cbd5e1",
+                        backgroundColor: createAdminUser ? "var(--primary)" : "#cbd5e1",
                         borderRadius: "12px",
                         transition: "background-color 0.2s ease",
                         cursor: "pointer",
@@ -294,7 +294,7 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
                           left: createAdminUser ? "26px" : "2px",
                           width: "20px",
                           height: "20px",
-                          backgroundColor: "#ffffff",
+                          backgroundColor: "var(--white)",
                           borderRadius: "50%",
                           transition: "left 0.2s ease",
                           boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)"
@@ -307,7 +307,7 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
                   {createAdminUser && (
                     <>
                       <div>
-                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                           Admin Username
                         </label>
                         <input
@@ -318,15 +318,15 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
                           style={{
                             width: "100%",
                             padding: "0.5rem",
-                            border: "1px solid #8193A4",
+                            border: "1px solid var(--primary)",
                             borderRadius: "0.25rem",
-                            backgroundColor: "#fff",
-                            color: "#2D3234"
+                            backgroundColor: "var(--white)",
+                            color: "var(--text-dark)"
                           }}
                         />
                       </div>
                       <div>
-                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                        <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                           Admin Password
                         </label>
                         <input
@@ -337,10 +337,10 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
                           style={{
                             width: "100%",
                             padding: "0.5rem",
-                            border: "1px solid #8193A4",
+                            border: "1px solid var(--primary)",
                             borderRadius: "0.25rem",
-                            backgroundColor: "#fff",
-                            color: "#2D3234"
+                            backgroundColor: "var(--white)",
+                            color: "var(--text-dark)"
                           }}
                         />
                       </div>
@@ -360,8 +360,8 @@ export default function SuperAdminView({ apiCall, setError, currentUser, onBusin
                   className="secondary"
                   onClick={handleCancel}
                   style={{ 
-                    color: "#2D3234", 
-                    border: "1px solid #8193A4",
+                    color: "var(--text-dark)", 
+                    border: "1px solid var(--primary)",
                     background: "transparent"
                   }}
                 >

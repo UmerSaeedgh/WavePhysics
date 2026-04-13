@@ -47,7 +47,7 @@ export default function ContactManagementSection({ site, client, contactLinks, o
                 <div className="list-main">
                   <div className="list-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                     <span>{link.first_name} {link.last_name}</span>
-                    <span style={{ color: "#8193A4", fontWeight: 400 }}>· {link.role}</span>
+                    <span style={{ color: "var(--primary)", fontWeight: 400 }}>· {link.role}</span>
                     {link.is_primary && (
                       <span style={{
                         fontSize: "0.7rem",
@@ -57,7 +57,7 @@ export default function ContactManagementSection({ site, client, contactLinks, o
                         padding: "0.15rem 0.55rem",
                         borderRadius: "999px",
                         background: "#10b981",
-                        color: "#fff",
+                        color: "var(--white)",
                       }}>
                         Primary
                       </span>

@@ -257,21 +257,21 @@ async function handleOpenWebMail() {
     >
       <div
         style={{
-          backgroundColor: "#D7E5D8",
+          backgroundColor: "var(--light-bg)",
           padding: "2rem",
           borderRadius: "0.75rem",
           maxWidth: "640px",
           maxHeight: "90vh",
           overflow: "auto",
           width: "92%",
-          color: "#2D3234",
+          color: "var(--text-dark)",
           boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <div>
-            <h2 style={{ margin: 0, color: "#2D3234" }}>Send Appointment Email</h2>
+            <h2 style={{ margin: 0, color: "var(--text-dark)" }}>Send Appointment Email</h2>
             <div style={{ fontSize: "0.85rem", opacity: 0.75, marginTop: "0.2rem" }}>
               {item?.equipment_name}{item?.site_name ? ` · ${item.site_name}` : ""}
               {overdue && (
@@ -280,14 +280,14 @@ async function handleOpenWebMail() {
                   padding: "0.1rem 0.5rem",
                   borderRadius: "999px",
                   background: "#ef4444",
-                  color: "#fff",
+                  color: "var(--white)",
                   fontSize: "0.7rem",
                   fontWeight: 600,
                 }}>OVERDUE</span>
               )}
             </div>
           </div>
-          <button onClick={onClose} style={{ color: "#2D3234", border: "1px solid #8193A4", background: "transparent" }}>✕</button>
+          <button onClick={onClose} style={{ color: "var(--text-dark)", border: "1px solid var(--primary)", background: "transparent" }}>✕</button>
         </div>
 
         {localError && <div className="error-banner" style={{ marginBottom: "1rem" }}>{localError}</div>}
@@ -393,7 +393,7 @@ async function handleOpenWebMail() {
               className="secondary"
               onClick={onClose}
               disabled={saving}
-              style={{ color: "#2D3234", border: "1px solid #8193A4", background: "transparent", marginLeft: "auto" }}
+              style={{ color: "var(--text-dark)", border: "1px solid var(--primary)", background: "transparent", marginLeft: "auto" }}
             >
               Cancel
             </button>

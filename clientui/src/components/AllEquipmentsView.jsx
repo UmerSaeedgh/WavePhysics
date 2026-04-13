@@ -37,7 +37,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
         const equipmentElement = equipmentRefs.current[scrollToEquipmentId];
         if (equipmentElement) {
           equipmentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          equipmentElement.style.backgroundColor = '#8193A4';
+          equipmentElement.style.backgroundColor = 'var(--primary)';
           setTimeout(() => {
             equipmentElement.style.backgroundColor = '';
             if (onScrollComplete) onScrollComplete();
@@ -47,7 +47,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
             const retryElement = equipmentRefs.current[scrollToEquipmentId];
             if (retryElement) {
               retryElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              retryElement.style.backgroundColor = '#8193A4';
+              retryElement.style.backgroundColor = 'var(--primary)';
               setTimeout(() => {
                 retryElement.style.backgroundColor = '';
                 if (onScrollComplete) onScrollComplete();
@@ -339,9 +339,9 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
         </div>
 
         {showFilters && (
-          <div style={{ padding: "1rem", borderBottom: "1px solid #8193A4" }}>
+          <div style={{ padding: "1rem", borderBottom: "1px solid var(--primary)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <h3 style={{ margin: 0, fontSize: "1rem", color: "#2D3234" }}>Filters</h3>
+              <h3 style={{ margin: 0, fontSize: "1rem", color: "var(--text-dark)" }}>Filters</h3>
               <button
                 type="button"
                 className="secondary"
@@ -364,7 +364,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Search by Name
                 </label>
                 <input
@@ -375,7 +375,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -383,7 +383,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Client
                 </label>
                 <select
@@ -395,7 +395,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -410,7 +410,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Site
                 </label>
                 <select
@@ -420,10 +420,10 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem",
-                    backgroundColor: !selectedClientId ? "#f0f0f0" : "#fff"
+                    backgroundColor: !selectedClientId ? "#f0f0f0" : "var(--white)"
                   }}
                 >
                   <option value="">All Sites</option>
@@ -436,7 +436,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Equipment Type
                 </label>
                 <select
@@ -445,7 +445,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -460,7 +460,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Sort By
                 </label>
                 <select
@@ -469,7 +469,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
                     fontSize: "0.9rem"
                   }}
@@ -480,7 +480,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
               </div>
               
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem", color: "var(--text-dark)" }}>
                   Sort Order
                 </label>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -618,23 +618,23 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
           zIndex: 1000
         }} onClick={() => setShowDetailsModal(false)}>
           <div style={{
-            backgroundColor: "#D7E5D8",
+            backgroundColor: "var(--light-bg)",
             padding: "2rem",
             borderRadius: "0.5rem",
             maxWidth: "800px",
             maxHeight: "80vh",
             overflow: "auto",
             width: "90%",
-            color: "#2D3234"
+            color: "var(--text-dark)"
           }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>Equipment Details</h2>
-              <button onClick={() => setShowDetailsModal(false)} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+              <h2 style={{ margin: 0, color: "var(--text-dark)" }}>Equipment Details</h2>
+              <button onClick={() => setShowDetailsModal(false)} style={{ color: "var(--text-dark)", border: "1px solid var(--primary)" }}>✕</button>
             </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
               <div>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Equipment Information</h3>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)", fontSize: "1.1rem" }}>Equipment Information</h3>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", fontSize: "0.9rem" }}>
                   <div><strong>Equipment Name:</strong> {selectedEquipment.equipment_name || "N/A"}</div>
                   <div><strong>Equipment Type:</strong> {selectedEquipment.equipment_type_name || "N/A"}</div>
@@ -657,7 +657,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
               </div>
 
               <div>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Client Information</h3>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)", fontSize: "1.1rem" }}>Client Information</h3>
                 <div style={{ fontSize: "0.9rem" }}>
                   {selectedEquipment.client_name && <div><strong>Name:</strong> {selectedEquipment.client_name}</div>}
                   {selectedEquipment.client_address && <div><strong>Address:</strong> {selectedEquipment.client_address}</div>}
@@ -672,7 +672,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
               </div>
 
               <div>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "#2D3234", fontSize: "1.1rem" }}>Site Information</h3>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)", fontSize: "1.1rem" }}>Site Information</h3>
                 <div style={{ fontSize: "0.9rem" }}>
                   {selectedEquipment.site_name && <div><strong>Name:</strong> {selectedEquipment.site_name}</div>}
                   {selectedEquipment.site_street && <div><strong>Street:</strong> {selectedEquipment.site_street}</div>}
@@ -728,8 +728,8 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                     }
                   }}
                   style={{ 
-                    color: "#2D3234", 
-                    border: "1px solid #8193A4",
+                    color: "var(--text-dark)", 
+                    border: "1px solid var(--primary)",
                     background: "transparent"
                   }}
                 >
@@ -739,8 +739,8 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   className="secondary" 
                   onClick={() => setShowDetailsModal(false)}
                   style={{ 
-                    color: "#2D3234", 
-                    border: "1px solid #8193A4",
+                    color: "var(--text-dark)", 
+                    border: "1px solid var(--primary)",
                     background: "transparent"
                   }}
                 >
@@ -766,21 +766,21 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
           zIndex: 1000
         }} onClick={handleCancelDone}>
           <div style={{
-            backgroundColor: "#D7E5D8",
+            backgroundColor: "var(--light-bg)",
             padding: "2rem",
             borderRadius: "0.5rem",
             maxWidth: "500px",
             width: "90%",
-            color: "#2D3234"
+            color: "var(--text-dark)"
           }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, color: "#2D3234" }}>Mark as Done</h2>
-              <button onClick={handleCancelDone} style={{ color: "#2D3234", border: "1px solid #8193A4" }}>✕</button>
+              <h2 style={{ margin: 0, color: "var(--text-dark)" }}>Mark as Done</h2>
+              <button onClick={handleCancelDone} style={{ color: "var(--text-dark)", border: "1px solid var(--primary)" }}>✕</button>
             </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Completion Date
                 </label>
                 <input
@@ -790,15 +790,15 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234"
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)"
                   }}
                 />
               </div>
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Interval (weeks)
                 </label>
                 <input
@@ -809,16 +809,16 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234"
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)"
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "#2D3234" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "600", color: "var(--text-dark)" }}>
                   Calculated Due Date
                 </label>
                 <input
@@ -837,14 +837,14 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   style={{
                     width: "100%",
                     padding: "0.5rem",
-                    border: "1px solid #8193A4",
+                    border: "1px solid var(--primary)",
                     borderRadius: "0.25rem",
-                    backgroundColor: "#fff",
-                    color: "#2D3234",
+                    backgroundColor: "var(--white)",
+                    color: "var(--text-dark)",
                     fontFamily: "monospace"
                   }}
                 />
-                <div style={{ fontSize: "0.85rem", color: "#8193A4", marginTop: "0.25rem" }}>
+                <div style={{ fontSize: "0.85rem", color: "var(--primary)", marginTop: "0.25rem" }}>
                   {doneInterval ? 
                     `Completion Date (${getTodayDate()}) + ${doneInterval} weeks = ${calculatedDueDate || "calculating..."}` :
                     "Enter interval weeks to calculate due date"
@@ -864,8 +864,8 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
                   className="secondary"
                   onClick={handleCancelDone}
                   style={{ 
-                    color: "#2D3234", 
-                    border: "1px solid #8193A4",
+                    color: "var(--text-dark)", 
+                    border: "1px solid var(--primary)",
                     background: "transparent"
                   }}
                 >
