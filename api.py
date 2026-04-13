@@ -3220,6 +3220,12 @@ class EquipmentCompletionRead(BaseModel):
     equipment_type_id: Optional[int] = None
     equipment_type_name: Optional[str] = None
     anchor_date: Optional[str] = None  # Previous anchor date from equipment_record
+    email_status: Optional[str] = None
+    email_sent_at: Optional[str] = None
+    email_subject: Optional[str] = None
+    email_body: Optional[str] = None
+    contact_email_snapshot: Optional[str] = None
+    appointment_at: Optional[str] = None
 
 
 @app.post("/equipment-completions", response_model=EquipmentCompletionRead, status_code=status.HTTP_201_CREATED)
@@ -3262,22 +3268,52 @@ def create_equipment_completion(payload: EquipmentCompletionCreate, current_user
     
     # Get username from current_user
     username = current_user.get("username", "unknown")
-    
+
+    # Snapshot current email tracking fields so each completion preserves its own history
+    email_snap = db.execute(
+        """SELECT email_status, email_sent_at, email_subject, email_body,
+                  contact_email_snapshot, appointment_at
+           FROM equipment_record WHERE id = ?""",
+        (payload.equipment_record_id,),
+    ).fetchone()
+    snap = dict(email_snap) if email_snap else {}
+
     if payload.completed_at:
         cur = db.execute(
-            "INSERT INTO equipment_completions (equipment_record_id, due_date, interval_weeks, completed_by_user, completed_at) VALUES (?, ?, ?, ?, ?)",
-            (payload.equipment_record_id, payload.due_date, payload.interval_weeks, username, payload.completed_at)
+            """INSERT INTO equipment_completions
+               (equipment_record_id, due_date, interval_weeks, completed_by_user, completed_at,
+                email_status, email_sent_at, email_subject, email_body, contact_email_snapshot, appointment_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (payload.equipment_record_id, payload.due_date, payload.interval_weeks, username, payload.completed_at,
+             snap.get("email_status"), snap.get("email_sent_at"), snap.get("email_subject"),
+             snap.get("email_body"), snap.get("contact_email_snapshot"), snap.get("appointment_at"))
         )
     else:
         cur = db.execute(
-            "INSERT INTO equipment_completions (equipment_record_id, due_date, interval_weeks, completed_by_user) VALUES (?, ?, ?, ?)",
-            (payload.equipment_record_id, payload.due_date, payload.interval_weeks, username)
+            """INSERT INTO equipment_completions
+               (equipment_record_id, due_date, interval_weeks, completed_by_user,
+                email_status, email_sent_at, email_subject, email_body, contact_email_snapshot, appointment_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (payload.equipment_record_id, payload.due_date, payload.interval_weeks, username,
+             snap.get("email_status"), snap.get("email_sent_at"), snap.get("email_subject"),
+             snap.get("email_body"), snap.get("contact_email_snapshot"), snap.get("appointment_at"))
         )
+    # Reset email tracking on the record so the next cycle starts fresh.
+    # Previous email history is preserved via equipment_completions context.
+    db.execute(
+        """UPDATE equipment_record
+           SET email_status = NULL, email_sent_at = NULL, email_subject = NULL,
+               email_body = NULL, contact_email_snapshot = NULL, appointment_at = NULL
+           WHERE id = ?""",
+        (payload.equipment_record_id,),
+    )
     db.commit()
     
     # Fetch the completion with joined equipment data
     row = db.execute("""
         SELECT ec.id, ec.equipment_record_id, ec.completed_at, ec.due_date, ec.interval_weeks, ec.completed_by_user,
+               ec.email_status, ec.email_sent_at, ec.email_subject, ec.email_body,
+               ec.contact_email_snapshot, ec.appointment_at,
                er.equipment_name, er.client_id, er.site_id, er.equipment_type_id, er.anchor_date,
                c.name as client_name,
                s.name as site_name,
@@ -3313,6 +3349,8 @@ def list_equipment_completions(
     
     query = """
         SELECT ec.id, ec.equipment_record_id, ec.completed_at, ec.due_date, ec.interval_weeks, ec.completed_by_user,
+               ec.email_status, ec.email_sent_at, ec.email_subject, ec.email_body,
+               ec.contact_email_snapshot, ec.appointment_at,
                er.equipment_name, er.client_id, er.site_id, er.equipment_type_id, er.anchor_date,
                c.name as client_name,
                s.name as site_name,

@@ -185,7 +185,13 @@ CREATE TABLE IF NOT EXISTS equipment_completions (
   completed_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   due_date            DATE NOT NULL,
   interval_weeks      INTEGER,
-  completed_by_user   TEXT
+  completed_by_user   TEXT,
+  email_status           TEXT,
+  email_sent_at          TIMESTAMP,
+  email_subject          TEXT,
+  email_body             TEXT,
+  contact_email_snapshot TEXT,
+  appointment_at         TIMESTAMP
 );
 
 -- Create indexes for better query performance

@@ -381,8 +381,20 @@ def init_schema(conn):
       completed_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       due_date            DATE NOT NULL,
       interval_weeks      INTEGER,
-      completed_by_user   TEXT
+      completed_by_user   TEXT,
+      email_status           TEXT,
+      email_sent_at          TIMESTAMP,
+      email_subject          TEXT,
+      email_body             TEXT,
+      contact_email_snapshot TEXT,
+      appointment_at         TIMESTAMP
     );
+    ALTER TABLE equipment_completions ADD COLUMN IF NOT EXISTS email_status TEXT;
+    ALTER TABLE equipment_completions ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP;
+    ALTER TABLE equipment_completions ADD COLUMN IF NOT EXISTS email_subject TEXT;
+    ALTER TABLE equipment_completions ADD COLUMN IF NOT EXISTS email_body TEXT;
+    ALTER TABLE equipment_completions ADD COLUMN IF NOT EXISTS contact_email_snapshot TEXT;
+    ALTER TABLE equipment_completions ADD COLUMN IF NOT EXISTS appointment_at TIMESTAMP;
 
     -- Create indexes for better query performance
     CREATE INDEX IF NOT EXISTS idx_clients_business_id ON clients(business_id);
