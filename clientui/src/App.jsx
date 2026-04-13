@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import wavePhysicsLogo from "./assets/image.png";
 import { API_BASE } from "./config";
@@ -87,8 +87,20 @@ function App() {
   const [dueThisMonth, setDueThisMonth] = useState([]);
   const [overdue, setOverdue] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
+  const [remaining, setRemaining] = useState([]);
   const [completions, setCompletions] = useState([]);
   const [businesses, setBusinesses] = useState([]);
+
+  // Per-resource fetch timestamps. Used by views to avoid redundant
+  // re-fetches when the user navigates away and back within a short window —
+  // that's what made the page feel "flaky" with stale data flashing.
+  const lastFetchedRef = useRef({});
+  const FRESH_WINDOW_MS = 30000;
+  const isFresh = (key) => {
+    const ts = lastFetchedRef.current[key];
+    return ts && (Date.now() - ts) < FRESH_WINDOW_MS;
+  };
+  const markFetched = (key) => { lastFetchedRef.current[key] = Date.now(); };
   const [upcomingDate, setUpcomingDate] = useState(() => {
     // Default to today's date
     return new Date().toISOString().split('T')[0];
@@ -197,6 +209,7 @@ function App() {
     try {
       const data = await apiCall("/equipment-records/overdue").catch(() => []);
       setOverdue(Array.isArray(data) ? data : []);
+      markFetched("upcoming");
     } catch (err) {
       const errorMessage = err.message || "Failed to load data";
       if (!silent) setError(errorMessage);
@@ -222,6 +235,7 @@ function App() {
     try {
       const data = await apiCall("/equipment-completions").catch(() => []);
       setCompletions(Array.isArray(data) ? data : []);
+      markFetched("completions");
     } catch (err) {
       const errorMessage = err.message || "Failed to load completion data";
       if (!silent) setError(errorMessage);
@@ -315,6 +329,10 @@ function App() {
         
         // Mark data as loaded to prevent redundant fetches
         setDataLoaded(true);
+        const now = Date.now();
+        lastFetchedRef.current.upcoming = now;
+        lastFetchedRef.current.allEquipments = now;
+        lastFetchedRef.current.completions = now;
       } catch (fetchErr) {
         console.error("Error fetching initial data after login:", fetchErr);
         // Don't throw - login was successful, data will load via useEffect
@@ -863,6 +881,7 @@ function App() {
           </div>
         )}
 
+        <div key={view} className="view-fade">
         {view === "clients" && (
           <ClientsListView
             clients={clients}
@@ -1030,12 +1049,14 @@ function App() {
 
         {view === "all-equipments" && (
           <AllEquipmentsView
-            apiCall={apiCall} 
+            apiCall={apiCall}
             setError={setError}
             allEquipments={allEquipments}
             setAllEquipments={setAllEquipments}
             loading={loading}
             setLoading={setLoading}
+            isFresh={isFresh}
+            markFetched={markFetched}
             scrollToEquipmentId={scrollToEquipmentId}
             onScrollComplete={() => setScrollToEquipmentId(null)}
             currentUser={currentUser}
@@ -1068,6 +1089,10 @@ function App() {
             setUpcoming={setUpcoming}
             loading={loading}
             setLoading={setLoading}
+            isFresh={isFresh}
+            markFetched={markFetched}
+            remaining={remaining}
+            setRemaining={setRemaining}
             upcomingDate={upcomingDate}
             setUpcomingDate={setUpcomingDate}
             upcomingInterval={upcomingInterval}
@@ -1173,6 +1198,8 @@ function App() {
             setCompletions={setCompletions}
             onRefresh={() => fetchCompletions()}
             onRefreshAllCounts={refreshAllCounts}
+            isFresh={isFresh}
+            markFetched={markFetched}
           />
         )}
 
@@ -1186,9 +1213,9 @@ function App() {
         )}
 
         {(view === "user" || view === "admin") && (
-          <UserView 
-            apiCall={apiCall} 
-            setError={setError} 
+          <UserView
+            apiCall={apiCall}
+            setError={setError}
             currentUser={currentUser}
             onLogout={handleLogout}
             isSuperAdmin={isSuperAdmin}
@@ -1198,6 +1225,7 @@ function App() {
             initialTab={view === "admin" ? "admin" : "settings"}
           />
         )}
+        </div>
 
       </main>
     </div>

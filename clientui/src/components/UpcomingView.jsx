@@ -21,7 +21,7 @@ const EMAIL_STATUS_COLORS = {
   RESCHEDULED: "#8b5cf6",
 };
 
-export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue, onNavigateToAddEquipment, onRefreshCompletions, onRefreshAllCounts, onBack, initialClientId, initialSiteId, onFilterChange, businesses }) {
+export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming, loading, setLoading, upcomingDate, setUpcomingDate, upcomingInterval, setUpcomingInterval, onNavigateToSchedule, currentUser, overdue, setOverdue, onNavigateToAddEquipment, onRefreshCompletions, onRefreshAllCounts, onBack, initialClientId, initialSiteId, onFilterChange, businesses, isFresh, markFetched, remaining: remainingProp, setRemaining: setRemainingProp }) {
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -39,7 +39,11 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   const [equipmentTypes, setEquipmentTypes] = useState([]);
 
   // Remaining equipment state
-  const [remaining, setRemaining] = useState([]);
+  // Use lifted `remaining` from parent when provided so the value survives
+  // view swaps and the freshness throttle doesn't leave the section blank.
+  const [localRemaining, setLocalRemaining] = useState([]);
+  const remaining = remainingProp !== undefined ? remainingProp : localRemaining;
+  const setRemaining = setRemainingProp || setLocalRemaining;
   const [showRemaining, setShowRemaining] = useState(false);
   const [showOverdue, setShowOverdue] = useState(true);
   const [showUpcoming, setShowUpcoming] = useState(true);
@@ -62,7 +66,8 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   const [calculatedDueDate, setCalculatedDueDate] = useState("");
   const [doneInterval, setDoneInterval] = useState("");
 
-  async function fetchUpcoming() {
+  async function fetchUpcoming({ force = false } = {}) {
+    if (!force && isFresh && isFresh("upcoming")) return;
     setLoading(true);
     setError("");
     try {
@@ -106,6 +111,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
       });
       
       setRemaining(remainingItems);
+      if (markFetched) markFetched("upcoming");
     } catch (err) {
       const errorMessage = err.message || "Failed to load upcoming data";
       setError(errorMessage);
@@ -665,7 +671,9 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
   const filteredOverdue = filterAndSortItems(overdue);
   const filteredUpcoming = filterAndSortItems(upcoming);
   const filteredRemaining = filterAndSortItems(remaining);
-  const totalFilteredCount = filteredOverdue.length + filteredUpcoming.length + (showRemaining ? filteredRemaining.length : 0);
+  // Header count is overdue + upcoming-in-window only — "remaining" items
+  // fall outside the selected window so they shouldn't inflate the total.
+  const totalFilteredCount = filteredOverdue.length + filteredUpcoming.length;
 
   // Show skeleton only on initial load when there's no data
   const showSkeleton = loading && upcoming.length === 0 && overdue.length === 0;
@@ -733,7 +741,7 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
             >
               {showFilters ? "Hide Filters" : `Filter${activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}`}
             </button>
-            <button className="secondary" onClick={fetchUpcoming}>Refresh</button>
+            <button className="secondary" onClick={() => fetchUpcoming({ force: true })}>Refresh</button>
             {onNavigateToAddEquipment && (
               <button className="primary" onClick={() => {
                 if (onNavigateToAddEquipment) {

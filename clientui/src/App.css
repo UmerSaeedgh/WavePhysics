@@ -701,19 +701,20 @@ ul.list li.list-item.inactive-equipment {
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.card,
-.list-item {
-  animation: fadeIn 0.3s ease-out;
+/* Animate the card container only — animating every list-item caused
+   cascading stagger that made big lists feel janky. */
+.card {
+  animation: fadeIn 0.18s ease-out;
+}
+
+/* View-swap fade: applied to the keyed view wrapper so transitions between
+   pages cross-fade instead of blank-flashing. */
+.view-fade {
+  animation: fadeIn 0.16s ease-out;
 }
 
 @media (max-width: 1200px) {
@@ -809,18 +810,7 @@ ul.list li.list-item.inactive-equipment {
 }
 
 .fade-in {
-  animation: fadeIn 0.3s ease-in;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  animation: fadeIn 0.18s ease-out;
 }
 
 /* Calendar View */

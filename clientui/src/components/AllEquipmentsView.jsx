@@ -3,7 +3,7 @@ import { formatDate } from "../utils/formatDate";
 import { generateEquipmentPDF } from "../utils/generateEquipmentPDF";
 import wavePhysicsLogo from "../assets/image.png";
 
-export default function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment, currentUser, onRefreshCompletions, onRefreshAllCounts, initialClientId, initialSiteId }) {
+export default function AllEquipmentsView({ apiCall, setError, allEquipments, setAllEquipments, loading, setLoading, scrollToEquipmentId, onScrollComplete, onNavigateToSchedule, onNavigateToAddEquipment, currentUser, onRefreshCompletions, onRefreshAllCounts, initialClientId, initialSiteId, isFresh, markFetched }) {
   const equipmentRefs = useRef({});
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -61,12 +61,14 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     }
   }, [scrollToEquipmentId, allEquipments, onScrollComplete]);
 
-  async function fetchAllEquipments() {
+  async function fetchAllEquipments({ force = false } = {}) {
+    if (!force && isFresh && isFresh("allEquipments")) return;
     setLoading(true);
     setError("");
     try {
       const data = await apiCall("/equipment-records");
       setAllEquipments(data || []);
+      if (markFetched) markFetched("allEquipments");
     } catch (err) {
       const errorMsg = err.message || "Failed to fetch equipments";
       if (!errorMsg.includes("404") && !errorMsg.includes("No equipments")) {
@@ -192,7 +194,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
     if (!window.confirm("Delete this equipment record?")) return;
     try {
       await apiCall(`/equipment-records/${equipmentId}`, { method: "DELETE" });
-      await fetchAllEquipments();
+      await fetchAllEquipments({ force: true });
       // Refresh all counts
       if (onRefreshAllCounts) {
         onRefreshAllCounts();
@@ -292,7 +294,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
         onRefreshCompletions();
       }
       
-      await fetchAllEquipments();
+      await fetchAllEquipments({ force: true });
       setShowDoneModal(false);
       setDoneEquipment(null);
       setCalculatedDueDate("");
@@ -518,7 +520,7 @@ export default function AllEquipmentsView({ apiCall, setError, allEquipments, se
 
         <div style={{ padding: "1rem" }}>
           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: "1rem" }}>
-            <button className="secondary" onClick={fetchAllEquipments}>Refresh</button>
+            <button className="secondary" onClick={() => fetchAllEquipments({ force: true })}>Refresh</button>
           </div>
           {loading && allEquipments.length === 0 ? (
             <div style={{ padding: "2rem" }}>

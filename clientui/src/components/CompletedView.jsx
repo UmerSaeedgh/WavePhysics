@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatDate } from "../utils/formatDate";
 
-export default function CompletedView({ apiCall, setError, loading, setLoading, currentUser, completions, setCompletions, onRefresh, onRefreshAllCounts }) {
+export default function CompletedView({ apiCall, setError, loading, setLoading, currentUser, completions, setCompletions, onRefresh, onRefreshAllCounts, isFresh, markFetched }) {
   
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
@@ -24,7 +24,8 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
   const [historyCompletions, setHistoryCompletions] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  async function fetchCompletions() {
+  async function fetchCompletions({ force = false } = {}) {
+    if (!force && isFresh && isFresh("completions")) return;
     setLoading(true);
     setError("");
     try {
@@ -33,6 +34,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
       if (setCompletions) {
         setCompletions(completionsData);
       }
+      if (markFetched) markFetched("completions");
     } catch (err) {
       const errorMessage = err.message || "Failed to load completion records";
       setError(errorMessage);
@@ -125,7 +127,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
       const updated = historyCompletions.filter(c => c.id !== completionId);
       setHistoryCompletions(updated);
       // Refresh the main list
-      await fetchCompletions();
+      await fetchCompletions({ force: true });
       if (onRefresh) onRefresh();
       if (onRefreshAllCounts) onRefreshAllCounts();
       if (updated.length === 0) handleCloseHistoryModal();
@@ -295,7 +297,7 @@ export default function CompletedView({ apiCall, setError, loading, setLoading, 
               {showFilters ? "Hide Filters" : `Filter${activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}`}
             </button>
             <button className="secondary" onClick={() => {
-              fetchCompletions();
+              fetchCompletions({ force: true });
               if (onRefresh) onRefresh();
             }}>Refresh</button>
           </div>
