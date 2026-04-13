@@ -347,6 +347,7 @@ def init_schema(conn):
       is_super_admin INTEGER NOT NULL DEFAULT 0,
       business_id    INTEGER REFERENCES businesses(id) ON DELETE CASCADE,
       calendar_token TEXT,
+      theme          TEXT NOT NULL DEFAULT 'default',
       created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -498,6 +499,15 @@ def _run_migrations(conn):
         cursor.execute(
             "ALTER TABLE sites ADD COLUMN IF NOT EXISTS zip_code TEXT"
         )
+    except Exception:
+        pass
+
+    # Migration: Add per-user theme preference
+    try:
+        cursor.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT 'default'"
+        )
+        conn.commit()
     except Exception:
         pass
 

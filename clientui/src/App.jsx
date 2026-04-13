@@ -16,16 +16,6 @@ import CompletedView from "./components/CompletedView";
 import DeletedRecordsView from "./components/DeletedRecordsView";
 
 function App() {
-  // Apply persisted theme on mount
-  useEffect(() => {
-    const theme = localStorage.getItem("theme") || "default";
-    if (theme === "default") {
-      document.documentElement.removeAttribute("data-theme");
-    } else {
-      document.documentElement.setAttribute("data-theme", theme);
-    }
-  }, []);
-
   // Authentication state
   const [authToken, setAuthToken] = useState(() => {
     return localStorage.getItem("authToken") || null;
@@ -35,6 +25,22 @@ function App() {
     return stored ? JSON.parse(stored) : null;
   });
   const [isAuthenticated, setIsAuthenticated] = useState(!!authToken);
+
+  // Apply persisted theme only when authenticated; login screen always uses default.
+  // The user's saved theme follows their account — when they log in we fetch
+  // it from /auth/me below and update both the DOM and localStorage cache.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      document.documentElement.removeAttribute("data-theme");
+      return;
+    }
+    const cached = currentUser?.theme || localStorage.getItem("theme") || "default";
+    if (cached === "default") {
+      document.documentElement.removeAttribute("data-theme");
+    } else {
+      document.documentElement.setAttribute("data-theme", cached);
+    }
+  }, [isAuthenticated, currentUser?.theme]);
   const [loginTime, setLoginTime] = useState(null); // Track when user logged in
 
   // Initialize view from URL hash or default to "clients"
@@ -243,12 +249,30 @@ function App() {
       const data = await response.json();
       const token = data.token;
       setAuthToken(token);
-      setCurrentUser(data.user);
       setIsAuthenticated(true);
       setLoginTime(Date.now()); // Record login time to prevent immediate logout
       localStorage.setItem("authToken", token);
-      localStorage.setItem("currentUser", JSON.stringify(data.user));
       setError("");
+
+      // Fetch full user info (includes server-side theme preference) so the
+      // theme follows the account across devices.
+      try {
+        const meResp = await fetch(`${API_BASE}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (meResp.ok) {
+          const me = await meResp.json();
+          setCurrentUser(me);
+          localStorage.setItem("currentUser", JSON.stringify(me));
+          if (me.theme) localStorage.setItem("theme", me.theme);
+        } else {
+          setCurrentUser(data.user);
+          localStorage.setItem("currentUser", JSON.stringify(data.user));
+        }
+      } catch {
+        setCurrentUser(data.user);
+        localStorage.setItem("currentUser", JSON.stringify(data.user));
+      }
       // Fetch data immediately after login using the token directly
       // Pass token to apiCall to avoid closure issue with state
       try {

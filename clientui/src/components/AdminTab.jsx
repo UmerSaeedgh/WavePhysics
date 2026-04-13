@@ -194,19 +194,27 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
 
   async function handleExportEquipments() {
     try {
-      const response = await fetch(`${API_BASE}/admin/export/equipments`);
+      let url = `${API_BASE}/admin/export/equipments`;
+      if (isSuperAdmin) {
+        url += selectedBusinessForExport !== null
+          ? `?business_id_filter=${selectedBusinessForExport}`
+          : `?all_businesses=true`;
+      }
+      const response = await fetch(url, {
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+      });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = downloadUrl;
       a.download = 'equipments_export.xlsx';
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(downloadUrl);
       document.body.removeChild(a);
     } catch (err) {
       setError(err.message || "Failed to export equipments");
@@ -216,10 +224,12 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
   async function handleExportEquipmentInfo() {
     try {
       let url = `${API_BASE}/admin/export/equipment-info`;
-      if (isSuperAdmin && selectedBusinessForExport !== null) {
-        url += `?business_id_filter=${selectedBusinessForExport}`;
+      if (isSuperAdmin) {
+        url += selectedBusinessForExport !== null
+          ? `?business_id_filter=${selectedBusinessForExport}`
+          : `?all_businesses=true`;
       }
-      
+
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${authToken}`

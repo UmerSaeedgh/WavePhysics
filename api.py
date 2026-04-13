@@ -385,15 +385,30 @@ def logout(current_user: dict = Depends(get_current_user), db: sqlite3.Connectio
     return {"message": "Logged out successfully"}
 
 @app.get("/auth/me")
-def get_current_user_info(current_user: dict = Depends(get_current_user)):
+def get_current_user_info(current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
     """Get current authenticated user info"""
+    theme_row = db.execute("SELECT theme FROM users WHERE id = ?", (current_user["user_id"],)).fetchone()
     return {
         "id": current_user["user_id"],
         "username": current_user["username"],
         "is_admin": current_user["is_admin"],
         "is_super_admin": current_user.get("is_super_admin", False),
-        "business_id": current_user.get("business_id")
+        "business_id": current_user.get("business_id"),
+        "theme": (theme_row["theme"] if theme_row and theme_row["theme"] else "default"),
     }
+
+
+class ThemeUpdate(BaseModel):
+    theme: str
+
+
+@app.put("/me/theme")
+def update_my_theme(payload: ThemeUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    if payload.theme not in ("default", "light", "dark"):
+        raise HTTPException(status_code=400, detail="Invalid theme")
+    db.execute("UPDATE users SET theme = ? WHERE id = ?", (payload.theme, current_user["user_id"]))
+    db.commit()
+    return {"theme": payload.theme}
 
 
 class CalendarTokenResponse(BaseModel):
@@ -5033,15 +5048,29 @@ async def import_temporary_data(
 
 @app.get("/admin/export/equipments")
 async def export_equipments(
+    business_id_filter: Optional[int] = Query(None, description="Filter by business ID (super admin only)"),
+    all_businesses: bool = Query(False, description="Super admin: explicitly export across all businesses"),
+    current_user: dict = Depends(get_current_admin_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
     """
-    Export all equipment records to Excel format
+    Export equipment records to Excel format, scoped to the caller's business
+    (or a specific business / all businesses when a super admin selects one).
     """
     try:
-        # Query all equipment records with related data
-        cur = db.execute("""
-            SELECT 
+        is_super_admin = current_user.get("is_super_admin")
+        if is_super_admin:
+            if all_businesses:
+                business_id = None
+            elif business_id_filter is not None:
+                business_id = business_id_filter
+            else:
+                business_id = current_user.get("business_id")
+        else:
+            business_id = get_business_id(current_user)
+
+        query = """
+            SELECT
                 b.name as business_name,
                 c.name as client_name,
                 s.name as site_name,
@@ -5059,10 +5088,15 @@ async def export_equipments(
             JOIN sites s ON er.site_id = s.id
             JOIN equipment_types et ON er.equipment_type_id = et.id
             JOIN businesses b ON c.business_id = b.id
-            WHERE er.active = 1
-            ORDER BY b.name, c.name, s.name, er.anchor_date
-        """)
-        
+            WHERE er.active = 1 AND er.deleted_at IS NULL
+        """
+        params: list = []
+        if business_id is not None:
+            query += " AND c.business_id = ?"
+            params.append(business_id)
+        query += " ORDER BY b.name, c.name, s.name, er.anchor_date"
+
+        cur = db.execute(query, params)
         rows = cur.fetchall()
         
         # Create DataFrame
@@ -5104,6 +5138,7 @@ async def export_equipments(
 @app.get("/admin/export/equipment-info")
 async def export_equipment_info(
     business_id_filter: Optional[int] = Query(None, description="Filter by business ID (super admin only)"),
+    all_businesses: bool = Query(False, description="Super admin: explicitly export across all businesses"),
     current_user: dict = Depends(get_current_admin_user),
     db: sqlite3.Connection = Depends(get_db)
 ):
@@ -5114,13 +5149,14 @@ async def export_equipment_info(
     """
     try:
         is_super_admin = current_user.get("is_super_admin")
-        
+
         # Determine business_id to filter by
         if is_super_admin:
-            if business_id_filter is not None:
+            if all_businesses:
+                business_id = None
+            elif business_id_filter is not None:
                 business_id = business_id_filter
             else:
-                # Super admin viewing all businesses (business_id can be None)
                 business_id = current_user.get("business_id")
         else:
             business_id = get_business_id(current_user)

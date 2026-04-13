@@ -4,15 +4,23 @@ import { API_BASE } from "../config";
 
 export default function UserView({ apiCall, setError, currentUser, onLogout, isSuperAdmin, authToken, onBusinessSwitch, onRefresh, initialTab }) {
   const [userTab, setUserTab] = useState(initialTab || "settings");
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "default");
+  const [theme, setTheme] = useState(() => currentUser?.theme || localStorage.getItem("theme") || "default");
 
-  function applyTheme(next) {
+  async function applyTheme(next) {
     setTheme(next);
     localStorage.setItem("theme", next);
     if (next === "default") {
       document.documentElement.removeAttribute("data-theme");
     } else {
       document.documentElement.setAttribute("data-theme", next);
+    }
+    // Sync to server so the same account uses this theme on other devices.
+    try {
+      await apiCall("/me/theme", { method: "PUT", body: JSON.stringify({ theme: next }) });
+      const updated = { ...(currentUser || {}), theme: next };
+      localStorage.setItem("currentUser", JSON.stringify(updated));
+    } catch (err) {
+      setError(err.message || "Failed to save theme");
     }
   }
   const [currentPassword, setCurrentPassword] = useState("");

@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS users (
   is_super_admin INTEGER NOT NULL DEFAULT 0,
   business_id    INTEGER REFERENCES businesses(id) ON DELETE CASCADE,
   calendar_token TEXT,
+  theme          TEXT NOT NULL DEFAULT 'default',
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
