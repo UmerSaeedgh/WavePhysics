@@ -57,6 +57,32 @@ function App() {
       customKeys.forEach((k) => root.style.removeProperty(k));
     }
   }, [isAuthenticated, currentUser?.theme, currentUser?.custom_theme]);
+
+  // Re-sync currentUser (incl. theme/custom_theme) from server on app boot when
+  // a token already exists, so a stale localStorage copy can't override the
+  // user's saved preferences across reloads/devices.
+  useEffect(() => {
+    if (!authToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/auth/me`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (!resp.ok) return;
+        const me = await resp.json();
+        if (cancelled) return;
+        setCurrentUser(me);
+        localStorage.setItem("currentUser", JSON.stringify(me));
+        if (me.theme) localStorage.setItem("theme", me.theme);
+      } catch {
+        // ignore — fall back to cached currentUser
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [loginTime, setLoginTime] = useState(null); // Track when user logged in
 
   // Initialize view from URL hash or default to "clients"
