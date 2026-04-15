@@ -177,6 +177,64 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
     }
   }
 
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoSuccess, setLogoSuccess] = useState("");
+  const canEditLogo = !!(currentUser?.is_super_admin || currentUser?.is_admin) && !!currentUser?.business_id;
+
+  async function handleLogoFile(file) {
+    setError("");
+    setLogoSuccess("");
+    if (!file) return;
+    const allowed = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+    if (!allowed.includes(file.type)) {
+      setError("Logo must be a PNG, JPEG, WEBP, or SVG image.");
+      return;
+    }
+    if (file.size > 500 * 1024) {
+      setError("Logo must be under 500KB.");
+      return;
+    }
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+    setLogoUploading(true);
+    try {
+      await apiCall(`/businesses/${currentUser.business_id}/logo`, {
+        method: "PUT",
+        body: JSON.stringify({ logo: dataUrl }),
+      });
+      const updated = { ...(currentUser || {}), business_logo: dataUrl };
+      localStorage.setItem("currentUser", JSON.stringify(updated));
+      setLogoSuccess("Logo updated. Refresh to see it everywhere.");
+      setTimeout(() => window.location.reload(), 800);
+    } catch (err) {
+      setError(err.message || "Failed to upload logo");
+    } finally {
+      setLogoUploading(false);
+    }
+  }
+
+  async function handleResetLogo() {
+    if (!window.confirm("Reset the business logo to the default Wave Physics logo?")) return;
+    setError("");
+    setLogoSuccess("");
+    setLogoUploading(true);
+    try {
+      await apiCall(`/businesses/${currentUser.business_id}/logo`, { method: "DELETE" });
+      const updated = { ...(currentUser || {}), business_logo: null };
+      localStorage.setItem("currentUser", JSON.stringify(updated));
+      setLogoSuccess("Logo reset. Refreshing...");
+      setTimeout(() => window.location.reload(), 800);
+    } catch (err) {
+      setError(err.message || "Failed to reset logo");
+    } finally {
+      setLogoUploading(false);
+    }
+  }
+
   async function handleChangePassword(e) {
     e.preventDefault();
     setError("");
@@ -389,6 +447,54 @@ export default function UserView({ apiCall, setError, currentUser, onLogout, isS
                 </div>
               )}
             </div>
+
+            {canEditLogo && (
+              <div style={{ borderTop: "1px solid rgba(129, 147, 164, 0.2)", paddingTop: "1.5rem", marginTop: "1.5rem" }}>
+                <h3 style={{ marginTop: 0, marginBottom: "0.75rem" }}>Business Logo</h3>
+                <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+                  <div style={{ width: "120px", height: "60px", border: "1px solid var(--border)", borderRadius: "0.375rem", background: "var(--white)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                    {currentUser?.business_logo ? (
+                      <img src={currentUser.business_logo} alt="Business logo" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    ) : (
+                      <span style={{ fontSize: "0.75rem", opacity: 0.6, color: "var(--text-dark)" }}>Default</span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <label className="primary" style={{ padding: "0.5rem 0.9rem", borderRadius: "0.375rem", cursor: logoUploading ? "wait" : "pointer", display: "inline-flex", alignItems: "center" }}>
+                      {logoUploading ? "Uploading..." : "Upload logo"}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        style={{ display: "none" }}
+                        disabled={logoUploading}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = "";
+                          if (f) handleLogoFile(f);
+                        }}
+                      />
+                    </label>
+                    {currentUser?.business_logo && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={handleResetLogo}
+                        disabled={logoUploading}
+                        style={{ color: "var(--text-dark)", border: "1px solid var(--border)", background: "transparent" }}
+                      >
+                        Reset to default
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div style={{ fontSize: "0.8rem", opacity: 0.75, marginTop: "0.5rem" }}>
+                  PNG, JPEG, WEBP, or SVG. Max 500KB. Shown in the header for everyone in this business.
+                </div>
+                {logoSuccess && (
+                  <div style={{ marginTop: "0.5rem", color: "var(--accent)", fontSize: "0.85rem" }}>{logoSuccess}</div>
+                )}
+              </div>
+            )}
 
             <div style={{ borderTop: "1px solid rgba(129, 147, 164, 0.2)", paddingTop: "2rem", marginTop: "2rem" }}>
               <div

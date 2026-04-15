@@ -826,8 +826,8 @@ function App() {
       <header className="topbar">
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
           <img
-            src={wavePhysicsLogo}
-            alt="WAVE PHYSICS"
+            src={currentUser?.business_logo || wavePhysicsLogo}
+            alt="Logo"
             className="logo"
             style={{ height: "50px", maxWidth: "200px", objectFit: "contain" }}
           />

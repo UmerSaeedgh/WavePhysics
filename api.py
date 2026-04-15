@@ -395,6 +395,12 @@ def get_current_user_info(current_user: dict = Depends(get_current_user), db: sq
             custom_theme = _json.loads(row["custom_theme"])
         except Exception:
             custom_theme = None
+    business_logo = None
+    bid = current_user.get("business_id")
+    if bid:
+        brow = db.execute("SELECT logo FROM businesses WHERE id = ?", (bid,)).fetchone()
+        if brow and brow["logo"]:
+            business_logo = brow["logo"]
     return {
         "id": current_user["user_id"],
         "username": current_user["username"],
@@ -403,6 +409,7 @@ def get_current_user_info(current_user: dict = Depends(get_current_user), db: sq
         "business_id": current_user.get("business_id"),
         "theme": (row["theme"] if row and row["theme"] else "default"),
         "custom_theme": custom_theme,
+        "business_logo": business_logo,
     }
 
 
@@ -590,6 +597,45 @@ def update_business(business_id: int, payload: BusinessCreate, current_user: dic
         return BusinessRead(**row_to_dict(row))
     except (sqlite3.IntegrityError, psycopg2.IntegrityError):
         raise HTTPException(status_code=400, detail="Business name already exists")
+
+# Business logo endpoints (superadmin, or admin of that business)
+class BusinessLogoUpdate(BaseModel):
+    logo: str  # data URL: data:image/<type>;base64,<...>
+
+_LOGO_DATA_URL_RE = __import__("re").compile(r"^data:image/(png|jpeg|jpg|webp|svg\+xml);base64,[A-Za-z0-9+/=\s]+$")
+_MAX_LOGO_BYTES = 750_000  # ~750KB of base64 payload
+
+def _require_business_logo_access(current_user: dict, business_id: int):
+    if current_user.get("is_super_admin"):
+        return
+    if current_user.get("is_admin") and current_user.get("business_id") == business_id:
+        return
+    raise HTTPException(status_code=403, detail="Not authorized to modify this business's logo")
+
+@app.put("/businesses/{business_id}/logo")
+def update_business_logo(business_id: int, payload: BusinessLogoUpdate, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    _require_business_logo_access(current_user, business_id)
+    if not payload.logo or not _LOGO_DATA_URL_RE.match(payload.logo):
+        raise HTTPException(status_code=400, detail="Logo must be a base64 data URL (png, jpeg, webp, or svg)")
+    if len(payload.logo) > _MAX_LOGO_BYTES:
+        raise HTTPException(status_code=400, detail="Logo too large (max ~500KB)")
+    exists = db.execute("SELECT id FROM businesses WHERE id = ?", (business_id,)).fetchone()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Business not found")
+    db.execute("UPDATE businesses SET logo = ? WHERE id = ?", (payload.logo, business_id))
+    db.commit()
+    return {"business_id": business_id, "logo": payload.logo}
+
+@app.delete("/businesses/{business_id}/logo")
+def delete_business_logo(business_id: int, current_user: dict = Depends(get_current_user), db: sqlite3.Connection = Depends(get_db)):
+    _require_business_logo_access(current_user, business_id)
+    exists = db.execute("SELECT id FROM businesses WHERE id = ?", (business_id,)).fetchone()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Business not found")
+    db.execute("UPDATE businesses SET logo = NULL WHERE id = ?", (business_id,))
+    db.commit()
+    return {"business_id": business_id, "logo": None}
+
 
 # Deleted Records View for Super Admin
 class DeletedRecordRead(BaseModel):

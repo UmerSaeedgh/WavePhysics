@@ -503,6 +503,13 @@ def _run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add per-business logo (stored as base64 data URL)
+    try:
+        cursor.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS logo TEXT")
+        conn.commit()
+    except Exception:
+        pass
+
     # Migration: Add per-user theme preference
     try:
         cursor.execute(
