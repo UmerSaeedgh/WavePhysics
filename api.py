@@ -4571,41 +4571,30 @@ async def import_equipments(
         for idx, row in df.iterrows():
             stats["rows_processed"] += 1
             try:
-                # Determine business_id for this row
+                # Determine business_id for this row.
+                # If a target business_id was provided (UI selection), it always wins.
+                # Only consult the Excel "Business" column when no target was selected
+                # (super-admin "all businesses" import).
                 row_business_id = business_id
-                if is_super_admin:
-                    # Super admin: use business from Excel if provided, otherwise use provided business_id
+                if is_super_admin and business_id is None:
                     if business_col and business_col in row:
                         business_name = str(row[business_col]).strip()
                         if business_name and business_name.lower() not in ['nan', 'none', '']:
-                            # Look up business by name
                             business_row = db.execute("SELECT id FROM businesses WHERE name = ?", (business_name,)).fetchone()
                             if business_row:
                                 row_business_id = business_row['id']
                             else:
-                                # Business doesn't exist - skip row (normal import doesn't create businesses)
                                 stats["rows_skipped"] += 1
                                 stats["errors"].append(f"Row {idx + 2}: Business '{business_name}' not found")
                                 continue
-                        elif business_id is None:
+                        else:
                             stats["rows_skipped"] += 1
                             stats["errors"].append(f"Row {idx + 2}: Business not specified")
                             continue
-                    elif business_id is None:
+                    else:
                         stats["rows_skipped"] += 1
                         stats["errors"].append(f"Row {idx + 2}: Business not specified")
                         continue
-                else:
-                    # Regular admin: filter out rows that don't match their business
-                    if business_col and business_col in row:
-                        business_name = str(row[business_col]).strip()
-                        if business_name and business_name.lower() not in ['nan', 'none', '']:
-                            # Check if business matches
-                            business_row = db.execute("SELECT id FROM businesses WHERE name = ? AND id = ?", (business_name, business_id)).fetchone()
-                            if not business_row:
-                                # Different business - skip this row
-                                stats["rows_skipped"] += 1
-                                continue
                 
                 # Get client name
                 client_name = str(row[client_col]).strip()
@@ -4896,41 +4885,30 @@ async def import_temporary_data(
         for idx, row in df.iterrows():
             stats["rows_processed"] += 1
             try:
-                # Determine business_id for this row
+                # Determine business_id for this row.
+                # If a target business_id was provided (UI selection), it always wins.
+                # Only consult the Excel "Business" column when no target was selected
+                # (super-admin "all businesses" import; can create businesses on the fly).
                 row_business_id = business_id
-                if is_super_admin:
-                    # Super admin: use business from Excel if provided, otherwise use provided business_id
+                if is_super_admin and business_id is None:
                     if business_col and business_col in row:
                         business_name = str(row[business_col]).strip()
                         if business_name and business_name.lower() not in ['nan', 'none', '']:
-                            # Look up or create business by name
                             business_row = db.execute("SELECT id FROM businesses WHERE name = ?", (business_name,)).fetchone()
                             if business_row:
                                 row_business_id = business_row['id']
                             else:
-                                # Create business if it doesn't exist (temporary upload creates businesses)
                                 cur = db.execute("INSERT INTO businesses (name) VALUES (?)", (business_name,))
                                 db.commit()
                                 row_business_id = cur.lastrowid
-                        elif business_id is None:
+                        else:
                             stats["rows_skipped"] += 1
                             stats["errors"].append(f"Row {idx + 2}: Business not specified")
                             continue
-                    elif business_id is None:
+                    else:
                         stats["rows_skipped"] += 1
                         stats["errors"].append(f"Row {idx + 2}: Business not specified")
                         continue
-                else:
-                    # Regular admin: filter out rows that don't match their business
-                    if business_col and business_col in row:
-                        business_name = str(row[business_col]).strip()
-                        if business_name and business_name.lower() not in ['nan', 'none', '']:
-                            # Check if business matches
-                            business_row = db.execute("SELECT id FROM businesses WHERE name = ? AND id = ?", (business_name, business_id)).fetchone()
-                            if not business_row:
-                                # Different business - skip this row
-                                stats["rows_skipped"] += 1
-                                continue
                 
                 # Get client name
                 client_name = str(row[client_col]).strip()
@@ -5123,6 +5101,49 @@ async def import_temporary_data(
         raise HTTPException(status_code=400, detail=f"Error processing Excel file: {str(e)}")
 
 
+@app.get("/admin/import/sample-file")
+async def import_sample_file(current_user: dict = Depends(get_current_admin_user)):
+    """Return a small sample Excel file showing the columns the importer expects."""
+    sample = [
+        {
+            "Business":       "Acme Imaging",
+            "Client":         "Sunrise Cardiology",
+            "Site":           "Sunrise - Main",
+            "Equipment Type": "CT",
+            "Equipment Name": "GE Revolution CT",
+            "Anchor Date":    "2026-01-15",
+            "Due Date":       "2027-01-15",
+            "Interval":       52,
+            "Lead Weeks":     4,
+            "Timezone":       "America/Chicago",
+            "Notes":          "Serial #ABC123",
+        },
+        {
+            "Business":       "Acme Imaging",
+            "Client":         "Sunrise Cardiology",
+            "Site":           "Sunrise - East Wing",
+            "Equipment Type": "Ultrasound",
+            "Equipment Name": "Philips EPIQ Elite",
+            "Anchor Date":    "2026-03-01",
+            "Due Date":       "",
+            "Interval":       26,
+            "Lead Weeks":     "",
+            "Timezone":       "",
+            "Notes":          "",
+        },
+    ]
+    df = pd.DataFrame(sample)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Equipments')
+    output.seek(0)
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=sample_file.xlsx"},
+    )
+
+
 @app.get("/admin/export/equipments")
 async def export_equipments(
     business_id_filter: Optional[int] = Query(None, description="Filter by business ID (super admin only)"),
@@ -5176,11 +5197,16 @@ async def export_equipments(
         cur = db.execute(query, params)
         rows = cur.fetchall()
         
-        # Create DataFrame
+        # Only include the Business column when exporting across multiple
+        # businesses; for a single-business export it's redundant noise.
+        include_business = business_id is None
+
         data = []
         for row in rows:
-            data.append({
-                "Business": row['business_name'],
+            entry = {}
+            if include_business:
+                entry["Business"] = row['business_name']
+            entry.update({
                 "Client": row['client_name'],
                 "Site": row['site_name'],
                 "Equipment Type": row['equipment_type'],
@@ -5190,9 +5216,10 @@ async def export_equipments(
                 "Interval": row['interval_weeks'],
                 "Lead Weeks": row['lead_weeks'] or "",
                 "Timezone": row['timezone'] or "",
-                "Notes": row['notes'] or ""
+                "Notes": row['notes'] or "",
             })
-        
+            data.append(entry)
+
         df = pd.DataFrame(data)
         
         # Create Excel file in memory

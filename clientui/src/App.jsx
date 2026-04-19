@@ -481,15 +481,14 @@ function App() {
       }
       
       if (!res.ok) {
-        // Handle 401 Unauthorized - token expired or invalid
-        if (res.status === 401 && tokenToUse) {
-          // Don't logout if this is the login endpoint itself (invalid credentials)
+        // Handle 401/403 — FastAPI's HTTPBearer returns 403 when the token header
+        // is missing or malformed, and 401 when the token is invalid/expired.
+        // Either way the session is no longer usable; log the user out.
+        if ((res.status === 401 || res.status === 403) && tokenToUse) {
           const isLoginEndpoint = endpoint.includes("/auth/login");
-          
           if (!isLoginEndpoint) {
-            // Session expired - automatically log out (skip API call to avoid another 401)
-            console.warn("Session expired. Logging out automatically.");
-            handleLogout(true); // Skip API call since session is already expired
+            console.warn(`Session no longer valid (HTTP ${res.status}). Logging out automatically.`);
+            handleLogout(true);
             throw new Error("Session expired. Please login again.");
           }
         }

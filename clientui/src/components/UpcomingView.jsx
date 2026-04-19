@@ -648,7 +648,10 @@ export default function UpcomingView({ apiCall, setError, upcoming, setUpcoming,
       const hasFilters = filterInfo.businessName || filterInfo.clientName || filterInfo.siteName || filterInfo.equipmentTypeName;
       onFilterChange(hasFilters ? filterInfo : null);
     }
-  }, [selectedClientId, selectedSiteId, selectedEquipmentTypeId, clients, sites, equipmentTypes, businesses, onFilterChange]);
+    // Intentionally omit onFilterChange: the parent passes a fresh inline arrow
+    // each render, so including it here would re-fire on every render and loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClientId, selectedSiteId, selectedEquipmentTypeId, clients, sites, equipmentTypes, businesses]);
 
   // Get unique states from all equipment records
   const allEquipmentRecords = [...(upcoming || []), ...(overdue || []), ...(remaining || [])];

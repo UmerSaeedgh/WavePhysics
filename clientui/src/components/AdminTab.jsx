@@ -9,9 +9,7 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUser, setNewUser] = useState({ username: "", password: "", is_admin: false, business_id: null });
   const [businesses, setBusinesses] = useState([]);
-  const [uploading, setUploading] = useState(false);
   const [uploadingTemporary, setUploadingTemporary] = useState(false);
-  const fileInputRef = useRef(null);
   const temporaryFileInputRef = useRef(null);
   
   // Business management state
@@ -23,8 +21,16 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
   const [adminUsername, setAdminUsername] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
 
-  const [selectedBusinessForImport, setSelectedBusinessForImport] = useState(null);
-  const [selectedBusinessForExport, setSelectedBusinessForExport] = useState(null);
+  const [selectedBusinessForImport, setSelectedBusinessForImport] = useState(currentUser?.business_id ?? null);
+  const [selectedBusinessForExport, setSelectedBusinessForExport] = useState(currentUser?.business_id ?? null);
+
+  // Keep import/export business selections in sync with the super admin's
+  // currently switched business context. If they switch to a specific
+  // business, exports default to that business (not "All Businesses").
+  useEffect(() => {
+    setSelectedBusinessForImport(currentUser?.business_id ?? null);
+    setSelectedBusinessForExport(currentUser?.business_id ?? null);
+  }, [currentUser?.business_id]);
 
   // Equipment type management state
   const [equipmentTypes, setEquipmentTypes] = useState([]);
@@ -44,77 +50,25 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
     business_id: null
   });
 
-  async function handleImportEquipments(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      setError("File must be an Excel file (.xlsx or .xls)");
-      return;
-    }
-
-    setUploading(true);
-    setError("");
-
+  async function handleDownloadSampleFile() {
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      // Add business_id if super admin and business is selected
-      if (isSuperAdmin && selectedBusinessForImport) {
-        formData.append('business_id', selectedBusinessForImport.toString());
-      }
-
-      const headers = {};
-      if (authToken) {
-        headers['Authorization'] = `Bearer ${authToken}`;
-      }
-
-      const response = await fetch(`${API_BASE}/admin/import/equipments`, {
-        method: 'POST',
-        headers,
-        body: formData,
+      const response = await fetch(`${API_BASE}/admin/import/sample-file`, {
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
       });
-
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `HTTP ${response.status}: ${response.statusText}`);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-
-      const result = await response.json();
-      const stats = result.stats || {};
-      
-      let message = `Import completed successfully.\n\n`;
-      message += `Created: ${stats.equipment_types_created || 0} equipment type(s), ${stats.equipment_records_created || 0} equipment record(s).\n`;
-      if (stats.rows_skipped > 0) {
-        message += `Skipped: ${stats.rows_skipped} row(s) due to missing or invalid data.\n`;
-      }
-      if (stats.duplicates_skipped > 0) {
-        message += `${stats.duplicates_skipped} record(s) already exist and were skipped.\n`;
-      }
-      
-      if (stats.errors && stats.errors.length > 0) {
-        const errorDetails = stats.errors.slice(0, 20).join('\n');
-        const errorMsg = `${message}\n\nErrors (${stats.errors.length}):\n${errorDetails}${stats.errors.length > 20 ? '\n... and more' : ''}`;
-        setError(errorMsg);
-        alert(errorMsg);
-      } else {
-        alert(message);
-      }
-      
-      // Refresh all data after successful import
-      if (onRefresh) {
-        onRefresh();
-      }
-      await fetchEquipmentTypes();
-      if (isSuperAdmin) {
-        await fetchBusinesses();
-      }
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = 'sample_file.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      document.body.removeChild(a);
     } catch (err) {
-      setError(err.message || "Failed to import equipment file");
-      alert(err.message || "Failed to import equipment file");
-    } finally {
-      setUploading(false);
-      e.target.value = '';
+      setError(err.message || "Failed to download sample file");
     }
   }
 
@@ -745,95 +699,46 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
             {importExportExpanded && (
             <div style={{ padding: "1rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "2rem" }}>
               {/* Import Section */}
-              <div style={{ 
-                padding: "1.5rem", 
-                backgroundColor: "var(--white)", 
+              <div style={{
+                padding: "1.5rem",
+                backgroundColor: "var(--white)",
                 borderRadius: "0.5rem",
                 border: "1px solid var(--border)"
               }}>
                 <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)" }}>Import Equipments</h3>
-                <p style={{ color: "var(--primary)", fontSize: "0.875rem", marginBottom: "1rem", lineHeight: "1.5" }}>
-                  Import equipment records from Excel file. Required columns: Client, Site, Equipment Type, Equipment Name, Anchor Date.
-                  {isSuperAdmin && " Optional column: Business."}
+                <p style={{ color: "var(--primary)", fontSize: "0.875rem", marginBottom: "0.75rem", lineHeight: "1.5" }}>
+                  Upload an Excel file (.xlsx or .xls) of equipment records. Missing clients, sites{isSuperAdmin ? ", businesses" : ""} and equipment types are created automatically.
                 </p>
-                <div style={{ 
-                  padding: "0.75rem", 
-                  backgroundColor: "#fff3cd", 
-                  borderRadius: "0.25rem", 
+                <div style={{
+                  padding: "0.75rem 1rem",
+                  backgroundColor: "var(--primary-lighter)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "0.25rem",
                   marginBottom: "1rem",
-                  fontSize: "0.875rem",
-                  color: "#856404"
+                  fontSize: "0.8125rem",
+                  color: "var(--text-dark)",
+                  lineHeight: "1.55"
                 }}>
-                  <strong>Note:</strong> If client or site doesn't exist, the row will be skipped.
+                  <div style={{ marginBottom: "0.4rem" }}><strong>Required columns:</strong> Client, Site, Equipment Type, Equipment Name, Anchor Date</div>
+                  <div style={{ marginBottom: "0.4rem" }}><strong>Optional columns:</strong> {isSuperAdmin ? "Business, " : ""}Due Date, Interval, Lead Weeks, Timezone, Notes</div>
+                  <div><strong>Date format:</strong> YYYY-MM-DD (e.g. 2026-04-20). Interval and Lead Weeks are integers (weeks).</div>
                 </div>
-                {isSuperAdmin && (
-                  <div style={{ marginBottom: "1rem" }}>
-                    <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem", fontWeight: "600", color: "var(--text-dark)" }}>
-                      Business (Optional)
-                    </label>
-                    <select
-                      value={selectedBusinessForImport || ""}
-                      onChange={(e) => setSelectedBusinessForImport(e.target.value ? parseInt(e.target.value) : null)}
-                      style={{
-                        width: "100%",
-                        padding: "0.5rem",
-                        border: "1px solid var(--primary)",
-                        borderRadius: "0.25rem",
-                        fontSize: "0.875rem"
-                      }}
-                    >
-                      <option value="">Use Business column from Excel</option>
-                      {businesses.map(business => (
-                        <option key={business.id} value={business.id.toString()}>
-                          {business.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleImportEquipments}
-                  disabled={uploading || uploadingTemporary}
-                  style={{ display: "none" }}
-                />
                 <button
                   type="button"
-                  className="primary"
-                  disabled={uploading || uploadingTemporary}
-                  style={{ 
-                    cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer",
-                    width: "100%"
+                  onClick={handleDownloadSampleFile}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--primary)",
+                    color: "var(--primary)",
+                    borderRadius: "0.25rem",
+                    padding: "0.4rem 0.75rem",
+                    fontSize: "0.8125rem",
+                    cursor: "pointer",
+                    marginBottom: "1rem"
                   }}
-                  onClick={() => fileInputRef.current?.click()}
                 >
-                  {uploading ? "Uploading..." : "📁 Import Equipments"}
+                  ⬇ Download sample_file.xlsx
                 </button>
-              </div>
-
-              {/* Temporary Upload Section */}
-              <div style={{ 
-                padding: "1.5rem", 
-                backgroundColor: "var(--white)", 
-                borderRadius: "0.5rem",
-                border: "1px solid var(--border)"
-              }}>
-                <h3 style={{ marginTop: 0, marginBottom: "0.75rem", color: "var(--text-dark)" }}>Temporary Data Upload</h3>
-                <p style={{ color: "var(--primary)", fontSize: "0.875rem", marginBottom: "1rem", lineHeight: "1.5" }}>
-                  Import equipment records from Excel file. Creates missing clients, sites, and businesses automatically.
-                </p>
-                <div style={{ 
-                  padding: "0.75rem", 
-                  backgroundColor: "#d1ecf1", 
-                  borderRadius: "0.25rem", 
-                  marginBottom: "1rem",
-                  fontSize: "0.875rem",
-                  color: "#0c5460"
-                }}>
-                  <strong>Auto-Create:</strong> Missing clients, sites{businesses.length > 0 && ", and businesses"} will be created automatically.
-                </div>
                 {isSuperAdmin && (
                   <div style={{ marginBottom: "1rem" }}>
                     <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem", fontWeight: "600", color: "var(--text-dark)" }}>
@@ -864,20 +769,20 @@ export default function AdminTab({ apiCall, setError, currentUser, isSuperAdmin,
                   type="file"
                   accept=".xlsx,.xls"
                   onChange={handleTemporaryDataUpload}
-                  disabled={uploading || uploadingTemporary}
+                  disabled={uploadingTemporary}
                   style={{ display: "none" }}
                 />
                 <button
                   type="button"
                   className="primary"
-                  disabled={uploading || uploadingTemporary}
-                  style={{ 
-                    cursor: (uploading || uploadingTemporary) ? "not-allowed" : "pointer",
+                  disabled={uploadingTemporary}
+                  style={{
+                    cursor: uploadingTemporary ? "not-allowed" : "pointer",
                     width: "100%"
                   }}
                   onClick={() => temporaryFileInputRef.current?.click()}
                 >
-                  {uploadingTemporary ? "Uploading..." : "📁 Temporary Data Upload"}
+                  {uploadingTemporary ? "Uploading..." : "📁 Import Equipments"}
                 </button>
               </div>
 
